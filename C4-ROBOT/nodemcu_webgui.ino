@@ -2,6 +2,7 @@
 #include <ESP8266WebServer.h>
 #include <PubSubClient.h>
 #include <ArduinoOTA.h>
+#include <Servo.h>
 
 #include <LittleFS.h>
 #include <ArduinoJson.h>
@@ -9,7 +10,7 @@
 // ============================================================
 // Firmware version
 // ============================================================
-static const char* FW_VERSION = "0.87";
+static const char* FW_VERSION = "0.89";
 
 // ============================================================
 // Persistent config (LittleFS + JSON)
@@ -24,6 +25,10 @@ static const uint16_t DEFAULT_MAX_SPS = 800;
 static const float    DEFAULT_ACCEL   = 2500.0f;
 
 static const uint8_t  POS_COUNT = 40;
+
+// Servo microsecond clamp range
+static const uint16_t SERVO_US_MIN_CLAMP = 400;
+static const uint16_t SERVO_US_MAX_CLAMP = 2600;
 
 // Axis type
 enum AxisType : uint8_t { AXIS_V = 0, AXIS_H = 1 };
@@ -50,10 +55,27 @@ struct AppConfig {
   bool dirActiveHigh = true;    // true: DIR=HIGH means positive direction
   bool stepActiveHigh = true;   // true: STEP pulse is HIGH->LOW (default)
 
+  // Servo config (horizontal mode)
+  uint8_t  servoTopPin     = 14;   // D5
+  uint16_t servoTopMin     = 1000; // release position µs
+  uint16_t servoTopMax     = 2000; // press position µs
+
+  uint8_t  servoBotPin     = 0;    // D3
+  uint16_t servoBotMin     = 1000; // release position µs
+  uint16_t servoBotMax     = 2000; // press position µs
+
+  uint16_t servoPress_ms   = 250;  // hold at press position
+  uint16_t servoRelease_ms = 250;  // hold at release position
+  uint16_t servoPause_ms   = 250;  // pause between consecutive clicks
+
   long positions[POS_COUNT];
 };
 
 AppConfig gCfg;
+
+// Servo objects (used only in AXIS_H mode)
+Servo gServoTop;
+Servo gServoBot;
 
 // ============================================================
 // NodeMCU blue LED (D4 / GPIO2) - ACTIVE LOW on most boards
@@ -94,6 +116,16 @@ static void setDefaults() {
   gCfg.enActiveHigh = true;
   gCfg.dirActiveHigh = true;
   gCfg.stepActiveHigh = true;
+
+  gCfg.servoTopPin     = 14;
+  gCfg.servoTopMin     = 1000;
+  gCfg.servoTopMax     = 2000;
+  gCfg.servoBotPin     = 0;
+  gCfg.servoBotMin     = 1000;
+  gCfg.servoBotMax     = 2000;
+  gCfg.servoPress_ms   = 250;
+  gCfg.servoRelease_ms = 250;
+  gCfg.servoPause_ms   = 250;
 
   for (uint8_t i = 0; i < POS_COUNT; i++) gCfg.positions[i] = 0;
 }
@@ -241,6 +273,17 @@ bool loadConfig() {
   gCfg.dirActiveHigh  = (bool)(doc["logic"]["dir_active_high"]  | true);
   gCfg.stepActiveHigh = (bool)(doc["logic"]["step_active_high"] | true);
 
+  // Servo config
+  gCfg.servoTopPin     = jsonGetU8 (doc["servos"]["top"]["pin"],    14);
+  gCfg.servoTopMin     = jsonGetU16(doc["servos"]["top"]["min_us"], 1000);
+  gCfg.servoTopMax     = jsonGetU16(doc["servos"]["top"]["max_us"], 2000);
+  gCfg.servoBotPin     = jsonGetU8 (doc["servos"]["bot"]["pin"],    0);
+  gCfg.servoBotMin     = jsonGetU16(doc["servos"]["bot"]["min_us"], 1000);
+  gCfg.servoBotMax     = jsonGetU16(doc["servos"]["bot"]["max_us"], 2000);
+  gCfg.servoPress_ms   = jsonGetU16(doc["servos"]["press_ms"],      250);
+  gCfg.servoRelease_ms = jsonGetU16(doc["servos"]["release_ms"],    250);
+  gCfg.servoPause_ms   = jsonGetU16(doc["servos"]["pause_ms"],      250);
+
   for (uint8_t i = 0; i < POS_COUNT; i++) gCfg.positions[i] = 0;
   if (doc["positions"].is<JsonArrayConst>()) {
     JsonArrayConst arr = doc["positions"].as<JsonArrayConst>();
@@ -273,6 +316,17 @@ bool saveConfig() {
   doc["logic"]["en_active_high"]   = gCfg.enActiveHigh;
   doc["logic"]["dir_active_high"]  = gCfg.dirActiveHigh;
   doc["logic"]["step_active_high"] = gCfg.stepActiveHigh;
+
+  // Servo config
+  doc["servos"]["top"]["pin"]    = gCfg.servoTopPin;
+  doc["servos"]["top"]["min_us"] = gCfg.servoTopMin;
+  doc["servos"]["top"]["max_us"] = gCfg.servoTopMax;
+  doc["servos"]["bot"]["pin"]    = gCfg.servoBotPin;
+  doc["servos"]["bot"]["min_us"] = gCfg.servoBotMin;
+  doc["servos"]["bot"]["max_us"] = gCfg.servoBotMax;
+  doc["servos"]["press_ms"]      = gCfg.servoPress_ms;
+  doc["servos"]["release_ms"]    = gCfg.servoRelease_ms;
+  doc["servos"]["pause_ms"]      = gCfg.servoPause_ms;
 
   JsonArray pos = doc["positions"].to<JsonArray>();
   for (uint8_t i = 0; i < POS_COUNT; i++) pos.add(gCfg.positions[i]);
@@ -432,6 +486,54 @@ static inline uint8_t atomicReadU8(volatile uint8_t& v) {
 }
 
 void clearStop() { stopRequested = false; }
+
+// ============================================================
+// Servo helpers
+// ============================================================
+static inline uint16_t clampServoUs(uint16_t us) {
+  if (us < SERVO_US_MIN_CLAMP) return SERVO_US_MIN_CLAMP;
+  if (us > SERVO_US_MAX_CLAMP) return SERVO_US_MAX_CLAMP;
+  return us;
+}
+
+static void servoWriteUs(Servo& sv, uint8_t pin, uint16_t us) {
+  us = clampServoUs(us);
+  if (!sv.attached()) sv.attach(pin, SERVO_US_MIN_CLAMP, SERVO_US_MAX_CLAMP);
+  sv.writeMicroseconds(us);
+}
+
+static void servoClick(Servo& sv, uint8_t pin, uint16_t minUs, uint16_t maxUs, uint8_t n) {
+  minUs = clampServoUs(minUs);
+  maxUs = clampServoUs(maxUs);
+  if (n == 0) n = 1;
+  if (n > 50) n = 50;
+  if (!sv.attached()) sv.attach(pin, SERVO_US_MIN_CLAMP, SERVO_US_MAX_CLAMP);
+
+  for (uint8_t i = 0; i < n; i++) {
+    // Press (move to max_us)
+    sv.writeMicroseconds(maxUs);
+    uint32_t t0 = millis();
+    while ((uint32_t)(millis() - t0) < gCfg.servoPress_ms) {
+      serviceBackground();
+      yield();
+    }
+    // Release (move to min_us)
+    sv.writeMicroseconds(minUs);
+    t0 = millis();
+    while ((uint32_t)(millis() - t0) < gCfg.servoRelease_ms) {
+      serviceBackground();
+      yield();
+    }
+    // Pause between clicks (skip after last click)
+    if (i < (uint8_t)(n - 1)) {
+      t0 = millis();
+      while ((uint32_t)(millis() - t0) < gCfg.servoPause_ms) {
+        serviceBackground();
+        yield();
+      }
+    }
+  }
+}
 
 // ============================================================
 // WiFi/MQTT helpers
@@ -707,6 +809,7 @@ String htmlHeader(const __FlashStringHelper* pageTitle) {
          ".home{background:#cde7ff;}"
          ".go{background:#c8f7c5;}"
          ".test{background:#ffe08a;}"
+         ".save{background:#1565c0;color:white;border:none;}"
          ".nav{display:flex;gap:12px;margin:8px 0 16px 0}"
          "table{border-collapse:collapse;width:100%}"
          "td,th{border:1px solid #eee;padding:6px;text-align:left;vertical-align:top}"
@@ -856,7 +959,7 @@ static void appendBoolSelect(String& s, const char* name, bool val, const __Flas
 
 String htmlConfig() {
   String s;
-  s.reserve(32000);
+  s.reserve(40000);
 
   s += htmlHeader(F("Config"));
   s += F("<h2>");
@@ -870,6 +973,11 @@ String htmlConfig() {
   s += F("<div class='card'>"
          "<form method='POST' action='/config/save'>");
 
+  // ---- Save button at the TOP ----
+  s += F("<div class='row' style='margin-bottom:12px'>"
+         "<button type='submit' class='save'>&#128190; Save config</button>"
+         "</div>");
+
   s += F("<div class='row'><label>WiFi SSID</label><input name='ssid' required value='");
   s += htmlEscape(gCfg.wifiSsid);
   s += F("'></div>");
@@ -878,7 +986,7 @@ String htmlConfig() {
   s += htmlEscape(gCfg.wifiPass);
   s += F("'></div>");
 
-  s += F("<div class='row'><label>Axis</label><select name='axis'>");
+  s += F("<div class='row'><label>Axis</label><select name='axis' id='axisSelect'>");
   s += (gCfg.axis == AXIS_V) ? F("<option value='V' selected>Vertical (V)</option>") : F("<option value='V'>Vertical (V)</option>");
   s += (gCfg.axis == AXIS_H) ? F("<option value='H' selected>Horizontal (H)</option>") : F("<option value='H'>Horizontal (H)</option>");
   s += F("</select></div>");
@@ -925,6 +1033,80 @@ String htmlConfig() {
 
   s += F("</div>");
 
+  // ---- Servo config (shown only when Horizontal axis) ----
+  s += F("<div class='card' id='servoCard'");
+  if (gCfg.axis != AXIS_H) s += F(" style='display:none'");
+  s += F("><h3>Button Servos (Horizontal mode)</h3>");
+
+  // Top Button Servo
+  s += F("<h4>Top Button Servo</h4>");
+  s += F("<div class='row'><label>Pin</label><select name='sv_top_pin'>");
+  appendPinOptions(s, gCfg.servoTopPin);
+  s += F("</select></div>");
+  s += F("<div class='row'><label>Min &micro;s (release)</label>"
+         "<input name='sv_top_min' type='number' min='400' max='2600' step='10' value='");
+  s += String(gCfg.servoTopMin);
+  s += F("'></div>");
+  s += F("<div class='row'><label>Max &micro;s (press)</label>"
+         "<input name='sv_top_max' type='number' min='400' max='2600' step='10' value='");
+  s += String(gCfg.servoTopMax);
+  s += F("'></div>");
+
+  // Bottom Button Servo
+  s += F("<h4>Bottom Button Servo</h4>");
+  s += F("<div class='row'><label>Pin</label><select name='sv_bot_pin'>");
+  appendPinOptions(s, gCfg.servoBotPin);
+  s += F("</select></div>");
+  s += F("<div class='row'><label>Min &micro;s (release)</label>"
+         "<input name='sv_bot_min' type='number' min='400' max='2600' step='10' value='");
+  s += String(gCfg.servoBotMin);
+  s += F("'></div>");
+  s += F("<div class='row'><label>Max &micro;s (press)</label>"
+         "<input name='sv_bot_max' type='number' min='400' max='2600' step='10' value='");
+  s += String(gCfg.servoBotMax);
+  s += F("'></div>");
+
+  // Servo timing
+  s += F("<h4>Click timing</h4>");
+  s += F("<div class='row'><label>Press hold (ms)</label>"
+         "<input name='sv_press_ms' type='number' min='50' max='5000' step='50' value='");
+  s += String(gCfg.servoPress_ms);
+  s += F("'></div>");
+  s += F("<div class='row'><label>Release hold (ms)</label>"
+         "<input name='sv_release_ms' type='number' min='50' max='5000' step='50' value='");
+  s += String(gCfg.servoRelease_ms);
+  s += F("'></div>");
+  s += F("<div class='row'><label>Pause between clicks (ms)</label>"
+         "<input name='sv_pause_ms' type='number' min='50' max='5000' step='50' value='");
+  s += String(gCfg.servoPause_ms);
+  s += F("'></div>");
+
+  // Servo test buttons
+  s += F("<div class='card'><h3>Servo test</h3>");
+  s += F("<p><strong>Top Servo:</strong></p>");
+  s += F("<div class='row'>"
+         "<button type='button' onclick=\"svTest('/servo/top/min')\">Top MIN</button>"
+         "<button type='button' onclick=\"svTest('/servo/top/max')\">Top MAX</button>"
+         "<button type='button' onclick=\"svTest('/servo/top/click?n=1')\">Top &times;1</button>"
+         "<button type='button' onclick=\"svTest('/servo/top/click?n=3')\">Top &times;3</button>"
+         "<button type='button' onclick=\"svTest('/servo/top/click?n=4')\">Top &times;4</button>"
+         "<button type='button' onclick=\"svTest('/servo/top/click?n=9')\">Top &times;9</button>"
+         "<button type='button' onclick=\"svTest('/servo/top/click?n=13')\">Top &times;13</button>"
+         "</div>");
+  s += F("<p><strong>Bottom Servo:</strong></p>");
+  s += F("<div class='row'>"
+         "<button type='button' onclick=\"svTest('/servo/bot/min')\">Bot MIN</button>"
+         "<button type='button' onclick=\"svTest('/servo/bot/max')\">Bot MAX</button>"
+         "<button type='button' onclick=\"svTest('/servo/bot/click?n=1')\">Bot &times;1</button>"
+         "<button type='button' onclick=\"svTest('/servo/bot/click?n=3')\">Bot &times;3</button>"
+         "<button type='button' onclick=\"svTest('/servo/bot/click?n=4')\">Bot &times;4</button>"
+         "<button type='button' onclick=\"svTest('/servo/bot/click?n=9')\">Bot &times;9</button>"
+         "<button type='button' onclick=\"svTest('/servo/bot/click?n=13')\">Bot &times;13</button>"
+         "</div>");
+  s += F("<pre id='svtest' style='margin-top:10px'>Servo test output...</pre></div>");
+
+  s += F("</div>"); // end servoCard
+
   // Pin test buttons (requested)
   s += F("<div class='card'><h3>Pin test</h3>"
          "<div class='row'>"
@@ -968,9 +1150,26 @@ String htmlConfig() {
   }
   s += F("</table></div>");
 
-  s += F("<div class='row'><button type='submit'>Save to flash</button></div>"
+  // ---- Save button at the BOTTOM ----
+  s += F("<div class='row'><button type='submit' class='save'>&#128190; Save config</button></div>"
          "<p class='small'>After saving, device will reboot.</p>"
          "</form></div>");
+
+  // ---- Backup / Restore card (outside main form) ----
+  s += F("<div class='card'><h3>&#128462; Backup / Restore config</h3>"
+         "<div class='row'>"
+         "<a href='/config/download'>"
+         "<button type='button'>&#11015; Download config.json</button>"
+         "</a>"
+         "</div>"
+         "<div class='row' style='margin-top:12px'>"
+         "<form method='POST' action='/config/upload' enctype='multipart/form-data'>"
+         "<input type='file' name='file' accept='.json' required style='width:auto'>"
+         "<button type='submit'>&#11014; Upload &amp; Restore</button>"
+         "</form>"
+         "</div>"
+         "<div class='small' style='margin-top:6px'>Upload overwrites /config.json and reboots the device.</div>"
+         "</div>");
 
   s += F("<script>"
          "async function doTest(url){"
@@ -978,6 +1177,16 @@ String htmlConfig() {
          "  t.textContent='Running '+url+' ...';"
          "  try{ t.textContent=await (await fetch(url)).text(); }catch(e){ t.textContent='ERR '+e; }"
          "}"
+         "async function svTest(url){"
+         "  const t=document.getElementById('svtest');"
+         "  t.textContent='Running '+url+' ...';"
+         "  try{ t.textContent=await (await fetch(url)).text(); }catch(e){ t.textContent='ERR '+e; }"
+         "}"
+         "function updateServoVis(){"
+         "  var ax=document.getElementById('axisSelect').value;"
+         "  document.getElementById('servoCard').style.display=(ax==='H')?'':'none';"
+         "}"
+         "document.getElementById('axisSelect').addEventListener('change',updateServoVis);"
          "</script>");
 
   s += F("</body></html>");
@@ -1016,6 +1225,17 @@ void handleConfigSave() {
   gCfg.dirActiveHigh  = server.arg("dir_ah").toInt() == 1;
   gCfg.stepActiveHigh = server.arg("step_ah").toInt() == 1;
 
+  // Servo params (always save so they persist regardless of current axis)
+  if (server.hasArg("sv_top_pin"))    gCfg.servoTopPin     = (uint8_t)server.arg("sv_top_pin").toInt();
+  if (server.hasArg("sv_top_min"))    gCfg.servoTopMin     = clampServoUs((uint16_t)server.arg("sv_top_min").toInt());
+  if (server.hasArg("sv_top_max"))    gCfg.servoTopMax     = clampServoUs((uint16_t)server.arg("sv_top_max").toInt());
+  if (server.hasArg("sv_bot_pin"))    gCfg.servoBotPin     = (uint8_t)server.arg("sv_bot_pin").toInt();
+  if (server.hasArg("sv_bot_min"))    gCfg.servoBotMin     = clampServoUs((uint16_t)server.arg("sv_bot_min").toInt());
+  if (server.hasArg("sv_bot_max"))    gCfg.servoBotMax     = clampServoUs((uint16_t)server.arg("sv_bot_max").toInt());
+  if (server.hasArg("sv_press_ms"))   gCfg.servoPress_ms   = (uint16_t)max(50, min(5000, (int)server.arg("sv_press_ms").toInt()));
+  if (server.hasArg("sv_release_ms")) gCfg.servoRelease_ms = (uint16_t)max(50, min(5000, (int)server.arg("sv_release_ms").toInt()));
+  if (server.hasArg("sv_pause_ms"))   gCfg.servoPause_ms   = (uint16_t)max(50, min(5000, (int)server.arg("sv_pause_ms").toInt()));
+
   for (uint8_t i = 1; i <= POS_COUNT; i++) {
     String k = String("pos_") + String(i);
     if (server.hasArg(k)) gCfg.positions[i - 1] = server.arg(k).toInt();
@@ -1036,8 +1256,77 @@ void handleConfigSave() {
             "<style>body{font-family:system-ui,Arial;margin:16px} .muted{color:#666}</style>"
             "</head><body>");
   page += F("<h3>Saved.</h3>");
-  page += F("<p>Rebooting in <span id='sec'>5</span> seconds…</p>");
+  page += F("<p>Rebooting in <span id='sec'>5</span> seconds&#8230;</p>");
   page += F("<p class='muted'>If you changed WiFi/axis, the IP/hostname may change after reboot.</p>");
+  page += F("<script>"
+            "let n=5;"
+            "const el=document.getElementById('sec');"
+            "const t=setInterval(()=>{n--; el.textContent=String(n); if(n<=0){clearInterval(t);}},1000);"
+            "setTimeout(()=>{ window.location.href='/'; }, 5000);"
+            "</script>");
+  page += F("</body></html>");
+
+  server.send(200, "text/html; charset=utf-8", page);
+  delay(5000);
+  ESP.restart();
+}
+
+// ---- Config Download ----
+void handleConfigDownload() {
+  if (!LittleFS.exists(CONFIG_PATH)) {
+    server.send(404, "text/plain; charset=utf-8", "No config file found");
+    return;
+  }
+  File f = LittleFS.open(CONFIG_PATH, "r");
+  if (!f) {
+    server.send(500, "text/plain; charset=utf-8", "Cannot open config");
+    return;
+  }
+  server.sendHeader("Content-Disposition", "attachment; filename=\"config.json\"");
+  server.streamFile(f, "application/json");
+  f.close();
+}
+
+// ---- Config Upload ----
+static File gUploadFile;
+
+void handleConfigUploadFile() {
+  HTTPUpload& upload = server.upload();
+  if (upload.status == UPLOAD_FILE_START) {
+    gUploadFile = LittleFS.open(CONFIG_PATH, "w");
+  } else if (upload.status == UPLOAD_FILE_WRITE) {
+    if (gUploadFile) gUploadFile.write(upload.buf, upload.currentSize);
+  } else if (upload.status == UPLOAD_FILE_END) {
+    if (gUploadFile) gUploadFile.close();
+  }
+}
+
+void handleConfigUploadDone() {
+  // Verify uploaded file contains valid JSON
+  File f = LittleFS.open(CONFIG_PATH, "r");
+  if (!f) {
+    server.send(500, "text/plain; charset=utf-8", "Upload failed: cannot re-open file");
+    return;
+  }
+  JsonDocument doc;
+  DeserializationError err = deserializeJson(doc, f);
+  f.close();
+  if (err) {
+    LittleFS.remove(CONFIG_PATH);
+    server.send(400, "text/plain; charset=utf-8",
+                String("Invalid JSON: ") + err.c_str() + ". File removed.");
+    return;
+  }
+
+  String page;
+  page.reserve(1000);
+  page += F("<!doctype html><html><head><meta charset='utf-8'>"
+            "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+            "<title>Restored</title>"
+            "<style>body{font-family:system-ui,Arial;margin:16px}</style>"
+            "</head><body>");
+  page += F("<h3>Config restored.</h3>"
+            "<p>Rebooting in <span id='sec'>5</span> seconds&#8230;</p>");
   page += F("<script>"
             "let n=5;"
             "const el=document.getElementById('sec');"
@@ -1135,6 +1424,53 @@ void handlePinStep() {
                                             " (pulse " + (gCfg.stepActiveHigh ? "HIGH->LOW" : "LOW->HIGH") + ")");
 }
 
+// ---- Servo endpoints ----
+void handleServoTopMin() {
+  if (gCfg.axis != AXIS_H) { server.send(400, "text/plain; charset=utf-8", "Servo only in H mode"); return; }
+  servoWriteUs(gServoTop, gCfg.servoTopPin, gCfg.servoTopMin);
+  server.send(200, "text/plain; charset=utf-8",
+              String("OK top MIN ") + gCfg.servoTopMin + F("us on GPIO") + gCfg.servoTopPin);
+}
+
+void handleServoTopMax() {
+  if (gCfg.axis != AXIS_H) { server.send(400, "text/plain; charset=utf-8", "Servo only in H mode"); return; }
+  servoWriteUs(gServoTop, gCfg.servoTopPin, gCfg.servoTopMax);
+  server.send(200, "text/plain; charset=utf-8",
+              String("OK top MAX ") + gCfg.servoTopMax + F("us on GPIO") + gCfg.servoTopPin);
+}
+
+void handleServoTopClick() {
+  if (gCfg.axis != AXIS_H) { server.send(400, "text/plain; charset=utf-8", "Servo only in H mode"); return; }
+  int n = server.hasArg("n") ? server.arg("n").toInt() : 1;
+  if (n < 1) n = 1;
+  if (n > 50) n = 50;
+  servoClick(gServoTop, gCfg.servoTopPin, gCfg.servoTopMin, gCfg.servoTopMax, (uint8_t)n);
+  server.send(200, "text/plain; charset=utf-8", String("OK top click x") + n);
+}
+
+void handleServoBotMin() {
+  if (gCfg.axis != AXIS_H) { server.send(400, "text/plain; charset=utf-8", "Servo only in H mode"); return; }
+  servoWriteUs(gServoBot, gCfg.servoBotPin, gCfg.servoBotMin);
+  server.send(200, "text/plain; charset=utf-8",
+              String("OK bot MIN ") + gCfg.servoBotMin + F("us on GPIO") + gCfg.servoBotPin);
+}
+
+void handleServoBotMax() {
+  if (gCfg.axis != AXIS_H) { server.send(400, "text/plain; charset=utf-8", "Servo only in H mode"); return; }
+  servoWriteUs(gServoBot, gCfg.servoBotPin, gCfg.servoBotMax);
+  server.send(200, "text/plain; charset=utf-8",
+              String("OK bot MAX ") + gCfg.servoBotMax + F("us on GPIO") + gCfg.servoBotPin);
+}
+
+void handleServoBotClick() {
+  if (gCfg.axis != AXIS_H) { server.send(400, "text/plain; charset=utf-8", "Servo only in H mode"); return; }
+  int n = server.hasArg("n") ? server.arg("n").toInt() : 1;
+  if (n < 1) n = 1;
+  if (n > 50) n = 50;
+  servoClick(gServoBot, gCfg.servoBotPin, gCfg.servoBotMin, gCfg.servoBotMax, (uint8_t)n);
+  server.send(200, "text/plain; charset=utf-8", String("OK bot click x") + n);
+}
+
 // ============================================================
 // MQTT
 // ============================================================
@@ -1215,6 +1551,8 @@ void setup() {
   server.on("/status", handleStatus);
   server.on("/config", handleConfig);
   server.on("/config/save", HTTP_POST, handleConfigSave);
+  server.on("/config/download", HTTP_GET, handleConfigDownload);
+  server.on("/config/upload", HTTP_POST, handleConfigUploadDone, handleConfigUploadFile);
   server.on("/stop", handleStop);
   server.on("/home", handleHome);
   server.on("/move", handleMove);
@@ -1225,6 +1563,14 @@ void setup() {
   server.on("/pin/en", handlePinEn);
   server.on("/pin/dir", handlePinDir);
   server.on("/pin/step", handlePinStep);
+
+  // servo endpoints (horizontal mode)
+  server.on("/servo/top/min",   handleServoTopMin);
+  server.on("/servo/top/max",   handleServoTopMax);
+  server.on("/servo/top/click", handleServoTopClick);
+  server.on("/servo/bot/min",   handleServoBotMin);
+  server.on("/servo/bot/max",   handleServoBotMax);
+  server.on("/servo/bot/click", handleServoBotClick);
 
   server.begin();
 
