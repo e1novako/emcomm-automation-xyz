@@ -594,28 +594,44 @@ static void handleSave() {
         return server.hasArg(name) ? server.arg(name) : "";
     };
 
-    if (server.hasArg("ssid"))
+    if (server.hasArg("ssid")) {
         strncpy(gCfg.ssid, arg("ssid").c_str(), sizeof(gCfg.ssid) - 1);
-    if (server.hasArg("password"))
+        gCfg.ssid[sizeof(gCfg.ssid) - 1] = '\0';
+    }
+    if (server.hasArg("password")) {
         strncpy(gCfg.password, arg("password").c_str(), sizeof(gCfg.password) - 1);
+        gCfg.password[sizeof(gCfg.password) - 1] = '\0';
+    }
 
     if (server.hasArg("en_pin"))   gCfg.enPin   = (uint8_t)arg("en_pin").toInt();
     if (server.hasArg("step_pin")) gCfg.stepPin = (uint8_t)arg("step_pin").toInt();
     if (server.hasArg("dir_pin"))  gCfg.dirPin  = (uint8_t)arg("dir_pin").toInt();
 
-    if (server.hasArg("en_label"))
+    if (server.hasArg("en_label")) {
         strncpy(gCfg.enLabel, arg("en_label").c_str(), sizeof(gCfg.enLabel) - 1);
-    if (server.hasArg("step_label"))
+        gCfg.enLabel[sizeof(gCfg.enLabel) - 1] = '\0';
+    }
+    if (server.hasArg("step_label")) {
         strncpy(gCfg.stepLabel, arg("step_label").c_str(), sizeof(gCfg.stepLabel) - 1);
-    if (server.hasArg("dir_label"))
+        gCfg.stepLabel[sizeof(gCfg.stepLabel) - 1] = '\0';
+    }
+    if (server.hasArg("dir_label")) {
         strncpy(gCfg.dirLabel, arg("dir_label").c_str(), sizeof(gCfg.dirLabel) - 1);
+        gCfg.dirLabel[sizeof(gCfg.dirLabel) - 1] = '\0';
+    }
 
-    if (server.hasArg("en_color"))
+    if (server.hasArg("en_color")) {
         strncpy(gCfg.enColor, arg("en_color").c_str(), sizeof(gCfg.enColor) - 1);
-    if (server.hasArg("step_color"))
+        gCfg.enColor[sizeof(gCfg.enColor) - 1] = '\0';
+    }
+    if (server.hasArg("step_color")) {
         strncpy(gCfg.stepColor, arg("step_color").c_str(), sizeof(gCfg.stepColor) - 1);
-    if (server.hasArg("dir_color"))
+        gCfg.stepColor[sizeof(gCfg.stepColor) - 1] = '\0';
+    }
+    if (server.hasArg("dir_color")) {
         strncpy(gCfg.dirColor, arg("dir_color").c_str(), sizeof(gCfg.dirColor) - 1);
+        gCfg.dirColor[sizeof(gCfg.dirColor) - 1] = '\0';
+    }
 
     gCfg.enActiveHigh   = server.hasArg("en_active")   && arg("en_active")   == "1";
     gCfg.stepActiveHigh = server.hasArg("step_active") && arg("step_active") == "1";

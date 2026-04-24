@@ -27,13 +27,13 @@ ESP8266 (NodeMCU) firmware that exposes a responsive web UI for controlling a st
 | POST | `/save` | Save configuration |
 | GET | `/backup` | Download `config.json` |
 | POST | `/restore` | Upload & restore `config.json` |
-| GET | `/test/en?state=0\|1` | Force EN pin low/high |
-| GET | `/test/step?state=0\|1` | Force STEP pin low/high |
-| GET | `/test/dir?state=0\|1` | Force DIR pin low/high |
+| GET | `/test/en?state=0 or 1` | Force EN pin low/high |
+| GET | `/test/step?state=0 or 1` | Force STEP pin low/high |
+| GET | `/test/dir?state=0 or 1` | Force DIR pin low/high |
 | GET | `/servo/top?clicks=N` | Click Top button N times (1–50) |
 | GET | `/servo/bottom?clicks=N` | Click Bottom button N times (1–50) |
-| GET | `/servo/top?pos=min\|max` | Move Top servo to MIN or MAX position (test) |
-| GET | `/servo/bottom?pos=min\|max` | Move Bottom servo to MIN or MAX position (test) |
+| GET | `/servo/top?pos=min or max` | Move Top servo to MIN or MAX position (test) |
+| GET | `/servo/bottom?pos=min or max` | Move Bottom servo to MIN or MAX position (test) |
 
 ## Build & Upload
 
