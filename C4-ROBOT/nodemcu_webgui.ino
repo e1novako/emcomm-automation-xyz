@@ -10,7 +10,7 @@
 // ============================================================
 // Firmware version
 // ============================================================
-static const char* FW_VERSION = "0.90";
+static const char* FW_VERSION = "0.91";
 
 // ============================================================
 // Persistent config (LittleFS + JSON)
@@ -55,14 +55,22 @@ struct AppConfig {
 
   // Servo button (Horizontal mode only)
   uint8_t  servoTopPin        = 14;   // D5
-  uint16_t servoTopMinUs      = 600;
-  uint16_t servoTopApproachUs = 1600;
-  uint16_t servoTopMaxUs      = 2400;
+  uint16_t servoTopMinUs      = 600;  // hardware calibration: pulse at 0°
+  uint16_t servoTopMaxUs      = 2400; // hardware calibration: pulse at 180°
+
+  // Angle-based positions (degrees 0-180)
+  uint8_t  servoTopMinDeg      = 0;   // idle / rest
+  uint8_t  servoTopApproachDeg = 90;  // hover near button
+  uint8_t  servoTopMaxDeg      = 180; // full press
 
   uint8_t  servoBotPin        = 12;   // D6
-  uint16_t servoBotMinUs      = 600;
-  uint16_t servoBotApproachUs = 1600;
-  uint16_t servoBotMaxUs      = 2400;
+  uint16_t servoBotMinUs      = 600;  // hardware calibration: pulse at 0°
+  uint16_t servoBotMaxUs      = 2400; // hardware calibration: pulse at 180°
+
+  // Angle-based positions (degrees 0-180)
+  uint8_t  servoBotMinDeg      = 0;
+  uint8_t  servoBotApproachDeg = 90;
+  uint8_t  servoBotMaxDeg      = 180;
 
   // Shared click timing (ms)
   uint16_t clickApproachMs = 300;
@@ -115,13 +123,17 @@ static void setDefaults() {
 
   gCfg.servoTopPin        = 14;
   gCfg.servoTopMinUs      = 600;
-  gCfg.servoTopApproachUs = 1600;
   gCfg.servoTopMaxUs      = 2400;
+  gCfg.servoTopMinDeg      = 0;
+  gCfg.servoTopApproachDeg = 90;
+  gCfg.servoTopMaxDeg      = 180;
 
   gCfg.servoBotPin        = 12;
   gCfg.servoBotMinUs      = 600;
-  gCfg.servoBotApproachUs = 1600;
   gCfg.servoBotMaxUs      = 2400;
+  gCfg.servoBotMinDeg      = 0;
+  gCfg.servoBotApproachDeg = 90;
+  gCfg.servoBotMaxDeg      = 180;
 
   gCfg.clickApproachMs = 300;
   gCfg.clickPressMs    = 180;
@@ -275,15 +287,21 @@ bool loadConfig() {
   gCfg.stepActiveHigh = (bool)(doc["logic"]["step_active_high"] | true);
 
   // Servo fields (Horizontal mode)
-  gCfg.servoTopPin        = jsonGetU8 (doc["servo"]["top"]["pin"],        14);
-  gCfg.servoTopMinUs      = jsonGetU16(doc["servo"]["top"]["min_us"],     600);
-  gCfg.servoTopApproachUs = jsonGetU16(doc["servo"]["top"]["approach_us"],1600);
-  gCfg.servoTopMaxUs      = jsonGetU16(doc["servo"]["top"]["max_us"],     2400);
+  gCfg.servoTopPin    = jsonGetU8 (doc["servo"]["top"]["pin"],    14);
+  gCfg.servoTopMinUs  = jsonGetU16(doc["servo"]["top"]["min_us"], 600);
+  gCfg.servoTopMaxUs  = jsonGetU16(doc["servo"]["top"]["max_us"], 2400);
 
-  gCfg.servoBotPin        = jsonGetU8 (doc["servo"]["bottom"]["pin"],        12);
-  gCfg.servoBotMinUs      = jsonGetU16(doc["servo"]["bottom"]["min_us"],     600);
-  gCfg.servoBotApproachUs = jsonGetU16(doc["servo"]["bottom"]["approach_us"],1600);
-  gCfg.servoBotMaxUs      = jsonGetU16(doc["servo"]["bottom"]["max_us"],     2400);
+  gCfg.servoTopMinDeg      = jsonGetU8(doc["servo"]["top"]["min_deg"],      0);
+  gCfg.servoTopApproachDeg = jsonGetU8(doc["servo"]["top"]["approach_deg"], 90);
+  gCfg.servoTopMaxDeg      = jsonGetU8(doc["servo"]["top"]["max_deg"],      180);
+
+  gCfg.servoBotPin    = jsonGetU8 (doc["servo"]["bottom"]["pin"],    12);
+  gCfg.servoBotMinUs  = jsonGetU16(doc["servo"]["bottom"]["min_us"], 600);
+  gCfg.servoBotMaxUs  = jsonGetU16(doc["servo"]["bottom"]["max_us"], 2400);
+
+  gCfg.servoBotMinDeg      = jsonGetU8(doc["servo"]["bottom"]["min_deg"],      0);
+  gCfg.servoBotApproachDeg = jsonGetU8(doc["servo"]["bottom"]["approach_deg"], 90);
+  gCfg.servoBotMaxDeg      = jsonGetU8(doc["servo"]["bottom"]["max_deg"],      180);
 
   gCfg.clickApproachMs = jsonGetU16(doc["servo"]["timing"]["approach_ms"], 300);
   gCfg.clickPressMs    = jsonGetU16(doc["servo"]["timing"]["press_ms"],    180);
@@ -326,13 +344,17 @@ bool saveConfig() {
   // Servo fields
   doc["servo"]["top"]["pin"]         = gCfg.servoTopPin;
   doc["servo"]["top"]["min_us"]      = gCfg.servoTopMinUs;
-  doc["servo"]["top"]["approach_us"] = gCfg.servoTopApproachUs;
   doc["servo"]["top"]["max_us"]      = gCfg.servoTopMaxUs;
+  doc["servo"]["top"]["min_deg"]     = gCfg.servoTopMinDeg;
+  doc["servo"]["top"]["approach_deg"]= gCfg.servoTopApproachDeg;
+  doc["servo"]["top"]["max_deg"]     = gCfg.servoTopMaxDeg;
 
   doc["servo"]["bottom"]["pin"]         = gCfg.servoBotPin;
   doc["servo"]["bottom"]["min_us"]      = gCfg.servoBotMinUs;
-  doc["servo"]["bottom"]["approach_us"] = gCfg.servoBotApproachUs;
   doc["servo"]["bottom"]["max_us"]      = gCfg.servoBotMaxUs;
+  doc["servo"]["bottom"]["min_deg"]     = gCfg.servoBotMinDeg;
+  doc["servo"]["bottom"]["approach_deg"]= gCfg.servoBotApproachDeg;
+  doc["servo"]["bottom"]["max_deg"]     = gCfg.servoBotMaxDeg;
 
   doc["servo"]["timing"]["approach_ms"] = gCfg.clickApproachMs;
   doc["servo"]["timing"]["press_ms"]    = gCfg.clickPressMs;
@@ -473,30 +495,46 @@ static inline uint16_t clampServoUs(int v) {
   return (uint16_t)v;
 }
 
+// Map angle in degrees (0-180) linearly to the calibrated µs range.
+static inline uint16_t degToUs(uint8_t deg, uint16_t minUs, uint16_t maxUs) {
+  if (deg > 180) deg = 180;
+  return clampServoUs((int)minUs + (int)((uint32_t)(maxUs - minUs) * deg / 180));
+}
+
 static void servoAttachIfNeeded(Servo& sv, uint8_t pin) {
   if (!sv.attached()) sv.attach(pin);
+}
+
+// Write a specific angle (degrees) to a servo using the calibrated µs range.
+static void servoWriteDeg(Servo& sv, uint8_t pin,
+                          uint8_t deg,
+                          uint16_t minUs, uint16_t maxUs) {
+  servoAttachIfNeeded(sv, pin);
+  sv.writeMicroseconds(degToUs(deg, minUs, maxUs));
 }
 
 static void servoInit() {
   if (gCfg.axis != AXIS_H) return;
   servoAttachIfNeeded(gServoTop, gCfg.servoTopPin);
-  gServoTop.writeMicroseconds(gCfg.servoTopMinUs);
+  gServoTop.writeMicroseconds(degToUs(gCfg.servoTopMinDeg, gCfg.servoTopMinUs, gCfg.servoTopMaxUs));
   servoAttachIfNeeded(gServoBot, gCfg.servoBotPin);
-  gServoBot.writeMicroseconds(gCfg.servoBotMinUs);
+  gServoBot.writeMicroseconds(degToUs(gCfg.servoBotMinDeg, gCfg.servoBotMinUs, gCfg.servoBotMaxUs));
 }
 
-// Move servo to a named position: "min", "approach", "max"
-// Returns false if name unknown
+// Move servo to a named position: "min", "approach", "max".
+// Angles come from the degree config; µs calibration is applied via degToUs.
+// Returns false if name unknown.
 static bool servoMoveToPos(Servo& sv, uint8_t pin,
-                           uint16_t minUs, uint16_t approachUs, uint16_t maxUs,
+                           uint8_t minDeg, uint8_t approachDeg, uint8_t maxDeg,
+                           uint16_t minUs, uint16_t maxUs,
                            const String& posName) {
   servoAttachIfNeeded(sv, pin);
   if (posName == "min") {
-    sv.writeMicroseconds(clampServoUs(minUs));
+    sv.writeMicroseconds(degToUs(minDeg, minUs, maxUs));
   } else if (posName == "approach") {
-    sv.writeMicroseconds(clampServoUs(approachUs));
+    sv.writeMicroseconds(degToUs(approachDeg, minUs, maxUs));
   } else if (posName == "max") {
-    sv.writeMicroseconds(clampServoUs(maxUs));
+    sv.writeMicroseconds(degToUs(maxDeg, minUs, maxUs));
   } else {
     return false;
   }
@@ -504,23 +542,25 @@ static bool servoMoveToPos(Servo& sv, uint8_t pin,
 }
 
 // Human-like N-click sequence: MIN → APPROACH → (MAX→APPROACH)×N → MIN
+// All positions expressed in degrees; converted to µs via calibration.
 static void servoClick(Servo& sv, uint8_t pin,
-                       uint16_t minUs, uint16_t approachUs, uint16_t maxUs,
+                       uint8_t minDeg, uint8_t approachDeg, uint8_t maxDeg,
+                       uint16_t minUs, uint16_t maxUs,
                        uint8_t n) {
   if (n < 1) n = 1;
   if (n > SERVO_CLICKS_MAX) n = SERVO_CLICKS_MAX;
   servoAttachIfNeeded(sv, pin);
-  sv.writeMicroseconds(clampServoUs(minUs));
+  sv.writeMicroseconds(degToUs(minDeg, minUs, maxUs));
   waitMs(20);
-  sv.writeMicroseconds(clampServoUs(approachUs));
+  sv.writeMicroseconds(degToUs(approachDeg, minUs, maxUs));
   waitMs(gCfg.clickApproachMs);
   for (uint8_t i = 0; i < n; i++) {
-    sv.writeMicroseconds(clampServoUs(maxUs));
+    sv.writeMicroseconds(degToUs(maxDeg, minUs, maxUs));
     waitMs(gCfg.clickPressMs);
-    sv.writeMicroseconds(clampServoUs(approachUs));
+    sv.writeMicroseconds(degToUs(approachDeg, minUs, maxUs));
     if (i < n - 1) waitMs(gCfg.clickBetweenMs);
   }
-  sv.writeMicroseconds(clampServoUs(minUs));
+  sv.writeMicroseconds(degToUs(minDeg, minUs, maxUs));
   waitMs(gCfg.clickReturnMs);
 }
 
@@ -1115,29 +1155,47 @@ String htmlConfig() {
 
   // ---- Servo config (Horizontal mode only) ----
   if (gCfg.axis == AXIS_H) {
-    s += F("<div class='card'><h3>Button Servos (Horizontal mode)</h3>");
+    s += F("<div class='card'><h3>Button Servos (Horizontal mode)</h3>"
+           "<p class='small'>Positions are specified in degrees (0-180). "
+           "Calibration (min/max µs) maps 0° and 180° to the physical pulse widths.</p>");
 
     // Top Button servo
     s += F("<h4>Top Button Servo</h4>");
     s += F("<div class='row'><label>Pin</label><select name='sv_top_pin'>");
     appendPinOptions(s, gCfg.servoTopPin);
     s += F("</select></div>");
-    s += F("<div class='row'><label>MIN idle (µs)</label>"
-           "<input name='sv_top_min' type='number' min='400' max='2600' step='10' value='");
+
+    s += F("<div class='row'><label>Calib MIN (µs, = 0°)</label>"
+           "<input name='sv_top_min_us' type='number' min='400' max='2600' step='10' value='");
     s += String(gCfg.servoTopMinUs);
     s += F("'></div>");
-    s += F("<div class='row'><label>APPROACH (µs)</label>"
-           "<input name='sv_top_approach' type='number' min='400' max='2600' step='10' value='");
-    s += String(gCfg.servoTopApproachUs);
-    s += F("'></div>");
-    s += F("<div class='row'><label>MAX press (µs)</label>"
-           "<input name='sv_top_max' type='number' min='400' max='2600' step='10' value='");
+    s += F("<div class='row'><label>Calib MAX (µs, = 180°)</label>"
+           "<input name='sv_top_max_us' type='number' min='400' max='2600' step='10' value='");
     s += String(gCfg.servoTopMaxUs);
     s += F("'></div>");
+
+    s += F("<div class='row'><label>MIN idle (°)</label>"
+           "<input name='sv_top_min_deg' type='number' min='0' max='180' step='1' value='");
+    s += String(gCfg.servoTopMinDeg);
+    s += F("'></div>");
+    s += F("<div class='row'><label>APPROACH (°)</label>"
+           "<input name='sv_top_approach_deg' type='number' min='0' max='180' step='1' value='");
+    s += String(gCfg.servoTopApproachDeg);
+    s += F("'></div>");
+    s += F("<div class='row'><label>MAX press (°)</label>"
+           "<input name='sv_top_max_deg' type='number' min='0' max='180' step='1' value='");
+    s += String(gCfg.servoTopMaxDeg);
+    s += F("'></div>");
+
     s += F("<div class='row'>"
            "<button type='button' onclick=\"doServo('/servo/top?pos=min')\">Top MIN</button>"
            "<button type='button' onclick=\"doServo('/servo/top?pos=approach')\">Top APPROACH</button>"
            "<button type='button' onclick=\"doServo('/servo/top?pos=max')\">Top MAX</button>"
+           "</div>"
+           "<div class='row'>"
+           "<label>Custom angle (°):</label>"
+           "<input id='topAngle' type='number' min='0' max='180' step='1' value='90' style='width:80px'>"
+           "<button type='button' onclick=\"doServo('/servo/top?angle='+document.getElementById('topAngle').value)\">Top GO</button>"
            "</div>"
            "<div class='row'>"
            "<button type='button' onclick=\"doServo('/servo/top?clicks=1')\">Top Click 1</button>"
@@ -1152,22 +1210,38 @@ String htmlConfig() {
     s += F("<div class='row'><label>Pin</label><select name='sv_bot_pin'>");
     appendPinOptions(s, gCfg.servoBotPin);
     s += F("</select></div>");
-    s += F("<div class='row'><label>MIN idle (µs)</label>"
-           "<input name='sv_bot_min' type='number' min='400' max='2600' step='10' value='");
+
+    s += F("<div class='row'><label>Calib MIN (µs, = 0°)</label>"
+           "<input name='sv_bot_min_us' type='number' min='400' max='2600' step='10' value='");
     s += String(gCfg.servoBotMinUs);
     s += F("'></div>");
-    s += F("<div class='row'><label>APPROACH (µs)</label>"
-           "<input name='sv_bot_approach' type='number' min='400' max='2600' step='10' value='");
-    s += String(gCfg.servoBotApproachUs);
-    s += F("'></div>");
-    s += F("<div class='row'><label>MAX press (µs)</label>"
-           "<input name='sv_bot_max' type='number' min='400' max='2600' step='10' value='");
+    s += F("<div class='row'><label>Calib MAX (µs, = 180°)</label>"
+           "<input name='sv_bot_max_us' type='number' min='400' max='2600' step='10' value='");
     s += String(gCfg.servoBotMaxUs);
     s += F("'></div>");
+
+    s += F("<div class='row'><label>MIN idle (°)</label>"
+           "<input name='sv_bot_min_deg' type='number' min='0' max='180' step='1' value='");
+    s += String(gCfg.servoBotMinDeg);
+    s += F("'></div>");
+    s += F("<div class='row'><label>APPROACH (°)</label>"
+           "<input name='sv_bot_approach_deg' type='number' min='0' max='180' step='1' value='");
+    s += String(gCfg.servoBotApproachDeg);
+    s += F("'></div>");
+    s += F("<div class='row'><label>MAX press (°)</label>"
+           "<input name='sv_bot_max_deg' type='number' min='0' max='180' step='1' value='");
+    s += String(gCfg.servoBotMaxDeg);
+    s += F("'></div>");
+
     s += F("<div class='row'>"
            "<button type='button' onclick=\"doServo('/servo/bottom?pos=min')\">Bottom MIN</button>"
            "<button type='button' onclick=\"doServo('/servo/bottom?pos=approach')\">Bottom APPROACH</button>"
            "<button type='button' onclick=\"doServo('/servo/bottom?pos=max')\">Bottom MAX</button>"
+           "</div>"
+           "<div class='row'>"
+           "<label>Custom angle (°):</label>"
+           "<input id='botAngle' type='number' min='0' max='180' step='1' value='90' style='width:80px'>"
+           "<button type='button' onclick=\"doServo('/servo/bottom?angle='+document.getElementById('botAngle').value)\">Bottom GO</button>"
            "</div>"
            "<div class='row'>"
            "<button type='button' onclick=\"doServo('/servo/bottom?clicks=1')\">Bottom Click 1</button>"
@@ -1269,20 +1343,30 @@ void handleConfigSave() {
   gCfg.stepActiveHigh = server.arg("step_ah").toInt() == 1;
 
   // Servo fields (always saved; relevant only in H mode)
-  if (server.hasArg("sv_top_pin"))      gCfg.servoTopPin        = (uint8_t)server.arg("sv_top_pin").toInt();
-  if (server.hasArg("sv_top_min"))      gCfg.servoTopMinUs      = clampServoUs(server.arg("sv_top_min").toInt());
-  if (server.hasArg("sv_top_approach")) gCfg.servoTopApproachUs = clampServoUs(server.arg("sv_top_approach").toInt());
-  if (server.hasArg("sv_top_max"))      gCfg.servoTopMaxUs      = clampServoUs(server.arg("sv_top_max").toInt());
+  if (server.hasArg("sv_top_pin"))         gCfg.servoTopPin        = (uint8_t)server.arg("sv_top_pin").toInt();
+  if (server.hasArg("sv_top_min_us"))      gCfg.servoTopMinUs      = clampServoUs(server.arg("sv_top_min_us").toInt());
+  if (server.hasArg("sv_top_max_us"))      gCfg.servoTopMaxUs      = clampServoUs(server.arg("sv_top_max_us").toInt());
+  if (server.hasArg("sv_top_min_deg"))     gCfg.servoTopMinDeg     = (uint8_t)constrain(server.arg("sv_top_min_deg").toInt(), 0, 180);
+  if (server.hasArg("sv_top_approach_deg"))gCfg.servoTopApproachDeg= (uint8_t)constrain(server.arg("sv_top_approach_deg").toInt(), 0, 180);
+  if (server.hasArg("sv_top_max_deg"))     gCfg.servoTopMaxDeg     = (uint8_t)constrain(server.arg("sv_top_max_deg").toInt(), 0, 180);
 
-  if (server.hasArg("sv_bot_pin"))      gCfg.servoBotPin        = (uint8_t)server.arg("sv_bot_pin").toInt();
-  if (server.hasArg("sv_bot_min"))      gCfg.servoBotMinUs      = clampServoUs(server.arg("sv_bot_min").toInt());
-  if (server.hasArg("sv_bot_approach")) gCfg.servoBotApproachUs = clampServoUs(server.arg("sv_bot_approach").toInt());
-  if (server.hasArg("sv_bot_max"))      gCfg.servoBotMaxUs      = clampServoUs(server.arg("sv_bot_max").toInt());
+  if (server.hasArg("sv_bot_pin"))         gCfg.servoBotPin        = (uint8_t)server.arg("sv_bot_pin").toInt();
+  if (server.hasArg("sv_bot_min_us"))      gCfg.servoBotMinUs      = clampServoUs(server.arg("sv_bot_min_us").toInt());
+  if (server.hasArg("sv_bot_max_us"))      gCfg.servoBotMaxUs      = clampServoUs(server.arg("sv_bot_max_us").toInt());
+  if (server.hasArg("sv_bot_min_deg"))     gCfg.servoBotMinDeg     = (uint8_t)constrain(server.arg("sv_bot_min_deg").toInt(), 0, 180);
+  if (server.hasArg("sv_bot_approach_deg"))gCfg.servoBotApproachDeg= (uint8_t)constrain(server.arg("sv_bot_approach_deg").toInt(), 0, 180);
+  if (server.hasArg("sv_bot_max_deg"))     gCfg.servoBotMaxDeg     = (uint8_t)constrain(server.arg("sv_bot_max_deg").toInt(), 0, 180);
 
   if (server.hasArg("sv_approach_ms")) gCfg.clickApproachMs = (uint16_t)server.arg("sv_approach_ms").toInt();
   if (server.hasArg("sv_press_ms"))    gCfg.clickPressMs    = (uint16_t)server.arg("sv_press_ms").toInt();
   if (server.hasArg("sv_between_ms"))  gCfg.clickBetweenMs  = (uint16_t)server.arg("sv_between_ms").toInt();
   if (server.hasArg("sv_return_ms"))   gCfg.clickReturnMs   = (uint16_t)server.arg("sv_return_ms").toInt();
+
+  // Validate degree order: min <= approach <= max for each servo
+  if (gCfg.servoTopApproachDeg < gCfg.servoTopMinDeg) gCfg.servoTopApproachDeg = gCfg.servoTopMinDeg;
+  if (gCfg.servoTopMaxDeg      < gCfg.servoTopApproachDeg) gCfg.servoTopMaxDeg = gCfg.servoTopApproachDeg;
+  if (gCfg.servoBotApproachDeg < gCfg.servoBotMinDeg) gCfg.servoBotApproachDeg = gCfg.servoBotMinDeg;
+  if (gCfg.servoBotMaxDeg      < gCfg.servoBotApproachDeg) gCfg.servoBotMaxDeg = gCfg.servoBotApproachDeg;
 
   for (uint8_t i = 1; i <= POS_COUNT; i++) {
     String k = String("pos_") + String(i);
@@ -1478,15 +1562,27 @@ void handleConfigUploadChunk() {
 // Servo endpoints
 // ============================================================
 static void handleServoGeneric(Servo& sv, uint8_t pin,
-                               uint16_t minUs, uint16_t approachUs, uint16_t maxUs,
+                               uint8_t minDeg, uint8_t approachDeg, uint8_t maxDeg,
+                               uint16_t minUs, uint16_t maxUs,
                                const char* label) {
   if (gCfg.axis != AXIS_H) {
     server.send(409, "text/plain; charset=utf-8", "Servo available only in Horizontal mode");
     return;
   }
+  // Direct angle control: ?angle=<0-180>
+  if (server.hasArg("angle")) {
+    int deg = server.arg("angle").toInt();
+    if (deg < 0)   deg = 0;
+    if (deg > 180) deg = 180;
+    servoWriteDeg(sv, pin, (uint8_t)deg, minUs, maxUs);
+    server.send(200, "text/plain; charset=utf-8",
+                String("OK servo=") + label + " angle=" + deg + " deg"
+                + " (" + degToUs((uint8_t)deg, minUs, maxUs) + " us)");
+    return;
+  }
   if (server.hasArg("pos")) {
     String pos = server.arg("pos");
-    if (!servoMoveToPos(sv, pin, minUs, approachUs, maxUs, pos)) {
+    if (!servoMoveToPos(sv, pin, minDeg, approachDeg, maxDeg, minUs, maxUs, pos)) {
       server.send(400, "text/plain; charset=utf-8", "pos must be min|approach|max");
       return;
     }
@@ -1498,23 +1594,25 @@ static void handleServoGeneric(Servo& sv, uint8_t pin,
     int n = server.arg("clicks").toInt();
     if (n < 1) n = 1;
     if (n > SERVO_CLICKS_MAX) n = SERVO_CLICKS_MAX;
-    servoClick(sv, pin, minUs, approachUs, maxUs, (uint8_t)n);
+    servoClick(sv, pin, minDeg, approachDeg, maxDeg, minUs, maxUs, (uint8_t)n);
     server.send(200, "text/plain; charset=utf-8",
                 String("OK servo=") + label + " clicks=" + n);
     return;
   }
-  server.send(400, "text/plain; charset=utf-8", "Missing arg: pos or clicks");
+  server.send(400, "text/plain; charset=utf-8", "Missing arg: angle, pos, or clicks");
 }
 
 void handleServoTop() {
   handleServoGeneric(gServoTop, gCfg.servoTopPin,
-                     gCfg.servoTopMinUs, gCfg.servoTopApproachUs, gCfg.servoTopMaxUs,
+                     gCfg.servoTopMinDeg, gCfg.servoTopApproachDeg, gCfg.servoTopMaxDeg,
+                     gCfg.servoTopMinUs, gCfg.servoTopMaxUs,
                      "top");
 }
 
 void handleServoBottom() {
   handleServoGeneric(gServoBot, gCfg.servoBotPin,
-                     gCfg.servoBotMinUs, gCfg.servoBotApproachUs, gCfg.servoBotMaxUs,
+                     gCfg.servoBotMinDeg, gCfg.servoBotApproachDeg, gCfg.servoBotMaxDeg,
+                     gCfg.servoBotMinUs, gCfg.servoBotMaxUs,
                      "bottom");
 }
 // ============================================================
