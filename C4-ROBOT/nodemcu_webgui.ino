@@ -10,7 +10,7 @@
 // ============================================================
 // Firmware version
 // ============================================================
-static const char* FW_VERSION = "0.91";
+static const char* FW_VERSION = "0.92";
 
 // ============================================================
 // Persistent config (LittleFS + JSON)
@@ -401,6 +401,11 @@ String T_SPEED;
 String T_ACC;
 String T_STOP;
 String T_STATE;
+String T_EVENT;
+
+// Name of the command currently driving motion (set by each handler before
+// calling motion functions; used as the "command" field in event payloads).
+static String activeCommand = "";
 
 static const uint16_t STEP_PULSE_HIGH_US = 20;
 static const uint16_t STEP_PULSE_LOW_US  = 20;
@@ -644,6 +649,7 @@ void buildMqttTopics() {
   T_ACC   = mqttBase + "cmd/accel";
   T_STOP  = mqttBase + "cmd/stop";
   T_STATE = mqttBase + "state";
+  T_EVENT = mqttBase + "event";
 }
 
 // ============================================================
@@ -684,16 +690,22 @@ bool moveStepsAccel(long signedSteps) {
   delayMicroseconds(DIR_SETUP_US);
   setEnable(true);
 
+  // Publish motion_started event before the step loop.
+  // mqtt.publish() buffers the message; it is transmitted during the
+  // first serviceBackground() / mqtt.loop() call inside the loop.
+  publishEvent("motion_started", posSteps);
+
   float v = 0.0f;
   unsigned long doneAbs = 0;
   bool aborted = false;
+  bool endstopHit = false;
 
   for (long i = 0; i < stepsTotal; i++) {
     if (stopRequested) { aborted = true; break; }
-    if (bothEndstopsPressed()) { aborted = true; requestStop(); break; }
+    if (bothEndstopsPressed()) { aborted = true; endstopHit = true; requestStop(); break; }
 
-    if (!positive && endstopPressed(gCfg.pinEndBegin)) { posSteps = 0; aborted = true; break; }
-    if ( positive && endstopPressed(gCfg.pinEndEnd))   { aborted = true; break; }
+    if (!positive && endstopPressed(gCfg.pinEndBegin)) { posSteps = 0; aborted = true; endstopHit = true; break; }
+    if ( positive && endstopPressed(gCfg.pinEndEnd))   { aborted = true; endstopHit = true; break; }
 
     long remaining = stepsTotal - i;
     float dStop = (v * v) / (2.0f * a);
@@ -727,6 +739,9 @@ bool moveStepsAccel(long signedSteps) {
 
   isMoving = false;
   ledSet(false);
+
+  // Publish endstop_reached event after motion has stopped.
+  if (endstopHit) publishEvent("endstop_reached", posSteps);
 
   return (!aborted && (doneAbs == (unsigned long)stepsTotal));
 }
@@ -773,6 +788,7 @@ static bool waitWithService(uint32_t ms) {
   return true;
 }
 static bool moveToEndstop(bool toEnd) {
+  activeCommand = String("test:") + (toEnd ? "end" : "begin");
   if (toEnd) {
     if (endstopPressed(gCfg.pinEndEnd)) return true;
     return moveStepsAccel(+HOME_STEPS);
@@ -865,6 +881,46 @@ void publishState() {
   if (!mqtt.connected()) return;
   String st = statusText();
   mqtt.publish(T_STATE.c_str(), st.c_str(), true);
+}
+
+// ============================================================
+// MQTT event publishing (motion_started / endstop_reached)
+// ============================================================
+
+// Returns an ISO-8601 UTC timestamp string.
+// Falls back to a millis()-based string when NTP is not yet synced.
+static String isoTimestamp() {
+  time_t now = time(nullptr);
+  if (now < 1000000000UL) {
+    char buf[24];
+    snprintf(buf, sizeof(buf), "T+%lums", millis());
+    return String(buf);
+  }
+  char buf[25];
+  struct tm* t = gmtime(&now);
+  strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SZ", t);
+  return String(buf);
+}
+
+// Maximum serialised byte length of one event payload.
+// Breakdown: ~15 (keys+braces) + 20 (event value) + 30 (command) +
+//            12 (steps) + 25 (timestamp) + margin = ~160 bytes.
+static const size_t MQTT_EVENT_BUF_SIZE = 160;
+
+// Publish a JSON event message to T_EVENT.
+// Payload fields: event, command, steps, timestamp.
+// Non-blocking: mqtt.publish() buffers the message; it is flushed
+// during the next mqtt.loop() call (serviceBackground in the step loop).
+static void publishEvent(const char* event, long steps) {
+  if (!mqtt.connected()) return;
+  JsonDocument doc;
+  doc["event"]     = event;
+  doc["command"]   = activeCommand.length() ? activeCommand : String("unknown");
+  doc["steps"]     = steps;
+  doc["timestamp"] = isoTimestamp();
+  char buf[MQTT_EVENT_BUF_SIZE];
+  serializeJson(doc, buf, sizeof(buf));
+  mqtt.publish(T_EVENT.c_str(), buf);
 }
 
 // ============================================================
@@ -1412,6 +1468,7 @@ void handleStop() {
 void handleHome() {
   if (!server.hasArg("dir")) { server.send(400, "text/plain; charset=utf-8", "Missing dir"); return; }
   String dir = server.arg("dir");
+  activeCommand = "home:" + dir;
   bool ok = false;
   if (dir == "begin") ok = goBegin();
   else if (dir == "end") ok = goEnd();
@@ -1422,6 +1479,7 @@ void handleHome() {
 void handleMove() {
   if (!server.hasArg("steps")) { server.send(400, "text/plain; charset=utf-8", "Missing steps"); return; }
   long steps = server.arg("steps").toInt();
+  activeCommand = "move:" + String(steps);
   bool ok = moveStepsAccel(steps);
   publishState();
   server.send(200, "text/plain; charset=utf-8", statusText() + (ok ? "\nmove=OK" : "\nmove=STOP_OR_ENDSTOP"));
@@ -1430,6 +1488,7 @@ void handleMove() {
 void handleGoto() {
   if (!server.hasArg("i")) { server.send(400, "text/plain; charset=utf-8", "Missing i"); return; }
   int i = server.arg("i").toInt();
+  activeCommand = "goto:" + String(i);
   bool ok = gotoIndex((uint8_t)i);
   publishState();
   server.send(200, "text/plain; charset=utf-8", statusText() + (ok ? "\ngoto=OK" : "\ngoto=FAILED"));
@@ -1631,8 +1690,8 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
   if (t == T_STOP) requestStop();
   else if (t == T_SPEED) maxSps = clampSps(ival);
   else if (t == T_ACC) accSps2 = clampAcc(fval);
-  else if (t == T_MOVE) moveStepsAccel(ival);
-  else if (t == T_GOTO) gotoIndex((uint8_t)ival);
+  else if (t == T_MOVE) { activeCommand = "mqtt-move:" + msg; moveStepsAccel(ival); }
+  else if (t == T_GOTO) { activeCommand = "mqtt-goto:" + msg; gotoIndex((uint8_t)ival); }
 
   publishState();
 }
@@ -1692,6 +1751,10 @@ void setup() {
   servoInit();
 
   ensureWiFiConnected();
+  // Sync system time via SNTP for ISO-8601 timestamps in event payloads.
+  // Sync happens in the background; isoTimestamp() falls back to uptime
+  // until the first successful sync.
+  configTime(0, 0, "pool.ntp.org", "time.nist.gov");
 
   server.on("/", handleRoot);
   server.on("/status", handleStatus);
