@@ -15,6 +15,18 @@ Required fields for every event message
   command   : str  — non-empty command identifier
   steps     : int  — current step position counter
   timestamp : str  — ISO-8601 UTC (or "T+<millis>ms" uptime fallback)
+
+Required fields for every state message
+----------------------------------------
+  fw         : str
+  axis       : str
+  moving     : bool
+  pos        : int
+  direction  : str  — "positive" | "negative"
+  endstops   : dict — {begin, end, both_error}
+  test_mode  : dict — {active, cycle, target}
+  steps_done : int
+  timestamp  : str
 """
 
 import json
@@ -31,6 +43,9 @@ UPTIME_RE = re.compile(r"^T\+\d+ms$")
 
 REQUIRED_KEYS = {"event", "command", "steps", "timestamp"}
 VALID_EVENTS  = {"motion_started", "endstop_reached"}
+
+REQUIRED_STATE_KEYS = {"fw", "axis", "moving", "pos", "direction",
+                       "endstops", "test_mode", "steps_done", "timestamp"}
 
 
 def validate_payload(raw: str) -> dict:
@@ -58,6 +73,54 @@ def validate_payload(raw: str) -> dict:
     return payload
 
 
+def validate_state_payload(raw: str) -> dict:
+    """Parse *raw* JSON string and assert it matches the state schema."""
+    payload = json.loads(raw)
+
+    missing = REQUIRED_STATE_KEYS - payload.keys()
+    assert not missing, f"Missing state keys: {missing}"
+
+    assert isinstance(payload["fw"], str) and payload["fw"], \
+        "fw must be a non-empty string"
+
+    assert payload["axis"] in ("vertical", "horizontal"), \
+        f"axis must be 'vertical' or 'horizontal', got '{payload['axis']}'"
+
+    assert isinstance(payload["moving"], bool), \
+        f"moving must be bool, got {type(payload['moving']).__name__}"
+
+    assert isinstance(payload["pos"], int), \
+        f"pos must be int, got {type(payload['pos']).__name__}"
+
+    assert payload["direction"] in ("positive", "negative"), \
+        f"direction must be 'positive' or 'negative', got '{payload['direction']}'"
+
+    endstops = payload["endstops"]
+    assert isinstance(endstops, dict), "endstops must be a dict"
+    for k in ("begin", "end", "both_error"):
+        assert k in endstops, f"endstops missing key '{k}'"
+        assert isinstance(endstops[k], bool), f"endstops.{k} must be bool"
+
+    tm = payload["test_mode"]
+    assert isinstance(tm, dict), "test_mode must be a dict"
+    for k in ("active", "cycle", "target"):
+        assert k in tm, f"test_mode missing key '{k}'"
+    assert isinstance(tm["active"], bool), "test_mode.active must be bool"
+    assert isinstance(tm["cycle"], int), "test_mode.cycle must be int"
+    assert tm["target"] in ("end", "begin"), \
+        f"test_mode.target must be 'end' or 'begin', got '{tm['target']}'"
+
+    assert isinstance(payload["steps_done"], int), \
+        f"steps_done must be int, got {type(payload['steps_done']).__name__}"
+
+    ts = payload["timestamp"]
+    assert ISO8601_RE.match(ts) or UPTIME_RE.match(ts), (
+        f"timestamp '{ts}' is neither ISO-8601 UTC nor uptime fallback"
+    )
+
+    return payload
+
+
 def make_payload(event: str, command: str, steps: int,
                  timestamp: str | None = None) -> str:
     """Build a JSON event payload string (mirrors firmware logic)."""
@@ -67,6 +130,33 @@ def make_payload(event: str, command: str, steps: int,
         "event":     event,
         "command":   command,
         "steps":     steps,
+        "timestamp": timestamp,
+    })
+
+
+def make_state_payload(fw: str = "0.93", axis: str = "vertical",
+                       moving: bool = False, pos: int = 0,
+                       direction: str = "positive",
+                       endstops: dict | None = None,
+                       test_mode: dict | None = None,
+                       steps_done: int = 0,
+                       timestamp: str | None = None) -> str:
+    """Build a JSON state payload string (mirrors firmware publishState())."""
+    if timestamp is None:
+        timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    if endstops is None:
+        endstops = {"begin": False, "end": False, "both_error": False}
+    if test_mode is None:
+        test_mode = {"active": False, "cycle": 0, "target": "end"}
+    return json.dumps({
+        "fw":        fw,
+        "axis":      axis,
+        "moving":    moving,
+        "pos":       pos,
+        "direction": direction,
+        "endstops":  endstops,
+        "test_mode": test_mode,
+        "steps_done": steps_done,
         "timestamp": timestamp,
     })
 
@@ -154,6 +244,82 @@ def test_unknown_command_fallback() -> None:
     print(f"  PASS  unknown command fallback      payload={raw}")
 
 
+# ── state payload tests ───────────────────────────────────────────────────────
+
+def test_state_idle() -> None:
+    """State payload when motor is idle at position 1240, positive direction."""
+    raw = make_state_payload(
+        fw="0.93", axis="vertical", moving=False, pos=1240,
+        direction="positive",
+        endstops={"begin": False, "end": False, "both_error": False},
+        test_mode={"active": False, "cycle": 0, "target": "end"},
+        steps_done=1240,
+        timestamp="2025-01-15T14:32:07Z",
+    )
+    p = validate_state_payload(raw)
+    assert p["moving"] is False
+    assert p["pos"] == 1240
+    assert p["direction"] == "positive"
+    assert p["steps_done"] == 1240
+    assert p["test_mode"]["active"] is False
+    print(f"  PASS  state idle (moving=false)     payload={raw}")
+
+
+def test_state_moving() -> None:
+    """State payload while motor is actively moving (steps_done is live counter)."""
+    raw = make_state_payload(
+        fw="0.93", axis="horizontal", moving=True, pos=300,
+        direction="negative",
+        endstops={"begin": False, "end": False, "both_error": False},
+        test_mode={"active": False, "cycle": 0, "target": "end"},
+        steps_done=300,
+        timestamp="T+8200ms",
+    )
+    p = validate_state_payload(raw)
+    assert p["moving"] is True
+    assert p["direction"] == "negative"
+    assert p["axis"] == "horizontal"
+    assert UPTIME_RE.match(p["timestamp"])
+    print(f"  PASS  state moving (moving=true)    payload={raw}")
+
+
+def test_state_endstop_error() -> None:
+    """State payload when both endstops are pressed simultaneously (error)."""
+    raw = make_state_payload(
+        fw="0.93", axis="vertical", moving=False, pos=0,
+        direction="negative",
+        endstops={"begin": True, "end": True, "both_error": True},
+        test_mode={"active": False, "cycle": 0, "target": "end"},
+        steps_done=0,
+        timestamp="2025-01-15T14:35:00Z",
+    )
+    p = validate_state_payload(raw)
+    assert p["endstops"]["both_error"] is True
+    assert p["endstops"]["begin"] is True
+    assert p["endstops"]["end"] is True
+    print(f"  PASS  state endstop error           payload={raw}")
+
+
+def test_state_missing_key_rejected() -> None:
+    """State payload missing a required key should be rejected."""
+    payload = {
+        "fw": "0.93", "axis": "vertical", "moving": False, "pos": 0,
+        "direction": "positive",
+        "endstops": {"begin": False, "end": False, "both_error": False},
+        # test_mode missing
+        "steps_done": 0, "timestamp": "T+0ms",
+    }
+    raw = json.dumps(payload)
+    try:
+        validate_state_payload(raw)
+        raise AssertionError("Should have raised on missing 'test_mode'")
+    except AssertionError as exc:
+        if "Missing state keys" in str(exc):
+            print("  PASS  state missing key correctly rejected")
+        else:
+            raise
+
+
 # ── runner ────────────────────────────────────────────────────────────────────
 
 TESTS = [
@@ -165,6 +331,10 @@ TESTS = [
     test_unknown_command_fallback,
     test_invalid_event_rejected,
     test_missing_key_rejected,
+    test_state_idle,
+    test_state_moving,
+    test_state_endstop_error,
+    test_state_missing_key_rejected,
 ]
 
 if __name__ == "__main__":

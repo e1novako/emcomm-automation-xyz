@@ -7,19 +7,21 @@
 #include <ArduinoJson.h>
 #include <Servo.h>
 
+#include "secrets.h"
+
 // ============================================================
 // Firmware version
 // ============================================================
-static const char* FW_VERSION = "0.92";
+static const char* FW_VERSION = "0.93";
 
 // ============================================================
 // Persistent config (LittleFS + JSON)
 // ============================================================
 static const char* CONFIG_PATH = "/config.json";
 
-// Defaults
-static const char* DEFAULT_WIFI_SSID = "Z-Wave Automation";
-static const char* DEFAULT_WIFI_PASS = "Fiber714Cvet";
+// Defaults (credentials loaded from secrets.h — see secrets.h.template)
+static const char* DEFAULT_WIFI_SSID = SECRET_WIFI_SSID;
+static const char* DEFAULT_WIFI_PASS = SECRET_WIFI_PASS;
 
 static const uint16_t DEFAULT_MAX_SPS = 800;
 static const float    DEFAULT_ACCEL   = 2500.0f;
@@ -77,6 +79,13 @@ struct AppConfig {
   uint16_t clickPressMs    = 180;
   uint16_t clickBetweenMs  = 220;
   uint16_t clickReturnMs   = 300;
+
+  // MQTT broker
+  String mqttHost = "192.168.1.6";
+  uint16_t mqttPort = 1883;
+
+  // OTA password (empty = fall back to WiFi password)
+  String otaPass = "";
 };
 
 AppConfig gCfg;
@@ -139,6 +148,10 @@ static void setDefaults() {
   gCfg.clickPressMs    = 180;
   gCfg.clickBetweenMs  = 220;
   gCfg.clickReturnMs   = 300;
+
+  gCfg.mqttHost = "192.168.1.6";
+  gCfg.mqttPort = 1883;
+  gCfg.otaPass  = "";
 
   for (uint8_t i = 0; i < POS_COUNT; i++) gCfg.positions[i] = 0;
 }
@@ -308,6 +321,12 @@ bool loadConfig() {
   gCfg.clickBetweenMs  = jsonGetU16(doc["servo"]["timing"]["between_ms"],  220);
   gCfg.clickReturnMs   = jsonGetU16(doc["servo"]["timing"]["return_ms"],   300);
 
+  gCfg.mqttHost = jsonGetString(doc["mqtt"]["host"], "192.168.1.6");
+  gCfg.mqttPort = jsonGetU16(doc["mqtt"]["port"], 1883);
+  if (gCfg.mqttPort == 0) gCfg.mqttPort = 1883;
+
+  gCfg.otaPass = jsonGetString(doc["ota_pass"], "");
+
   for (uint8_t i = 0; i < POS_COUNT; i++) gCfg.positions[i] = 0;
   if (doc["positions"].is<JsonArrayConst>()) {
     JsonArrayConst arr = doc["positions"].as<JsonArrayConst>();
@@ -361,6 +380,11 @@ bool saveConfig() {
   doc["servo"]["timing"]["between_ms"]  = gCfg.clickBetweenMs;
   doc["servo"]["timing"]["return_ms"]   = gCfg.clickReturnMs;
 
+  doc["mqtt"]["host"] = gCfg.mqttHost;
+  doc["mqtt"]["port"] = gCfg.mqttPort;
+
+  doc["ota_pass"] = gCfg.otaPass;
+
   JsonArray pos = doc["positions"].to<JsonArray>();
   for (uint8_t i = 0; i < POS_COUNT; i++) pos.add(gCfg.positions[i]);
 
@@ -390,9 +414,6 @@ static void computeDeviceIdentity() {
 // WiFi + OTA + MQTT + Motion
 // ============================================================
 static const unsigned long WIFI_CONNECT_TIMEOUT_MS = 20000;
-
-IPAddress MQTT_HOST(192, 168, 1, 6);
-const uint16_t MQTT_PORT = 1883;
 
 String mqttBase;
 String T_MOVE;
@@ -430,6 +451,9 @@ volatile bool stopRequested = false;
 volatile unsigned long moveCounterLiveAbs = 0;
 volatile unsigned long lastMoveDoneAbsFinal = 0;
 volatile bool isMoving = false;
+
+// Last (or current) motion direction: true = positive, false = negative
+static bool lastDirectionPositive = true;
 
 // Test mode state
 volatile bool testModeActive = false;
@@ -686,6 +710,7 @@ bool moveStepsAccel(long signedSteps) {
   uint16_t vmax = clampSps((long)maxSps);
   float a = clampAcc(accSps2);
 
+  lastDirectionPositive = positive;
   setDirPositive(positive);
   delayMicroseconds(DIR_SETUP_US);
   setEnable(true);
@@ -879,8 +904,42 @@ String statusText() {
 
 void publishState() {
   if (!mqtt.connected()) return;
-  String st = statusText();
-  mqtt.publish(T_STATE.c_str(), st.c_str(), true);
+
+  bool movingSnap  = atomicReadBool(isMoving);
+  long posSnap     = atomicReadLong(posSteps);
+  unsigned long stepsDone = movingSnap
+                            ? atomicReadULong(moveCounterLiveAbs)
+                            : atomicReadULong(lastMoveDoneAbsFinal);
+
+  bool tm      = atomicReadBool(testModeActive);
+  uint8_t cyc  = atomicReadU8(testModeCycle);
+  bool tgtEnd  = atomicReadBool(testModeTargetEnd);
+
+  bool endBegin   = endstopPressed(gCfg.pinEndBegin);
+  bool endEnd     = endstopPressed(gCfg.pinEndEnd);
+  bool bothErr    = endBegin && endEnd;
+
+  JsonDocument doc;
+  doc["fw"]        = FW_VERSION;
+  doc["axis"]      = axisSegment(gCfg.axis);
+  doc["moving"]    = movingSnap;
+  doc["pos"]       = posSnap;
+  doc["direction"] = lastDirectionPositive ? "positive" : "negative";
+
+  doc["endstops"]["begin"]      = endBegin;
+  doc["endstops"]["end"]        = endEnd;
+  doc["endstops"]["both_error"] = bothErr;
+
+  doc["test_mode"]["active"] = tm;
+  doc["test_mode"]["cycle"]  = (int)cyc;
+  doc["test_mode"]["target"] = tgtEnd ? "end" : "begin";
+
+  doc["steps_done"] = (long)stepsDone;
+  doc["timestamp"]  = isoTimestamp();
+
+  char buf[320];
+  serializeJson(doc, buf, sizeof(buf));
+  mqtt.publish(T_STATE.c_str(), buf, true);
 }
 
 // ============================================================
@@ -1115,8 +1174,21 @@ String htmlConfig() {
   s += htmlEscape(gCfg.wifiSsid);
   s += F("'></div>");
 
-  s += F("<div class='row'><label>WiFi Password (also OTA password)</label><input name='pass' type='password' value='");
+  s += F("<div class='row'><label>WiFi Password</label><input name='pass' type='password' value='");
   s += htmlEscape(gCfg.wifiPass);
+  s += F("'></div>");
+
+  s += F("<div class='card'><h3>MQTT Broker</h3>");
+  s += F("<div class='row'><label>MQTT Host</label><input name='mqtt_host' required value='");
+  s += htmlEscape(gCfg.mqttHost);
+  s += F("'></div>");
+  s += F("<div class='row'><label>MQTT Port</label><input name='mqtt_port' type='number' min='1' max='65535' value='");
+  s += String(gCfg.mqttPort);
+  s += F("'></div>");
+  s += F("</div>");
+
+  s += F("<div class='row'><label>OTA Password</label><input name='ota_pass' type='password' placeholder='leave empty = use WiFi password' value='");
+  s += htmlEscape(gCfg.otaPass);
   s += F("'></div>");
 
   s += F("<div class='row'><label>Axis</label><select name='axis'>");
@@ -1383,6 +1455,19 @@ void handleConfigSave() {
     return;
   }
 
+  // Validate MQTT host and port
+  String mqttHostArg = server.hasArg("mqtt_host") ? server.arg("mqtt_host") : gCfg.mqttHost;
+  mqttHostArg.trim();
+  if (mqttHostArg.length() == 0) {
+    server.send(400, "text/plain; charset=utf-8", "MQTT host must not be empty");
+    return;
+  }
+  int mqttPortArg = server.hasArg("mqtt_port") ? server.arg("mqtt_port").toInt() : (int)gCfg.mqttPort;
+  if (mqttPortArg < 1 || mqttPortArg > 65535) {
+    server.send(400, "text/plain; charset=utf-8", "MQTT port must be in range 1-65535");
+    return;
+  }
+
   gCfg.wifiSsid = server.arg("ssid");
   gCfg.wifiPass = server.arg("pass");
   gCfg.axis = strToAxis(server.arg("axis"));
@@ -1423,6 +1508,11 @@ void handleConfigSave() {
   if (gCfg.servoTopMaxDeg      < gCfg.servoTopApproachDeg) gCfg.servoTopMaxDeg = gCfg.servoTopApproachDeg;
   if (gCfg.servoBotApproachDeg < gCfg.servoBotMinDeg) gCfg.servoBotApproachDeg = gCfg.servoBotMinDeg;
   if (gCfg.servoBotMaxDeg      < gCfg.servoBotApproachDeg) gCfg.servoBotMaxDeg = gCfg.servoBotApproachDeg;
+
+  gCfg.mqttHost = mqttHostArg;
+  gCfg.mqttPort = (uint16_t)mqttPortArg;
+
+  gCfg.otaPass = server.hasArg("ota_pass") ? server.arg("ota_pass") : "";
 
   for (uint8_t i = 1; i <= POS_COUNT; i++) {
     String k = String("pos_") + String(i);
@@ -1704,7 +1794,7 @@ bool mqttEnsureConnected() {
   if (now - lastMqttReconnectAttemptMs < 2000) return false;
   lastMqttReconnectAttemptMs = now;
 
-  mqtt.setServer(MQTT_HOST, MQTT_PORT);
+  mqtt.setServer(gCfg.mqttHost.c_str(), gCfg.mqttPort);
   mqtt.setCallback(mqttCallback);
 
   if (!mqtt.connect(mqttClientId.c_str())) return false;
@@ -1780,10 +1870,14 @@ void setup() {
   server.begin();
 
   ArduinoOTA.setHostname(deviceName.c_str());
-  ArduinoOTA.setPassword(gCfg.wifiPass.c_str());
+  {
+    String effectiveOtaPass = gCfg.otaPass.length() ? gCfg.otaPass : gCfg.wifiPass;
+    ArduinoOTA.setPassword(effectiveOtaPass.c_str());
+  }
   ArduinoOTA.onStart([]() { requestStop(); });
   ArduinoOTA.begin();
 
+  mqtt.setBufferSize(512);
   mqttEnsureConnected();
 }
 
