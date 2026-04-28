@@ -4,7 +4,7 @@ NodeMCU (ESP8266) stepper-motor web controller with optional horizontal-mode but
 
 ## Firmware
 
-**File:** `nodemcu_webgui.ino` — FW **0.92**
+**File:** `nodemcu_webgui.ino` — FW **0.93**
 
 ### Hardware supported
 
@@ -12,8 +12,8 @@ NodeMCU (ESP8266) stepper-motor web controller with optional horizontal-mode but
 - **Endstops** × 2 (BEGIN / END, active-low INPUT_PULLUP)
 - **Button servos** × 2 (Top / Bottom) — **horizontal axis mode only**
 - NodeMCU blue LED (GPIO2) lights while the motor is moving
-- OTA firmware update (password = WiFi password)
-- MQTT commands for remote control and JSON event telemetry
+- OTA firmware update (configurable password; falls back to WiFi password)
+- MQTT commands for remote control, JSON event telemetry, and JSON state snapshots
 
 ### Web GUI pages
 
@@ -32,17 +32,35 @@ NodeMCU (ESP8266) stepper-motor web controller with optional horizontal-mode but
 
 ---
 
+## First-time setup — WiFi credentials
+
+WiFi credentials are **not** compiled in. They use the `secrets.h` pattern:
+
+1. Copy `secrets.h.template` to `secrets.h` inside the `C4-ROBOT/` folder.
+2. Fill in your SSID and password in `secrets.h`:
+   ```cpp
+   #define SECRET_WIFI_SSID "your-wifi-ssid"
+   #define SECRET_WIFI_PASS "your-wifi-password"
+   ```
+3. `secrets.h` is listed in `.gitignore` — it will **not** be committed.
+
+> **Alternative:** leave `secrets.h` with empty strings (the default). The device
+> will fail to connect to WiFi on first boot, but you can then set the SSID / password
+> through the Config page once connected (e.g. via AP fallback or serial flash).
+
+---
+
 ## MQTT
 
 ### Broker settings
 
-The broker address and port are compiled in. Edit these constants near the top
-of `nodemcu_webgui.ino` before flashing:
+MQTT broker host and port are configurable through the **Config** web page — no
+reflashing required. Defaults are preserved.
 
-| Constant | Default | Description |
-|----------|---------|-------------|
-| `MQTT_HOST` | `192.168.1.6` | MQTT broker IP address |
-| `MQTT_PORT` | `1883` | MQTT broker port |
+| Config field | Default | Description |
+|--------------|---------|-------------|
+| MQTT Host | `192.168.1.6` | Broker hostname or IP address |
+| MQTT Port | `1883` | Broker TCP port (1–65535) |
 
 The device connects without authentication. Adjust `mqttEnsureConnected()` if
 your broker requires credentials.
@@ -62,17 +80,57 @@ or `horizontal` depending on the configured axis type.
 | `…/cmd/accel` | float steps/s² | Set acceleration |
 | `…/cmd/stop` | any | Request stop |
 
-#### State topic (published, retained plain-text)
+#### State topic (published, retained JSON, **new in 0.93**)
 
 | Topic | Description |
 |-------|-------------|
-| `…/state` | Plain-text status snapshot, published after every command and every 2 s |
+| `…/state` | JSON status snapshot, published after every command and every 2 s |
 
-#### Event topic (published, JSON, **new in 0.92**)
+#### Event topic (published, JSON)
 
 | Topic | Description |
 |-------|-------------|
 | `…/event` | JSON telemetry event published on motion start and endstop detection |
+
+### State payload format (new in 0.93)
+
+```json
+{
+  "fw":        "0.93",
+  "axis":      "vertical",
+  "moving":    false,
+  "pos":       1240,
+  "direction": "positive",
+  "endstops": {
+    "begin":      false,
+    "end":        false,
+    "both_error": false
+  },
+  "test_mode": {
+    "active": false,
+    "cycle":  0,
+    "target": "end"
+  },
+  "steps_done": 1240,
+  "timestamp":  "2025-01-15T14:32:07Z"
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `fw` | string | Firmware version |
+| `axis` | string | `"vertical"` or `"horizontal"` |
+| `moving` | bool | `true` while step loop is active |
+| `pos` | integer | Absolute step position (0 = BEGIN endstop) |
+| `direction` | string | `"positive"` or `"negative"` — direction of last/active move |
+| `endstops.begin` | bool | BEGIN endstop pressed |
+| `endstops.end` | bool | END endstop pressed |
+| `endstops.both_error` | bool | Both endstops pressed simultaneously (movement disabled) |
+| `test_mode.active` | bool | Test mode running |
+| `test_mode.cycle` | integer | Current cycle (0–10) |
+| `test_mode.target` | string | `"end"` or `"begin"` — current test direction |
+| `steps_done` | integer | Live counter while moving; final count when idle |
+| `timestamp` | string | UTC ISO-8601. Falls back to `"T+<millis>ms"` before NTP sync. |
 
 ### Event payload format
 
@@ -191,6 +249,8 @@ Servo pulse widths are clamped to **400 – 2600 µs** for safety.
     "dir_active_high": true,
     "step_active_high": true
   },
+  "mqtt": { "host": "192.168.1.6", "port": 1883 },
+  "ota_pass": "",
   "servos": {
     "top": { "pin": 14, "min_us": 1000, "max_us": 2000 },
     "bot": { "pin": 0,  "min_us": 1000, "max_us": 2000 },
@@ -198,7 +258,7 @@ Servo pulse widths are clamped to **400 – 2600 µs** for safety.
     "release_ms": 250,
     "pause_ms": 250
   },
-  "positions": [0, 0, …]
+  "positions": [0, 0, "…"]
 }
 ```
 
