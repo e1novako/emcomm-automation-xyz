@@ -25,6 +25,9 @@ Arduino project for NodeMCU v3 with a web interface for controlling up to 16 out
 - Password: `KoToTamoPeva2016`
 - Hostname format: `C4-VIBRANT-<last three octets of MAC>`
 
+> Security note: factory credentials are public and meant only for first setup.
+> Change the Wi-Fi password immediately in **Settings** after the first boot.
+
 ## Arduino libraries
 
 - ESP8266 core libraries (`ESP8266WiFi`, `ESP8266WebServer`)

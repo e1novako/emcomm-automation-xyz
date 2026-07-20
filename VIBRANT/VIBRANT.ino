@@ -206,6 +206,19 @@ String pinOption(int selectedPin, int pin) {
   return "<option value=\"" + String(pin) + "\"" + selected + ">D" + String(pin) + "</option>";
 }
 
+bool parsePinValue(const String& raw, int& pin) {
+  if (raw == "-1") {
+    pin = -1;
+    return true;
+  }
+  if (raw.isEmpty()) return false;
+  for (size_t i = 0; i < raw.length(); ++i) {
+    if (raw[i] < '0' || raw[i] > '9') return false;
+  }
+  pin = raw.toInt();
+  return pin >= 0 && pin <= 15;
+}
+
 void handleHome() {
   String html = F(
       "<!doctype html><html><head><meta charset='utf-8'><title>VIBRANT</title>"
@@ -281,7 +294,7 @@ void handleSettingsGet() {
           "<label>MAC address <input name='mac' value='" + htmlEscape(cfg.mac) + "' maxlength='17'></label>"
           "<label>Hostname for DHCP <input name='hostname' value='" + htmlEscape(cfg.hostname) + "'></label>"
           "<label>SSID <input name='ssid' value='" + htmlEscape(cfg.ssid) + "'></label>"
-          "<label>Password <input name='password' value='" + htmlEscape(cfg.password) + "'></label>"
+          "<label>Password <input name='password' type='password' value='" + htmlEscape(cfg.password) + "'></label>"
           "<label>Wi-Fi power (0.0 - 20.5 dBm) <input name='wifiPower' type='number' min='0' max='20.5' step='0.1' value='" + String(cfg.wifiPower, 1) + "'></label>"
           "</fieldset>";
 
@@ -328,8 +341,12 @@ void handleSettingsPost() {
   for (uint8_t i = 0; i < MAX_DEVICES; ++i) {
     cfg.devices[i].model = server.arg("model_" + String(i));
     cfg.devices[i].name = server.arg("name_" + String(i));
-    int pin = server.arg("pin_" + String(i)).toInt();
-    cfg.devices[i].pin = (pin >= 0 && pin <= 15) ? pin : -1;
+    int pin = -1;
+    String pinArgName = "pin_" + String(i);
+    if (!server.hasArg(pinArgName) || !parsePinValue(server.arg(pinArgName), pin)) {
+      pin = -1;
+    }
+    cfg.devices[i].pin = pin;
     if (cfg.devices[i].pin < 0) {
       cfg.devices[i].state = false;
     }
