@@ -38,9 +38,9 @@ Security note: factory credentials are public and meant only for first setup.
 
 ## Arduino libraries
 
-- ESP8266 core libraries (`ESP8266WiFi`, `ESP8266WebServer`)
+- ESP8266 core libraries (`ESP8266WiFi`, `ESP8266WebServer`) from ESP8266 board package 3.x
 - `LittleFS`
-- `ArduinoJson`
+- `ArduinoJson` 7.x
 
 ## File layout
 

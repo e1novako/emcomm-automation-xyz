@@ -12,6 +12,7 @@ namespace {
 
 constexpr const char* CONFIG_PATH = "/vibrant_config.json";
 constexpr uint8_t MAX_DEVICES = 16;
+constexpr int8_t MAX_GPIO_PIN = 15;
 constexpr float MIN_WIFI_POWER = 0.0f;
 constexpr float MAX_WIFI_POWER = 20.5f;
 
@@ -180,7 +181,7 @@ bool loadConfig() {
 void applyOutputs() {
   for (uint8_t i = 0; i < MAX_DEVICES; ++i) {
     int8_t pin = cfg.devices[i].pin;
-    if (pin < 0 || pin > 15) continue;
+    if (pin < 0 || pin > MAX_GPIO_PIN) continue;
     pinMode(pin, OUTPUT);
     digitalWrite(pin, cfg.devices[i].state ? HIGH : LOW);
   }
@@ -216,7 +217,16 @@ bool parsePinValue(const String& raw, int& pin) {
     if (raw[i] < '0' || raw[i] > '9') return false;
   }
   pin = raw.toInt();
-  return pin >= 0 && pin <= 15;
+  return pin >= 0 && pin <= MAX_GPIO_PIN;
+}
+
+bool parseUIntValue(const String& raw, int& value) {
+  if (raw.isEmpty()) return false;
+  for (size_t i = 0; i < raw.length(); ++i) {
+    if (raw[i] < '0' || raw[i] > '9') return false;
+  }
+  value = raw.toInt();
+  return true;
 }
 
 bool parseFloatValue(const String& raw, float& value) {
@@ -230,6 +240,11 @@ bool usingFactoryPassword() {
   return cfg.password == F("KoToTamoPeva2016");
 }
 
+String passwordWarningHtml() {
+  return F("<p style='color:#b00020;'><strong>Warning:</strong> Factory default Wi-Fi password is active. "
+           "Change it now for security.</p>");
+}
+
 void handleHome() {
   String html = F(
       "<!doctype html><html><head><meta charset='utf-8'><title>VIBRANT</title>"
@@ -238,14 +253,13 @@ void handleHome() {
       "</head><body><h1>VIBRANT Output Control</h1><p><a href='/settings'>Settings</a></p>"
       "<table><tr><th>#</th><th>Model</th><th>Name</th><th>Status</th><th>Toggle</th></tr>");
   if (usingFactoryPassword()) {
-    html += F("<p style='color:#b00020;'><strong>Warning:</strong> You are using factory Wi-Fi credentials. "
-              "Open Settings and change the password.</p>");
+    html += passwordWarningHtml();
   }
 
   for (uint8_t i = 0; i < MAX_DEVICES; ++i) {
     const DeviceEntry& d = cfg.devices[i];
     String status = F("Unassigned");
-    bool mapped = d.pin >= 0 && d.pin <= 15;
+    bool mapped = d.pin >= 0 && d.pin <= MAX_GPIO_PIN;
     if (mapped) {
       status = digitalRead(d.pin) == HIGH ? F("ON") : F("OFF");
     }
@@ -274,14 +288,18 @@ void handleToggle() {
     return;
   }
 
-  int idx = server.arg("idx").toInt();
-  if (idx < 0 || idx >= MAX_DEVICES) {
+  int idx = -1;
+  if (!parseUIntValue(server.arg("idx"), idx) || idx < 0 || idx >= MAX_DEVICES) {
     server.send(400, "text/plain", "Invalid device index");
+    return;
+  }
+  if (server.arg("state") != "0" && server.arg("state") != "1") {
+    server.send(400, "text/plain", "Invalid state value");
     return;
   }
 
   DeviceEntry& d = cfg.devices[idx];
-  if (d.pin < 0 || d.pin > 15) {
+  if (d.pin < 0 || d.pin > MAX_GPIO_PIN) {
     server.sendHeader("Location", "/");
     server.send(303);
     return;
@@ -305,8 +323,7 @@ void handleSettingsGet() {
       "button{padding:8px 10px;margin-right:8px;}</style></head><body><h1>Settings</h1>"
       "<p><a href='/'>Back to main page</a></p><form method='post' action='/settings'>");
   if (usingFactoryPassword()) {
-    html += F("<p style='color:#b00020;'><strong>Warning:</strong> Factory default Wi-Fi password is active. "
-              "Change it now for security.</p>");
+    html += passwordWarningHtml();
   }
 
   html += "<fieldset><legend>Network</legend>"
@@ -325,7 +342,7 @@ void handleSettingsGet() {
             "<td><select name='pin_" + String(i) + "'>";
 
     html += (cfg.devices[i].pin < 0) ? "<option value='-1' selected>none</option>" : "<option value='-1'>none</option>";
-    for (int pin = 0; pin <= 15; ++pin) {
+    for (int pin = 0; pin <= MAX_GPIO_PIN; ++pin) {
       html += pinOption(cfg.devices[i].pin, pin);
     }
     html += "</select></td></tr>";
@@ -366,8 +383,10 @@ void handleSettingsPost() {
   cfg.password = server.arg("password");
   cfg.wifiPower = constrain(parsedPower, MIN_WIFI_POWER, MAX_WIFI_POWER);
 
-  if (cfg.ssid.isEmpty()) cfg.ssid = F("Z-Wave Automation");
-  if (cfg.password.isEmpty()) cfg.password = F("KoToTamoPeva2016");
+  if (cfg.ssid.isEmpty() || cfg.password.isEmpty()) {
+    server.send(400, "text/plain", "SSID and password must not be empty");
+    return;
+  }
   if (cfg.hostname.isEmpty()) cfg.hostname = defaultHostnameFromMac(cfg.mac);
 
   for (uint8_t i = 0; i < MAX_DEVICES; ++i) {
