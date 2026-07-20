@@ -14,6 +14,7 @@ constexpr const char* CONFIG_PATH = "/vibrant_config.json";
 constexpr const char* IMPORT_CONFIG_PATH = "/vibrant_config_upload.json";
 constexpr const char* DEFAULT_AP_SSID = "Z-Wave Automation";
 constexpr const char* DEFAULT_AP_PASSWORD = "Fiber714Cvet";
+constexpr const char* SOFTWARE_VERSION = "1.1.0";
 constexpr uint8_t MAX_DEVICES = 16;
 constexpr int8_t MAX_GPIO_PIN = 15;
 constexpr float MIN_WIFI_POWER = 5.0f;
@@ -321,6 +322,8 @@ void logWifiSummary(const String& softApSsid) {
   Serial.println(cfg.ssid);
   Serial.print(F("[INFO] Hostname: "));
   Serial.println(cfg.hostname);
+  Serial.print(F("[INFO] Software version: "));
+  Serial.println(SOFTWARE_VERSION);
   Serial.print(F("[INFO] Wi-Fi power: "));
   Serial.print(cfg.wifiPower, 1);
   Serial.println(F(" dBm"));
@@ -422,7 +425,7 @@ void handleHome() {
       "<!doctype html><html><head><meta charset='utf-8'><title>VIBRANT</title>"
       "<style>body{font-family:Arial,sans-serif;margin:20px;}table{border-collapse:collapse;width:100%;}"
       "th,td{border:1px solid #ddd;padding:8px;}th{background:#f5f5f5;}a,button{padding:8px 10px;}</style>"
-      "</head><body><h1>VIBRANT Output Control</h1><p><a href='/settings'>Settings</a></p>"
+      "</head><body><h1>VIBRANT Output Control</h1><p>Version: " + String(SOFTWARE_VERSION) + "</p><p><a href='/settings'>Settings</a></p>"
       "<table><tr><th>#</th><th>Model</th><th>Name</th><th>Status</th><th>Toggle</th></tr>");
   if (usingFactoryPassword()) {
     html += passwordWarningHtml();
@@ -779,6 +782,8 @@ void setup() {
   delay(100);
   Serial.println();
   Serial.println(F("[INFO] VIBRANT boot starting..."));
+  Serial.print(F("[INFO] Software version: "));
+  Serial.println(SOFTWARE_VERSION);
 
   if (shouldFactoryResetFromFlashButton()) {
     logWarning(F("Factory reset requested by FLASH button during boot."));
