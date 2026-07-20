@@ -31,6 +31,7 @@ constexpr unsigned long WIFI_RECONNECT_INTERVAL_MS = 15000UL;
 constexpr unsigned long WIFI_CONNECT_LOG_INTERVAL_MS = 5000UL;
 constexpr uint8_t FLASH_BUTTON_PIN = 0;
 constexpr unsigned long FLASH_FACTORY_RESET_HOLD_MS = 5000UL;
+constexpr unsigned long FLASH_BUTTON_DEBOUNCE_MS = 50UL;
 constexpr unsigned long WIFI_RECOVERY_WINDOW_MS = 180000UL;
 constexpr uint8_t MAX_WIFI_RECOVERY_ATTEMPTS = 12;
 
@@ -61,6 +62,9 @@ unsigned long lastWifiConnectLogMs = 0;
 unsigned long wifiDisconnectSinceMs = 0;
 unsigned long flashHoldStartMs = 0;
 bool flashResetArmed = false;
+bool flashButtonLastRawPressed = false;
+bool flashButtonStablePressed = false;
+unsigned long flashButtonLastChangeMs = 0;
 uint8_t wifiRecoveryAttempts = 0;
 
 String htmlEscape(const String& value) {
@@ -824,28 +828,39 @@ void handleNotFound() {
 }
 
 void maintainFlashFactoryResetRequest() {
-  pinMode(FLASH_BUTTON_PIN, INPUT_PULLUP);
-  bool pressed = digitalRead(FLASH_BUTTON_PIN) == LOW;
+  bool rawPressed = digitalRead(FLASH_BUTTON_PIN) == LOW;
   unsigned long now = millis();
 
-  if (pressed) {
-    if (flashHoldStartMs == 0) {
+  if (rawPressed != flashButtonLastRawPressed) {
+    flashButtonLastRawPressed = rawPressed;
+    flashButtonLastChangeMs = now;
+  }
+
+  if (now - flashButtonLastChangeMs < FLASH_BUTTON_DEBOUNCE_MS) {
+    return;
+  }
+
+  if (flashButtonStablePressed != rawPressed) {
+    flashButtonStablePressed = rawPressed;
+
+    if (flashButtonStablePressed) {
       flashHoldStartMs = now;
       flashResetArmed = true;
       logWarning(F("FLASH button press detected after boot. Hold for 5 seconds to factory reset."));
-      return;
-    }
-
-    if (flashResetArmed && now - flashHoldStartMs >= FLASH_FACTORY_RESET_HOLD_MS) {
+    } else {
+      if (flashHoldStartMs != 0 && flashResetArmed) {
+        logStatus(F("FLASH button released before factory reset timeout."));
+      }
+      flashHoldStartMs = 0;
       flashResetArmed = false;
-      performFactoryResetAndRestart(F("FLASH button held for 5 seconds after boot. Applying factory defaults."));
     }
-  } else {
-    if (flashHoldStartMs != 0 && flashResetArmed) {
-      logStatus(F("FLASH button released before factory reset timeout."));
-    }
-    flashHoldStartMs = 0;
+  }
+
+  if (flashButtonStablePressed && flashResetArmed &&
+      flashHoldStartMs != 0 &&
+      now - flashHoldStartMs >= FLASH_FACTORY_RESET_HOLD_MS) {
     flashResetArmed = false;
+    performFactoryResetAndRestart(F("FLASH button held for 5 seconds after boot. Applying factory defaults."));
   }
 }
 
@@ -907,6 +922,8 @@ void setup() {
   Serial.println(F("[INFO] VIBRANT boot starting..."));
   Serial.print(F("[INFO] Software version: "));
   Serial.println(SOFTWARE_VERSION);
+
+  pinMode(FLASH_BUTTON_PIN, INPUT_PULLUP);
 
   logStatus(F("Mounting LittleFS..."));
   if (!LittleFS.begin()) {
