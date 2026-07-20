@@ -39,6 +39,7 @@ constexpr unsigned long WIFI_RECOVERY_WINDOW_MS = 180000UL;
 constexpr uint8_t MAX_WIFI_RECOVERY_ATTEMPTS = 12;
 
 constexpr unsigned long ceilDiv(unsigned long numerator, unsigned long denominator) {
+  if (denominator == 0) return 0;
   return (numerator + denominator - 1UL) / denominator;
 }
 
@@ -688,13 +689,14 @@ void handleSettingsGet() {
 
   html += F(
       "<h2>Configuration maintenance</h2>"
-      "<p><a href='/config/export'>Download configuration backup</a></p>"
-      "<p>Hold the FLASH button during power-on (during the first 750 milliseconds of boot) to trigger factory reset and restart.</p>"
-      "<form method='post' action='/config/factory-reset' onsubmit=\"return confirm('Factory reset?');\">"
-      "<button type='submit'>Factory reset</button></form>"
-      "<form method='post' action='/config/import' enctype='multipart/form-data'>"
-      "<label>Import backup JSON <input type='file' name='config' accept='application/json' required></label>"
-      "<button type='submit'>Upload and restore</button></form>");
+      "<p><a href='/config/export'>Download configuration backup</a></p>");
+  html += "<p>Hold the FLASH button during power-on (during the first " + String(FLASH_BOOT_DETECTION_WINDOW_MS) +
+          " milliseconds of boot) to trigger factory reset and restart.</p>"
+          "<form method='post' action='/config/factory-reset' onsubmit=\"return confirm('Factory reset?');\">"
+          "<button type='submit'>Factory reset</button></form>"
+          "<form method='post' action='/config/import' enctype='multipart/form-data'>"
+          "<label>Import backup JSON <input type='file' name='config' accept='application/json' required></label>"
+          "<button type='submit'>Upload and restore</button></form>";
 
   html += F("</body></html>");
   server.send(200, "text/html", html);
