@@ -444,8 +444,10 @@ void handleHome() {
       "<!doctype html><html><head><meta charset='utf-8'><title>VIBRANT</title>"
       "<style>body{font-family:Arial,sans-serif;margin:20px;}table{border-collapse:collapse;width:100%;}"
       "th,td{border:1px solid #ddd;padding:8px;}th{background:#f5f5f5;}a,button{padding:8px 10px;}</style>"
-      "</head><body><h1>VIBRANT Output Control</h1><p>Version: " + String(SOFTWARE_VERSION) + "</p><p><a href='/settings'>Settings</a></p>"
-      "<table><tr><th>#</th><th>Model</th><th>Name</th><th>Status</th><th>Toggle</th></tr>");
+      "</head><body><h1>VIBRANT Output Control</h1><p>Version: ");
+  html += SOFTWARE_VERSION;
+  html += F("</p><p><a href='/settings'>Settings</a></p>"
+            "<table><tr><th>#</th><th>Model</th><th>Name</th><th>Status</th><th>Toggle</th></tr>");
   if (usingFactoryPassword()) {
     html += passwordWarningHtml();
   }
