@@ -20,6 +20,7 @@ constexpr float MIN_WIFI_POWER = 5.0f;
 constexpr float MAX_WIFI_POWER = 20.5f;
 constexpr unsigned long WIFI_RECONNECT_INTERVAL_MS = 15000UL;
 constexpr unsigned long WIFI_CONNECT_LOG_INTERVAL_MS = 5000UL;
+constexpr uint8_t FLASH_BUTTON_PIN = 0;
 
 struct DeviceEntry {
   String model;
@@ -265,6 +266,16 @@ bool loadConfig() {
 
   logStatus(F("Configuration loaded successfully."));
   return true;
+}
+
+bool shouldFactoryResetFromFlashButton() {
+  pinMode(FLASH_BUTTON_PIN, INPUT_PULLUP);
+  delay(20);
+  const bool pressed = digitalRead(FLASH_BUTTON_PIN) == LOW;
+  if (pressed) {
+    logWarning(F("FLASH button held during boot; factory reset will be applied."));
+  }
+  return pressed;
 }
 
 String pinLabel(int8_t pin) {
@@ -768,6 +779,23 @@ void setup() {
   delay(100);
   Serial.println();
   Serial.println(F("[INFO] VIBRANT boot starting..."));
+
+  if (shouldFactoryResetFromFlashButton()) {
+    logWarning(F("Factory reset requested by FLASH button during boot."));
+    if (!LittleFS.begin()) {
+      logError(F("LittleFS mount failed before FLASH-button factory reset. Formatting filesystem."));
+      if (!LittleFS.format()) {
+        restartDevice(F("LittleFS format failed during FLASH-button factory reset."));
+      }
+      if (!LittleFS.begin()) {
+        restartDevice(F("LittleFS mount failed after format during FLASH-button factory reset."));
+      }
+    }
+    setFactoryDefaults();
+    if (!saveConfig()) {
+      restartDevice(F("Failed to save factory defaults requested by FLASH button."));
+    }
+  }
 
   logStatus(F("Mounting LittleFS..."));
   if (!LittleFS.begin()) {
