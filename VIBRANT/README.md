@@ -7,7 +7,7 @@ Arduino project for NodeMCU v3 with a web interface for controlling up to 16 out
 Factory Wi-Fi credentials are publicly known:
 
 - SSID: `Z-Wave Automation`
-- Password: `KoToTamoPeva2016`
+- Password: `Fiber714Cvet`
 
 Change the password immediately in **Settings** after the first boot.
 
@@ -28,12 +28,16 @@ Change the password immediately in **Settings** after the first boot.
   - Export backup (`/config/export`)
   - Import backup (`/config/import`)
   - Factory reset to defaults (`/config/factory-reset`)
+- Serial diagnostics print boot progress, Wi-Fi state, configured outputs, and important error/status messages
+- Firmware automatically attempts Wi-Fi reconnect after disconnects
+- Firmware performs a controlled restart for unrecoverable conditions after logging the reason to serial
 
 ## Default factory values
 
 - SSID: `Z-Wave Automation`
-- Password: `KoToTamoPeva2016`
+- Password: `Fiber714Cvet`
 - Hostname format: `C4-VIBRANT-<last three octets of MAC>`
+- Wi-Fi power range: `5.0 - 20.5 dBm`
 
 Security note: factory credentials are public and meant only for first setup.
 
@@ -62,3 +66,6 @@ After boot, join the configured AP and open the device IP in a browser.
 
 - The configured `SSID`/`Password` are used for both SoftAP and Station connect attempts.
 - Edited MAC address is applied to both SoftAP and Station interfaces.
+- Wi-Fi power is clamped to a minimum of `5.0 dBm`.
+- If station connectivity drops, the firmware periodically attempts reconnect.
+- If storage or runtime recovery fails irrecoverably, the device logs the reason and restarts.
