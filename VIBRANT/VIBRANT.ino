@@ -219,6 +219,17 @@ bool parsePinValue(const String& raw, int& pin) {
   return pin >= 0 && pin <= 15;
 }
 
+bool parseFloatValue(const String& raw, float& value) {
+  if (raw.isEmpty()) return false;
+  char* endPtr = nullptr;
+  value = strtof(raw.c_str(), &endPtr);
+  return endPtr != raw.c_str() && *endPtr == '\0';
+}
+
+bool usingFactoryPassword() {
+  return cfg.password == F("KoToTamoPeva2016");
+}
+
 void handleHome() {
   String html = F(
       "<!doctype html><html><head><meta charset='utf-8'><title>VIBRANT</title>"
@@ -226,6 +237,10 @@ void handleHome() {
       "th,td{border:1px solid #ddd;padding:8px;}th{background:#f5f5f5;}a,button{padding:8px 10px;}</style>"
       "</head><body><h1>VIBRANT Output Control</h1><p><a href='/settings'>Settings</a></p>"
       "<table><tr><th>#</th><th>Model</th><th>Name</th><th>Status</th><th>Toggle</th></tr>");
+  if (usingFactoryPassword()) {
+    html += F("<p style='color:#b00020;'><strong>Warning:</strong> You are using factory Wi-Fi credentials. "
+              "Open Settings and change the password.</p>");
+  }
 
   for (uint8_t i = 0; i < MAX_DEVICES; ++i) {
     const DeviceEntry& d = cfg.devices[i];
@@ -289,6 +304,10 @@ void handleSettingsGet() {
       "th,td{border:1px solid #ddd;padding:8px;}th{background:#f5f5f5;}input,select{width:100%;padding:6px;box-sizing:border-box;}"
       "button{padding:8px 10px;margin-right:8px;}</style></head><body><h1>Settings</h1>"
       "<p><a href='/'>Back to main page</a></p><form method='post' action='/settings'>");
+  if (usingFactoryPassword()) {
+    html += F("<p style='color:#b00020;'><strong>Warning:</strong> Factory default Wi-Fi password is active. "
+              "Change it now for security.</p>");
+  }
 
   html += "<fieldset><legend>Network</legend>"
           "<label>MAC address <input name='mac' value='" + htmlEscape(cfg.mac) + "' maxlength='17'></label>"
@@ -327,12 +346,25 @@ void handleSettingsGet() {
 }
 
 void handleSettingsPost() {
-  cfg.mac = server.arg("mac");
-  cfg.mac.toUpperCase();
+  String macValue = server.arg("mac");
+  macValue.toUpperCase();
+  uint8_t macBytes[6] = {0};
+  if (!parseMac(macValue, macBytes)) {
+    server.send(400, "text/plain", "Invalid MAC address format. Use AA:BB:CC:DD:EE:FF");
+    return;
+  }
+
+  float parsedPower = 0.0f;
+  if (!parseFloatValue(server.arg("wifiPower"), parsedPower)) {
+    server.send(400, "text/plain", "Invalid Wi-Fi power value");
+    return;
+  }
+
+  cfg.mac = macValue;
   cfg.hostname = server.arg("hostname");
   cfg.ssid = server.arg("ssid");
   cfg.password = server.arg("password");
-  cfg.wifiPower = server.arg("wifiPower").toFloat();
+  cfg.wifiPower = constrain(parsedPower, MIN_WIFI_POWER, MAX_WIFI_POWER);
 
   if (cfg.ssid.isEmpty()) cfg.ssid = F("Z-Wave Automation");
   if (cfg.password.isEmpty()) cfg.password = F("KoToTamoPeva2016");

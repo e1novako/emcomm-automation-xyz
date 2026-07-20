@@ -2,6 +2,15 @@
 
 Arduino project for NodeMCU v3 with a web interface for controlling up to 16 outputs.
 
+## WARNING
+
+Factory Wi-Fi credentials are publicly known:
+
+- SSID: `Z-Wave Automation`
+- Password: `KoToTamoPeva2016`
+
+Change the password immediately in **Settings** after the first boot.
+
 ## Highlights
 
 - All configuration is persisted in LittleFS JSON file: `/vibrant_config.json`
@@ -25,8 +34,7 @@ Arduino project for NodeMCU v3 with a web interface for controlling up to 16 out
 - Password: `KoToTamoPeva2016`
 - Hostname format: `C4-VIBRANT-<last three octets of MAC>`
 
-> Security note: factory credentials are public and meant only for first setup.
-> Change the Wi-Fi password immediately in **Settings** after the first boot.
+Security note: factory credentials are public and meant only for first setup.
 
 ## Arduino libraries
 
