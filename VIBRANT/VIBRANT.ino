@@ -8,6 +8,13 @@ extern "C" {
 #include "user_interface.h"
 }
 
+// ---------------------------------------------------------------------------
+// DIAGNOSTICS FLAG — set to 1 to re-enable the custom MAC override, 0 to skip
+// it for testing.  Remove this block (and the #if guards below) once the
+// Wi-Fi connection issue has been diagnosed.
+// ---------------------------------------------------------------------------
+#define WIFI_DIAG_APPLY_CUSTOM_MAC 0
+
 namespace {
 
 constexpr const char* CONFIG_PATH = "/vibrant_config.json";
@@ -367,7 +374,11 @@ void performFactoryResetAndRestart(const String& reason) {
 
 void applyWifiSettings() {
   logStatus(F("Applying Wi-Fi settings..."));
+#if WIFI_DIAG_APPLY_CUSTOM_MAC
   applyConfiguredMac();
+#else
+  logWarning(F("[DIAG] Custom MAC override disabled for diagnostics; using hardware MAC."));
+#endif
   cfg.wifiPower = constrain(cfg.wifiPower, MIN_WIFI_POWER, MAX_WIFI_POWER);
 
   const String softApSsid = defaultSoftApSsidFromMac(cfg.mac);
@@ -383,8 +394,8 @@ void applyWifiSettings() {
     restartDevice(F("Failed to start SoftAP with configured credentials."));
   }
 
-  WiFi.begin(cfg.staSsid.c_str(), cfg.staPassword.c_str());
   logStatus(String(F("Starting station connection to SSID: ")) + cfg.staSsid);
+  WiFi.begin(cfg.staSsid.c_str(), cfg.staPassword.c_str());
   resetWifiRecoveryState();
   lastWifiStatus = WiFi.status();
   logWifiSummary(softApSsid);
@@ -844,6 +855,7 @@ void maintainWifiConnection() {
     Serial.print(F("[INFO] Attempting Wi-Fi reconnect #"));
     Serial.println(wifiRecoveryAttempts);
     WiFi.disconnect(false);
+    logStatus(String(F("Reconnecting to SSID: ")) + cfg.staSsid);
     WiFi.begin(cfg.staSsid.c_str(), cfg.staPassword.c_str());
   }
 }
