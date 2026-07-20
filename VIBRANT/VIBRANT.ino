@@ -394,14 +394,21 @@ void logLoadedWifiConfig() {
 }
 
 bool detectStableFlashPressDuringBoot() {
-  const unsigned long sampleCount = FLASH_BOOT_DETECTION_WINDOW_MS / FLASH_BOOT_SAMPLE_INTERVAL_MS;
+  static_assert(FLASH_BOOT_SAMPLE_INTERVAL_MS > 0, "FLASH boot sample interval must be greater than zero.");
+  const unsigned long sampleCount =
+      (FLASH_BOOT_DETECTION_WINDOW_MS + FLASH_BOOT_SAMPLE_INTERVAL_MS - 1UL) /
+      FLASH_BOOT_SAMPLE_INTERVAL_MS;
   unsigned long lowSamples = 0;
+  const unsigned long requiredLowSamples =
+      (sampleCount * FLASH_BOOT_REQUIRED_LOW_PERCENT + 99UL) / 100UL;
 
   for (unsigned long i = 0; i < sampleCount; ++i) {
     if (digitalRead(FLASH_BUTTON_PIN) == LOW) {
       ++lowSamples;
     }
-    delay(FLASH_BOOT_SAMPLE_INTERVAL_MS);
+    if (i + 1UL < sampleCount) {
+      delay(FLASH_BOOT_SAMPLE_INTERVAL_MS);
+    }
   }
 
   Serial.print(F("[INFO] [FLASH] Boot-time samples low="));
@@ -409,8 +416,7 @@ bool detectStableFlashPressDuringBoot() {
   Serial.print(F("/"));
   Serial.println(sampleCount);
 
-  return sampleCount > 0 &&
-         (lowSamples * 100UL) >= (sampleCount * FLASH_BOOT_REQUIRED_LOW_PERCENT);
+  return sampleCount > 0 && lowSamples >= requiredLowSamples;
 }
 
 void checkFlashFactoryResetOnBoot() {
