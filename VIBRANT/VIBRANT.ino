@@ -24,6 +24,7 @@ constexpr const char* DEFAULT_STA_PASSWORD = "Fiber714Cvet";
 constexpr const char* DEFAULT_AP_PASSWORD = "Fiber714Cvet";
 constexpr const char* SOFTWARE_VERSION = "1.2.0";
 constexpr uint8_t MAX_DEVICES = 16;
+constexpr uint8_t DEFAULT_NUM_OUTPUTS = 8;
 constexpr int8_t MAX_GPIO_PIN = 15;
 constexpr float MIN_WIFI_POWER = 5.0f;
 constexpr float MAX_WIFI_POWER = 20.5f;
@@ -31,7 +32,7 @@ constexpr unsigned long WIFI_RECONNECT_INTERVAL_MS = 15000UL;
 constexpr unsigned long WIFI_CONNECT_LOG_INTERVAL_MS = 5000UL;
 constexpr uint8_t FLASH_BUTTON_PIN = 0;
 constexpr unsigned long FLASH_FACTORY_RESET_HOLD_MS = 5000UL;
-constexpr unsigned long FLASH_BUTTON_DEBOUNCE_MS = 50UL;
+constexpr unsigned long FLASH_BUTTON_DEBOUNCE_MS = 20UL;
 constexpr unsigned long WIFI_RECOVERY_WINDOW_MS = 180000UL;
 constexpr uint8_t MAX_WIFI_RECOVERY_ATTEMPTS = 12;
 
@@ -49,6 +50,7 @@ struct DeviceConfig {
   String staPassword;
   String apPassword;
   float wifiPower;
+  uint8_t numOutputs;
   DeviceEntry devices[MAX_DEVICES];
 };
 
@@ -65,6 +67,7 @@ bool flashResetArmed = false;
 bool flashButtonLastRawPressed = false;
 bool flashButtonStablePressed = false;
 unsigned long flashButtonLastChangeMs = 0;
+unsigned long flashButtonHoldLogMs = 0;
 uint8_t wifiRecoveryAttempts = 0;
 
 String htmlEscape(const String& value) {
@@ -197,6 +200,7 @@ void setFactoryDefaults() {
   cfg.staPassword = DEFAULT_STA_PASSWORD;
   cfg.apPassword = DEFAULT_AP_PASSWORD;
   cfg.wifiPower = 20.5f;
+  cfg.numOutputs = DEFAULT_NUM_OUTPUTS;
   for (uint8_t i = 0; i < MAX_DEVICES; ++i) {
     cfg.devices[i].model = String(F("Model ")) + String(i + 1);
     cfg.devices[i].name = String(F("Output ")) + String(i + 1);
@@ -214,6 +218,7 @@ bool saveConfig() {
   doc["staPassword"] = cfg.staPassword;
   doc["apPassword"] = cfg.apPassword;
   doc["wifiPower"] = cfg.wifiPower;
+  doc["numOutputs"] = cfg.numOutputs;
 
   JsonArray devices = doc["devices"].to<JsonArray>();
   for (uint8_t i = 0; i < MAX_DEVICES; ++i) {
@@ -274,6 +279,10 @@ bool loadConfig() {
   cfg.staPassword = doc["staPassword"] | legacyPassword;
   cfg.apPassword = doc["apPassword"] | legacyPassword;
   cfg.wifiPower = doc["wifiPower"] | 20.5f;
+  // Backward-compat: existing saved configs without numOutputs default to MAX_DEVICES
+  // so no previously configured outputs are hidden unexpectedly.
+  cfg.numOutputs = static_cast<uint8_t>(doc["numOutputs"] | static_cast<uint8_t>(MAX_DEVICES));
+  if (cfg.numOutputs < 1 || cfg.numOutputs > MAX_DEVICES) cfg.numOutputs = MAX_DEVICES;
 
   JsonArray devices = doc["devices"].as<JsonArray>();
   for (uint8_t i = 0; i < MAX_DEVICES; ++i) {
@@ -310,7 +319,7 @@ String pinLabel(int8_t pin) {
 
 void logDeviceSummary() {
   Serial.println(F("[INFO] Configured outputs:"));
-  for (uint8_t i = 0; i < MAX_DEVICES; ++i) {
+  for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
     Serial.print(F("  ["));
     Serial.print(i + 1);
     Serial.print(F("] Model='"));
@@ -505,7 +514,7 @@ void handleHome() {
     html += passwordWarningHtml();
   }
 
-  for (uint8_t i = 0; i < MAX_DEVICES; ++i) {
+  for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
     const DeviceEntry& d = cfg.devices[i];
     String status = F("Unassigned");
     bool mapped = d.pin >= 0 && d.pin <= MAX_GPIO_PIN;
@@ -608,8 +617,10 @@ void handleSettingsGet() {
           "<label>Wi-Fi power (5.0 - 20.5 dBm) <input name='wifiPower' type='number' min='5' max='20.5' step='0.1' value='" + String(cfg.wifiPower, 1) + "'></label>"
           "</fieldset>";
 
-  html += "<fieldset><legend>Devices (up to 16)</legend><table><tr><th>#</th><th>Model</th><th>Name</th><th>Control output</th></tr>";
-  for (uint8_t i = 0; i < MAX_DEVICES; ++i) {
+  html += "<fieldset><legend>Devices</legend>"
+          "<label>Number of outputs (1 - 16) <input name='numOutputs' type='number' min='1' max='16' step='1' value='" + String(cfg.numOutputs) + "'></label>"
+          "<table><tr><th>#</th><th>Model</th><th>Name</th><th>Control output</th></tr>";
+  for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
     html += "<tr><td>" + String(i + 1) + "</td>"
             "<td><input name='model_" + String(i) + "' value='" + htmlEscape(cfg.devices[i].model) + "'></td>"
             "<td><input name='name_" + String(i) + "' value='" + htmlEscape(cfg.devices[i].name) + "'></td>"
@@ -672,6 +683,14 @@ void handleSettingsPost() {
 
   cfg.wifiPower = constrain(parsedPower, MIN_WIFI_POWER, MAX_WIFI_POWER);
 
+  int parsedOutputs = -1;
+  if (!parseIndexValue(server.arg("numOutputs"), parsedOutputs) ||
+      parsedOutputs < 1 || parsedOutputs > MAX_DEVICES) {
+    logError(F("Settings save rejected: number of outputs must be between 1 and 16."));
+    server.send(400, "text/plain", "Number of outputs must be 1-16");
+    return;
+  }
+
   if (cfg.staSsid.isEmpty() || cfg.staPassword.isEmpty() || cfg.apPassword.isEmpty()) {
     logError(F("Settings save rejected because station SSID or passwords were empty."));
     server.send(400, "text/plain", "Station SSID, station password, and AP password must not be empty");
@@ -679,7 +698,9 @@ void handleSettingsPost() {
   }
   if (cfg.hostname.isEmpty()) cfg.hostname = defaultHostnameFromMac(cfg.mac);
 
-  for (uint8_t i = 0; i < MAX_DEVICES; ++i) {
+  cfg.numOutputs = static_cast<uint8_t>(parsedOutputs);
+
+  for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
     cfg.devices[i].model = server.arg("model_" + String(i));
     cfg.devices[i].name = server.arg("name_" + String(i));
     int pin = -1;
@@ -831,29 +852,48 @@ void maintainFlashFactoryResetRequest() {
   bool rawPressed = digitalRead(FLASH_BUTTON_PIN) == LOW;
   unsigned long now = millis();
 
+  // Log and debounce raw pin transitions
   if (rawPressed != flashButtonLastRawPressed) {
     flashButtonLastRawPressed = rawPressed;
     flashButtonLastChangeMs = now;
+    Serial.print(F("[INFO] [FLASH] Raw pin: "));
+    Serial.println(rawPressed ? F("LOW (pressed)") : F("HIGH (released)"));
   }
 
+  // Wait for signal to be stable for the debounce window
   if (now - flashButtonLastChangeMs < FLASH_BUTTON_DEBOUNCE_MS) {
     return;
   }
 
+  // Stable (debounced) state changed
   if (flashButtonStablePressed != rawPressed) {
     flashButtonStablePressed = rawPressed;
 
     if (flashButtonStablePressed) {
       flashHoldStartMs = now;
       flashResetArmed = true;
-      logWarning(F("FLASH button press detected after boot. Hold for 5 seconds to factory reset."));
+      flashButtonHoldLogMs = now;
+      logWarning(F("FLASH button stable press detected. Hold for 5 seconds to factory reset."));
     } else {
       if (flashHoldStartMs != 0 && flashResetArmed) {
-        logStatus(F("FLASH button released before factory reset timeout."));
+        unsigned long heldMs = now - flashHoldStartMs;
+        Serial.print(F("[INFO] [FLASH] Released after "));
+        Serial.print(heldMs);
+        Serial.println(F(" ms. Factory reset canceled."));
       }
       flashHoldStartMs = 0;
       flashResetArmed = false;
+      flashButtonHoldLogMs = 0;
     }
+  }
+
+  // Log hold progress every second
+  if (flashButtonStablePressed && flashResetArmed && flashHoldStartMs != 0 &&
+      now - flashButtonHoldLogMs >= 1000UL) {
+    flashButtonHoldLogMs = now;
+    Serial.print(F("[INFO] [FLASH] Holding... "));
+    Serial.print((now - flashHoldStartMs) / 1000UL);
+    Serial.println(F("s / 5s"));
   }
 
   if (flashButtonStablePressed && flashResetArmed &&
