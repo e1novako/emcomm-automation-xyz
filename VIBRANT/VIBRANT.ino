@@ -37,6 +37,14 @@ constexpr uint8_t FLASH_BOOT_REQUIRED_LOW_PERCENT = 80;
 constexpr unsigned long WIFI_RECOVERY_WINDOW_MS = 180000UL;
 constexpr uint8_t MAX_WIFI_RECOVERY_ATTEMPTS = 12;
 
+constexpr unsigned long ceilDiv(unsigned long numerator, unsigned long denominator) {
+  return (numerator + denominator - 1UL) / denominator;
+}
+
+static_assert(FLASH_BOOT_SAMPLE_INTERVAL_MS > 0, "FLASH boot sample interval must be greater than zero.");
+static_assert(ceilDiv(FLASH_BOOT_DETECTION_WINDOW_MS, FLASH_BOOT_SAMPLE_INTERVAL_MS) >= 4,
+              "FLASH boot detection window must collect at least 4 samples.");
+
 struct DeviceEntry {
   String model;
   String name;
@@ -394,14 +402,12 @@ void logLoadedWifiConfig() {
 }
 
 bool detectStableFlashPressDuringBoot() {
-  static_assert(FLASH_BOOT_SAMPLE_INTERVAL_MS > 0, "FLASH boot sample interval must be greater than zero.");
-  const unsigned long sampleCount =
-      (FLASH_BOOT_DETECTION_WINDOW_MS + FLASH_BOOT_SAMPLE_INTERVAL_MS - 1UL) /
-      FLASH_BOOT_SAMPLE_INTERVAL_MS;
+  const unsigned long sampleCount = ceilDiv(FLASH_BOOT_DETECTION_WINDOW_MS, FLASH_BOOT_SAMPLE_INTERVAL_MS);
   unsigned long lowSamples = 0;
-  const unsigned long requiredLowSamples =
-      (sampleCount * FLASH_BOOT_REQUIRED_LOW_PERCENT + 99UL) / 100UL;
+  const unsigned long requiredLowSamples = ceilDiv(sampleCount * FLASH_BOOT_REQUIRED_LOW_PERCENT, 100UL);
 
+  // This short blocking window is intentional: GPIO0 is only sampled during boot,
+  // not polled continuously at runtime.
   for (unsigned long i = 0; i < sampleCount; ++i) {
     if (digitalRead(FLASH_BUTTON_PIN) == LOW) {
       ++lowSamples;
