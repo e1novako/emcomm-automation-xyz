@@ -12,14 +12,18 @@ namespace {
 
 constexpr const char* CONFIG_PATH = "/vibrant_config.json";
 constexpr const char* IMPORT_CONFIG_PATH = "/vibrant_config_upload.json";
-constexpr const char* DEFAULT_AP_SSID = "Z-Wave Automation";
+constexpr const char* DEFAULT_STA_SSID = "Z-Wave Automation";
+constexpr const char* DEFAULT_STA_PASSWORD = "Fiber714Cvet";
 constexpr const char* DEFAULT_AP_PASSWORD = "Fiber714Cvet";
+constexpr const char* SOFTWARE_VERSION = "1.2.0";
 constexpr uint8_t MAX_DEVICES = 16;
 constexpr int8_t MAX_GPIO_PIN = 15;
 constexpr float MIN_WIFI_POWER = 5.0f;
 constexpr float MAX_WIFI_POWER = 20.5f;
 constexpr unsigned long WIFI_RECONNECT_INTERVAL_MS = 15000UL;
 constexpr unsigned long WIFI_CONNECT_LOG_INTERVAL_MS = 5000UL;
+constexpr uint8_t FLASH_BUTTON_PIN = 0;
+constexpr unsigned long FLASH_FACTORY_RESET_HOLD_MS = 5000UL;
 constexpr unsigned long WIFI_RECOVERY_WINDOW_MS = 180000UL;
 constexpr uint8_t MAX_WIFI_RECOVERY_ATTEMPTS = 12;
 
@@ -33,8 +37,9 @@ struct DeviceEntry {
 struct DeviceConfig {
   String mac;
   String hostname;
-  String ssid;
-  String password;
+  String staSsid;
+  String staPassword;
+  String apPassword;
   float wifiPower;
   DeviceEntry devices[MAX_DEVICES];
 };
@@ -47,6 +52,8 @@ wl_status_t lastWifiStatus = WL_IDLE_STATUS;
 unsigned long lastWifiReconnectAttemptMs = 0;
 unsigned long lastWifiConnectLogMs = 0;
 unsigned long wifiDisconnectSinceMs = 0;
+unsigned long flashHoldStartMs = 0;
+bool flashResetArmed = false;
 uint8_t wifiRecoveryAttempts = 0;
 
 String htmlEscape(const String& value) {
@@ -102,6 +109,12 @@ void logStatus(const String& message) {
   Serial.println(message);
 }
 
+void logWarning(const String& message) {
+  Serial.print(F("[WARN] "));
+  Serial.println(message);
+}
+
+
 void logError(const String& message) {
   Serial.print(F("[ERROR] "));
   Serial.println(message);
@@ -121,6 +134,10 @@ String macLastThreeOctets(const String& mac) {
 }
 
 String defaultHostnameFromMac(const String& mac) {
+  return String(F("C4-VIBRANT-")) + macLastThreeOctets(mac);
+}
+
+String defaultSoftApSsidFromMac(const String& mac) {
   return String(F("C4-VIBRANT-")) + macLastThreeOctets(mac);
 }
 
@@ -147,14 +164,14 @@ bool parseMac(const String& mac, uint8_t out[6]) {
 bool applyConfiguredMac() {
   uint8_t mac[6] = {0};
   if (!parseMac(cfg.mac, mac)) {
-    logError(F("Configured MAC address is invalid; skipping MAC apply."));
+    logWarning(F("Configured MAC address is invalid; continuing with hardware MAC."));
     return false;
   }
 
   bool stationOk = wifi_set_macaddr(STATION_IF, mac);
   bool apOk = wifi_set_macaddr(SOFTAP_IF, mac);
   if (!stationOk || !apOk) {
-    logError(F("Failed to apply configured MAC address to one or more interfaces."));
+    logWarning(F("Failed to apply configured MAC address to one or more interfaces; continuing with hardware MAC."));
     return false;
   }
 
@@ -165,9 +182,10 @@ bool applyConfiguredMac() {
 void setFactoryDefaults() {
   cfg.mac = WiFi.softAPmacAddress();
   cfg.hostname = defaultHostnameFromMac(cfg.mac);
-  cfg.ssid = DEFAULT_AP_SSID;
-  cfg.password = DEFAULT_AP_PASSWORD;
-  cfg.wifiPower = 17.5f;
+  cfg.staSsid = DEFAULT_STA_SSID;
+  cfg.staPassword = DEFAULT_STA_PASSWORD;
+  cfg.apPassword = DEFAULT_AP_PASSWORD;
+  cfg.wifiPower = 20.5f;
   for (uint8_t i = 0; i < MAX_DEVICES; ++i) {
     cfg.devices[i].model = String(F("Model ")) + String(i + 1);
     cfg.devices[i].name = String(F("Output ")) + String(i + 1);
@@ -181,8 +199,9 @@ bool saveConfig() {
   JsonDocument doc;
   doc["mac"] = cfg.mac;
   doc["hostname"] = cfg.hostname;
-  doc["ssid"] = cfg.ssid;
-  doc["password"] = cfg.password;
+  doc["staSsid"] = cfg.staSsid;
+  doc["staPassword"] = cfg.staPassword;
+  doc["apPassword"] = cfg.apPassword;
   doc["wifiPower"] = cfg.wifiPower;
 
   JsonArray devices = doc["devices"].to<JsonArray>();
@@ -237,9 +256,13 @@ bool loadConfig() {
 
   cfg.mac = doc["mac"] | WiFi.softAPmacAddress();
   cfg.hostname = doc["hostname"] | defaultHostnameFromMac(cfg.mac);
-  cfg.ssid = doc["ssid"] | DEFAULT_AP_SSID;
-  cfg.password = doc["password"] | DEFAULT_AP_PASSWORD;
-  cfg.wifiPower = doc["wifiPower"] | 17.5f;
+
+  String legacySsid = doc["ssid"] | String(DEFAULT_STA_SSID);
+  String legacyPassword = doc["password"] | String(DEFAULT_STA_PASSWORD);
+  cfg.staSsid = doc["staSsid"] | legacySsid;
+  cfg.staPassword = doc["staPassword"] | legacyPassword;
+  cfg.apPassword = doc["apPassword"] | legacyPassword;
+  cfg.wifiPower = doc["wifiPower"] | 20.5f;
 
   JsonArray devices = doc["devices"].as<JsonArray>();
   for (uint8_t i = 0; i < MAX_DEVICES; ++i) {
@@ -256,6 +279,12 @@ bool loadConfig() {
       cfg.devices[i].state = false;
     }
   }
+
+  if (cfg.staSsid.isEmpty()) cfg.staSsid = DEFAULT_STA_SSID;
+  if (cfg.staPassword.isEmpty()) cfg.staPassword = DEFAULT_STA_PASSWORD;
+  if (cfg.apPassword.isEmpty()) cfg.apPassword = DEFAULT_AP_PASSWORD;
+  if (cfg.hostname.isEmpty()) cfg.hostname = defaultHostnameFromMac(cfg.mac);
+
 
   logStatus(F("Configuration loaded successfully."));
   return true;
@@ -293,15 +322,20 @@ void applyOutputs() {
     }
     pinMode(pin, OUTPUT);
     digitalWrite(pin, cfg.devices[i].state ? HIGH : LOW);
+
   }
   logDeviceSummary();
 }
 
-void logWifiSummary() {
+void logWifiSummary(const String& softApSsid) {
   Serial.print(F("[INFO] SoftAP SSID: "));
-  Serial.println(cfg.ssid);
+  Serial.println(softApSsid);
+  Serial.print(F("[INFO] Station target SSID: "));
+  Serial.println(cfg.staSsid);
   Serial.print(F("[INFO] Hostname: "));
   Serial.println(cfg.hostname);
+  Serial.print(F("[INFO] Software version: "));
+  Serial.println(SOFTWARE_VERSION);
   Serial.print(F("[INFO] Wi-Fi power: "));
   Serial.print(cfg.wifiPower, 1);
   Serial.println(F(" dBm"));
@@ -321,14 +355,22 @@ void resetWifiRecoveryState() {
   wifiRecoveryAttempts = 0;
 }
 
+void performFactoryResetAndRestart(const String& reason) {
+  logWarning(reason);
+  setFactoryDefaults();
+  if (!saveConfig()) {
+    restartDevice(F("Failed to persist factory defaults during requested reset."));
+  }
+  delay(500);
+  ESP.restart();
+}
+
 void applyWifiSettings() {
   logStatus(F("Applying Wi-Fi settings..."));
   applyConfiguredMac();
-  if (cfg.hostname.isEmpty()) {
-    cfg.hostname = defaultHostnameFromMac(cfg.mac);
-    logStatus(String(F("Hostname was empty, defaulted to ")) + cfg.hostname);
-  }
   cfg.wifiPower = constrain(cfg.wifiPower, MIN_WIFI_POWER, MAX_WIFI_POWER);
+
+  const String softApSsid = defaultSoftApSsidFromMac(cfg.mac);
 
   WiFi.persistent(false);
   WiFi.mode(WIFI_AP_STA);
@@ -336,16 +378,16 @@ void applyWifiSettings() {
   WiFi.setAutoReconnect(true);
   WiFi.setOutputPower(cfg.wifiPower);
 
-  bool apStarted = WiFi.softAP(cfg.ssid.c_str(), cfg.password.c_str());
+  bool apStarted = WiFi.softAP(softApSsid.c_str(), cfg.apPassword.c_str());
   if (!apStarted) {
     restartDevice(F("Failed to start SoftAP with configured credentials."));
   }
 
-  WiFi.begin(cfg.ssid.c_str(), cfg.password.c_str());
-  logStatus(String(F("Starting station connection to SSID: ")) + cfg.ssid);
+  WiFi.begin(cfg.staSsid.c_str(), cfg.staPassword.c_str());
+  logStatus(String(F("Starting station connection to SSID: ")) + cfg.staSsid);
   resetWifiRecoveryState();
   lastWifiStatus = WiFi.status();
-  logWifiSummary();
+  logWifiSummary(softApSsid);
 }
 
 String pinOption(int selectedPin, int pin) {
@@ -383,7 +425,7 @@ bool parseFloatValue(const String& raw, float& value) {
 }
 
 bool usingFactoryPassword() {
-  return cfg.password == DEFAULT_AP_PASSWORD;
+  return cfg.apPassword == DEFAULT_AP_PASSWORD || cfg.staPassword == DEFAULT_STA_PASSWORD;
 }
 
 String passwordWarningHtml() {
@@ -392,7 +434,7 @@ String passwordWarningHtml() {
 }
 
 bool ensureAuthorized() {
-  if (server.authenticate("admin", cfg.password.c_str())) return true;
+  if (server.authenticate("admin", cfg.apPassword.c_str())) return true;
   server.requestAuthentication();
   return false;
 }
@@ -402,7 +444,7 @@ void handleHome() {
       "<!doctype html><html><head><meta charset='utf-8'><title>VIBRANT</title>"
       "<style>body{font-family:Arial,sans-serif;margin:20px;}table{border-collapse:collapse;width:100%;}"
       "th,td{border:1px solid #ddd;padding:8px;}th{background:#f5f5f5;}a,button{padding:8px 10px;}</style>"
-      "</head><body><h1>VIBRANT Output Control</h1><p><a href='/settings'>Settings</a></p>"
+      "</head><body><h1>VIBRANT Output Control</h1><p>Version: " + String(SOFTWARE_VERSION) + "</p><p><a href='/settings'>Settings</a></p>"
       "<table><tr><th>#</th><th>Model</th><th>Name</th><th>Status</th><th>Toggle</th></tr>");
   if (usingFactoryPassword()) {
     html += passwordWarningHtml();
@@ -494,11 +536,20 @@ void handleSettingsGet() {
     html += passwordWarningHtml();
   }
 
-  html += "<fieldset><legend>Network</legend>"
+  html += "<fieldset><legend>Station network</legend>"
+          "<label>Station SSID <input name='staSsid' value='" + htmlEscape(cfg.staSsid) + "'></label>"
+          "<label for='staPassword'>Station password</label><input id='staPassword' name='staPassword' type='password' value='' placeholder='Leave empty to keep current station password'>"
+          "</fieldset>";
+
+  html += "<fieldset><legend>Access point</legend>"
+          "<label>SoftAP SSID <input value='" + htmlEscape(defaultSoftApSsidFromMac(cfg.mac)) + "' readonly></label>"
+          "<label for='apPassword'>SoftAP password</label><input id='apPassword' name='apPassword' type='password' value='' placeholder='Leave empty to keep current AP password'>"
+          "</fieldset>";
+
+  html += "<fieldset><legend>Network device settings</legend>"
           "<label>MAC address <input name='mac' value='" + htmlEscape(cfg.mac) + "' maxlength='17'></label>"
           "<label>Hostname for DHCP <input name='hostname' value='" + htmlEscape(cfg.hostname) + "'></label>"
-          "<label>SSID <input name='ssid' value='" + htmlEscape(cfg.ssid) + "'></label>"
-          "<label for='password'>Password</label><input id='password' name='password' type='password' value='' placeholder='Leave empty to keep current password'>"
+
           "<label>Wi-Fi power (5.0 - 20.5 dBm) <input name='wifiPower' type='number' min='5' max='20.5' step='0.1' value='" + String(cfg.wifiPower, 1) + "'></label>"
           "</fieldset>";
 
@@ -520,6 +571,7 @@ void handleSettingsGet() {
   html += F(
       "<h2>Configuration maintenance</h2>"
       "<p><a href='/config/export'>Download configuration backup</a></p>"
+      "<p>Hold the FLASH button for 5 seconds after boot to trigger factory reset and restart.</p>"
       "<form method='post' action='/config/factory-reset' onsubmit=\"return confirm('Factory reset?');\">"
       "<button type='submit'>Factory reset</button></form>"
       "<form method='post' action='/config/import' enctype='multipart/form-data'>"
@@ -551,16 +603,23 @@ void handleSettingsPost() {
 
   cfg.mac = macValue;
   cfg.hostname = server.arg("hostname");
-  cfg.ssid = server.arg("ssid");
-  String newPassword = server.arg("password");
-  if (!newPassword.isEmpty()) {
-    cfg.password = newPassword;
+  cfg.staSsid = server.arg("staSsid");
+
+  String newStaPassword = server.arg("staPassword");
+  if (!newStaPassword.isEmpty()) {
+    cfg.staPassword = newStaPassword;
   }
+
+  String newApPassword = server.arg("apPassword");
+  if (!newApPassword.isEmpty()) {
+    cfg.apPassword = newApPassword;
+  }
+
   cfg.wifiPower = constrain(parsedPower, MIN_WIFI_POWER, MAX_WIFI_POWER);
 
-  if (cfg.ssid.isEmpty() || cfg.password.isEmpty()) {
-    logError(F("Settings save rejected because SSID or password was empty."));
-    server.send(400, "text/plain", "SSID and password must not be empty");
+  if (cfg.staSsid.isEmpty() || cfg.staPassword.isEmpty() || cfg.apPassword.isEmpty()) {
+    logError(F("Settings save rejected because station SSID or passwords were empty."));
+    server.send(400, "text/plain", "Station SSID, station password, and AP password must not be empty");
     return;
   }
   if (cfg.hostname.isEmpty()) cfg.hostname = defaultHostnameFromMac(cfg.mac);
@@ -610,7 +669,7 @@ void handleConfigExport() {
 }
 
 void handleConfigImportUpload() {
-  if (!server.authenticate("admin", cfg.password.c_str())) {
+  if (!server.authenticate("admin", cfg.apPassword.c_str())) {
     importFailed = true;
     server.requestAuthentication();
     return;
@@ -713,6 +772,33 @@ void handleNotFound() {
   server.send(404, "text/plain", "Not found");
 }
 
+void maintainFlashFactoryResetRequest() {
+  pinMode(FLASH_BUTTON_PIN, INPUT_PULLUP);
+  bool pressed = digitalRead(FLASH_BUTTON_PIN) == LOW;
+  unsigned long now = millis();
+
+  if (pressed) {
+    if (flashHoldStartMs == 0) {
+      flashHoldStartMs = now;
+      flashResetArmed = true;
+      logWarning(F("FLASH button press detected after boot. Hold for 5 seconds to factory reset."));
+      return;
+    }
+
+    if (flashResetArmed && now - flashHoldStartMs >= FLASH_FACTORY_RESET_HOLD_MS) {
+      flashResetArmed = false;
+      performFactoryResetAndRestart(F("FLASH button held for 5 seconds after boot. Applying factory defaults."));
+    }
+  } else {
+    if (flashHoldStartMs != 0 && flashResetArmed) {
+      logStatus(F("FLASH button released before factory reset timeout."));
+    }
+    flashHoldStartMs = 0;
+    flashResetArmed = false;
+  }
+}
+
+
 void maintainWifiConnection() {
   wl_status_t status = WiFi.status();
   if (status != lastWifiStatus) {
@@ -735,7 +821,7 @@ void maintainWifiConnection() {
   if (wifiDisconnectSinceMs == 0) {
     wifiDisconnectSinceMs = now;
     lastWifiConnectLogMs = 0;
-    logError(String(F("Wi-Fi disconnected. Status: ")) + wifiStatusToString(status));
+    logWarning(String(F("Wi-Fi disconnected. Status: ")) + wifiStatusToString(status));
   }
 
   if (now - wifiDisconnectSinceMs >= WIFI_RECOVERY_WINDOW_MS && wifiRecoveryAttempts >= MAX_WIFI_RECOVERY_ATTEMPTS) {
@@ -756,7 +842,7 @@ void maintainWifiConnection() {
     Serial.print(F("[INFO] Attempting Wi-Fi reconnect #"));
     Serial.println(wifiRecoveryAttempts);
     WiFi.disconnect(false);
-    WiFi.begin(cfg.ssid.c_str(), cfg.password.c_str());
+    WiFi.begin(cfg.staSsid.c_str(), cfg.staPassword.c_str());
   }
 }
 
@@ -767,6 +853,8 @@ void setup() {
   delay(100);
   Serial.println();
   Serial.println(F("[INFO] VIBRANT boot starting..."));
+  Serial.print(F("[INFO] Software version: "));
+  Serial.println(SOFTWARE_VERSION);
 
   logStatus(F("Mounting LittleFS..."));
   if (!LittleFS.begin()) {
@@ -807,11 +895,12 @@ void setup() {
 
   server.begin();
   logStatus(F("HTTP server started on port 80."));
-  logWifiSummary();
+  logWifiSummary(defaultSoftApSsidFromMac(cfg.mac));
   logStatus(F("Boot sequence complete."));
 }
 
 void loop() {
   server.handleClient();
+  maintainFlashFactoryResetRequest();
   maintainWifiConnection();
 }
