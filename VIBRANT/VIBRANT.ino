@@ -34,6 +34,7 @@ constexpr uint8_t FLASH_BUTTON_PIN = 0;
 constexpr unsigned long FLASH_BOOT_DETECTION_WINDOW_MS = 750UL;
 constexpr unsigned long FLASH_BOOT_SAMPLE_INTERVAL_MS = 10UL;
 constexpr uint8_t FLASH_BOOT_REQUIRED_LOW_PERCENT = 80;
+constexpr unsigned long FLASH_BOOT_MIN_SAMPLES = 4UL;
 constexpr unsigned long WIFI_RECOVERY_WINDOW_MS = 180000UL;
 constexpr uint8_t MAX_WIFI_RECOVERY_ATTEMPTS = 12;
 
@@ -41,9 +42,19 @@ constexpr unsigned long ceilDiv(unsigned long numerator, unsigned long denominat
   return (numerator + denominator - 1UL) / denominator;
 }
 
+constexpr unsigned long ceilPercentOf(unsigned long value, unsigned long percent) {
+  return static_cast<unsigned long>(
+      (static_cast<unsigned long long>(value) * percent + 99ULL) / 100ULL);
+}
+
+constexpr unsigned long FLASH_BOOT_SAMPLE_COUNT =
+    ceilDiv(FLASH_BOOT_DETECTION_WINDOW_MS, FLASH_BOOT_SAMPLE_INTERVAL_MS);
+constexpr unsigned long FLASH_BOOT_REQUIRED_LOW_SAMPLES =
+    ceilPercentOf(FLASH_BOOT_SAMPLE_COUNT, FLASH_BOOT_REQUIRED_LOW_PERCENT);
+
 static_assert(FLASH_BOOT_SAMPLE_INTERVAL_MS > 0, "FLASH boot sample interval must be greater than zero.");
-static_assert(ceilDiv(FLASH_BOOT_DETECTION_WINDOW_MS, FLASH_BOOT_SAMPLE_INTERVAL_MS) >= 4,
-              "FLASH boot detection window must collect at least 4 samples.");
+static_assert(FLASH_BOOT_SAMPLE_COUNT >= FLASH_BOOT_MIN_SAMPLES,
+              "FLASH boot detection window must collect the minimum number of samples.");
 
 struct DeviceEntry {
   String model;
@@ -402,27 +413,25 @@ void logLoadedWifiConfig() {
 }
 
 bool detectStableFlashPressDuringBoot() {
-  const unsigned long sampleCount = ceilDiv(FLASH_BOOT_DETECTION_WINDOW_MS, FLASH_BOOT_SAMPLE_INTERVAL_MS);
   unsigned long lowSamples = 0;
-  const unsigned long requiredLowSamples = ceilDiv(sampleCount * FLASH_BOOT_REQUIRED_LOW_PERCENT, 100UL);
 
   // This short blocking window is intentional: GPIO0 is only sampled during boot,
   // not polled continuously at runtime.
-  for (unsigned long i = 0; i < sampleCount; ++i) {
+  for (unsigned long i = 0; i < FLASH_BOOT_SAMPLE_COUNT; ++i) {
+    if (i > 0) {
+      delay(FLASH_BOOT_SAMPLE_INTERVAL_MS);
+    }
     if (digitalRead(FLASH_BUTTON_PIN) == LOW) {
       ++lowSamples;
-    }
-    if (i + 1UL < sampleCount) {
-      delay(FLASH_BOOT_SAMPLE_INTERVAL_MS);
     }
   }
 
   Serial.print(F("[INFO] [FLASH] Boot-time samples low="));
   Serial.print(lowSamples);
   Serial.print(F("/"));
-  Serial.println(sampleCount);
+  Serial.println(FLASH_BOOT_SAMPLE_COUNT);
 
-  return sampleCount > 0 && lowSamples >= requiredLowSamples;
+  return lowSamples >= FLASH_BOOT_REQUIRED_LOW_SAMPLES;
 }
 
 void checkFlashFactoryResetOnBoot() {
@@ -680,7 +689,7 @@ void handleSettingsGet() {
   html += F(
       "<h2>Configuration maintenance</h2>"
       "<p><a href='/config/export'>Download configuration backup</a></p>"
-      "<p>Hold the FLASH button during boot to trigger factory reset and restart.</p>"
+      "<p>Hold the FLASH button during power-on (within the first second of boot) to trigger factory reset and restart.</p>"
       "<form method='post' action='/config/factory-reset' onsubmit=\"return confirm('Factory reset?');\">"
       "<button type='submit'>Factory reset</button></form>"
       "<form method='post' action='/config/import' enctype='multipart/form-data'>"
