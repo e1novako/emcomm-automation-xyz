@@ -683,10 +683,10 @@ void handleSettingsPost() {
 
   cfg.wifiPower = constrain(parsedPower, MIN_WIFI_POWER, MAX_WIFI_POWER);
 
-  int parsedNumOutputs = -1;
-  if (!parseIndexValue(server.arg("numOutputs"), parsedNumOutputs) ||
-      parsedNumOutputs < 1 || parsedNumOutputs > MAX_DEVICES) {
-    logError(F("Settings save rejected due to invalid number of outputs."));
+  int parsedOutputs = -1;
+  if (!parseIndexValue(server.arg("numOutputs"), parsedOutputs) ||
+      parsedOutputs < 1 || parsedOutputs > MAX_DEVICES) {
+    logError(F("Settings save rejected: number of outputs must be between 1 and 16."));
     server.send(400, "text/plain", "Number of outputs must be 1-16");
     return;
   }
@@ -698,7 +698,7 @@ void handleSettingsPost() {
   }
   if (cfg.hostname.isEmpty()) cfg.hostname = defaultHostnameFromMac(cfg.mac);
 
-  cfg.numOutputs = static_cast<uint8_t>(parsedNumOutputs);
+  cfg.numOutputs = static_cast<uint8_t>(parsedOutputs);
 
   for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
     cfg.devices[i].model = server.arg("model_" + String(i));
