@@ -11,6 +11,8 @@ extern "C" {
 namespace {
 
 constexpr const char* CONFIG_PATH = "/vibrant_config.json";
+constexpr const char* DEFAULT_AP_SSID = "Z-Wave Automation";
+constexpr const char* DEFAULT_AP_PASSWORD = "KoToTamoPeva2016";
 constexpr uint8_t MAX_DEVICES = 16;
 constexpr int8_t MAX_GPIO_PIN = 15;
 constexpr float MIN_WIFI_POWER = 0.0f;
@@ -35,6 +37,7 @@ struct DeviceConfig {
 DeviceConfig cfg;
 ESP8266WebServer server(80);
 File importFile;
+bool importFailed = false;
 
 String htmlEscape(const String& value) {
   String out;
@@ -98,8 +101,8 @@ void applyConfiguredMac() {
 void setFactoryDefaults() {
   cfg.mac = WiFi.softAPmacAddress();
   cfg.hostname = defaultHostnameFromMac(cfg.mac);
-  cfg.ssid = F("Z-Wave Automation");
-  cfg.password = F("KoToTamoPeva2016");
+  cfg.ssid = DEFAULT_AP_SSID;
+  cfg.password = DEFAULT_AP_PASSWORD;
   cfg.wifiPower = 17.5f;
   for (uint8_t i = 0; i < MAX_DEVICES; ++i) {
     cfg.devices[i].model = String(F("Model ")) + String(i + 1);
@@ -155,8 +158,8 @@ bool loadConfig() {
 
   cfg.mac = doc["mac"] | WiFi.softAPmacAddress();
   cfg.hostname = doc["hostname"] | defaultHostnameFromMac(cfg.mac);
-  cfg.ssid = doc["ssid"] | "Z-Wave Automation";
-  cfg.password = doc["password"] | "KoToTamoPeva2016";
+  cfg.ssid = doc["ssid"] | DEFAULT_AP_SSID;
+  cfg.password = doc["password"] | DEFAULT_AP_PASSWORD;
   cfg.wifiPower = doc["wifiPower"] | 17.5f;
 
   JsonArray devices = doc["devices"].as<JsonArray>();
@@ -237,12 +240,18 @@ bool parseFloatValue(const String& raw, float& value) {
 }
 
 bool usingFactoryPassword() {
-  return cfg.password == F("KoToTamoPeva2016");
+  return cfg.password == DEFAULT_AP_PASSWORD;
 }
 
 String passwordWarningHtml() {
   return F("<p style='color:#b00020;'><strong>Warning:</strong> Factory default Wi-Fi password is active. "
            "Change it now for security.</p>");
+}
+
+bool ensureAuthorized() {
+  if (server.authenticate("admin", cfg.password.c_str())) return true;
+  server.requestAuthentication();
+  return false;
 }
 
 void handleHome() {
@@ -260,9 +269,7 @@ void handleHome() {
     const DeviceEntry& d = cfg.devices[i];
     String status = F("Unassigned");
     bool mapped = d.pin >= 0 && d.pin <= MAX_GPIO_PIN;
-    if (mapped) {
-      status = digitalRead(d.pin) == HIGH ? F("ON") : F("OFF");
-    }
+    if (mapped) status = d.state ? F("ON") : F("OFF");
 
     html += "<tr><td>" + String(i + 1) + "</td><td>" + htmlEscape(d.model) + "</td><td>" + htmlEscape(d.name) +
             "</td><td>" + status + "</td><td>";
@@ -283,6 +290,8 @@ void handleHome() {
 }
 
 void handleToggle() {
+  if (!ensureAuthorized()) return;
+
   if (!server.hasArg("idx") || !server.hasArg("state")) {
     server.send(400, "text/plain", "Missing idx or state");
     return;
@@ -315,6 +324,8 @@ void handleToggle() {
 }
 
 void handleSettingsGet() {
+  if (!ensureAuthorized()) return;
+
   String html = F(
       "<!doctype html><html><head><meta charset='utf-8'><title>VIBRANT Settings</title>"
       "<style>body{font-family:Arial,sans-serif;margin:20px;}fieldset{margin-bottom:16px;}"
@@ -330,7 +341,7 @@ void handleSettingsGet() {
           "<label>MAC address <input name='mac' value='" + htmlEscape(cfg.mac) + "' maxlength='17'></label>"
           "<label>Hostname for DHCP <input name='hostname' value='" + htmlEscape(cfg.hostname) + "'></label>"
           "<label>SSID <input name='ssid' value='" + htmlEscape(cfg.ssid) + "'></label>"
-          "<label>Password <input name='password' type='password' value='" + htmlEscape(cfg.password) + "'></label>"
+          "<label>Password <input name='password' type='password' value='' placeholder='Leave empty to keep current password'></label>"
           "<label>Wi-Fi power (0.0 - 20.5 dBm) <input name='wifiPower' type='number' min='0' max='20.5' step='0.1' value='" + String(cfg.wifiPower, 1) + "'></label>"
           "</fieldset>";
 
@@ -363,6 +374,8 @@ void handleSettingsGet() {
 }
 
 void handleSettingsPost() {
+  if (!ensureAuthorized()) return;
+
   String macValue = server.arg("mac");
   macValue.toUpperCase();
   uint8_t macBytes[6] = {0};
@@ -380,7 +393,10 @@ void handleSettingsPost() {
   cfg.mac = macValue;
   cfg.hostname = server.arg("hostname");
   cfg.ssid = server.arg("ssid");
-  cfg.password = server.arg("password");
+  String newPassword = server.arg("password");
+  if (!newPassword.isEmpty()) {
+    cfg.password = newPassword;
+  }
   cfg.wifiPower = constrain(parsedPower, MIN_WIFI_POWER, MAX_WIFI_POWER);
 
   if (cfg.ssid.isEmpty() || cfg.password.isEmpty()) {
@@ -412,6 +428,8 @@ void handleSettingsPost() {
 }
 
 void handleConfigExport() {
+  if (!ensureAuthorized()) return;
+
   if (!LittleFS.exists(CONFIG_PATH)) {
     server.send(404, "text/plain", "Configuration file not found");
     return;
@@ -426,15 +444,26 @@ void handleConfigExport() {
 }
 
 void handleConfigImportUpload() {
+  if (!server.authenticate("admin", cfg.password.c_str())) {
+    importFailed = true;
+    return;
+  }
+
   HTTPUpload& upload = server.upload();
   if (upload.status == UPLOAD_FILE_START) {
+    importFailed = false;
     if (LittleFS.exists(CONFIG_PATH)) {
       LittleFS.remove(CONFIG_PATH);
     }
     importFile = LittleFS.open(CONFIG_PATH, "w");
+    if (!importFile) {
+      importFailed = true;
+    }
   } else if (upload.status == UPLOAD_FILE_WRITE) {
     if (importFile) {
       importFile.write(upload.buf, upload.currentSize);
+    } else {
+      importFailed = true;
     }
   } else if (upload.status == UPLOAD_FILE_END) {
     if (importFile) {
@@ -444,6 +473,11 @@ void handleConfigImportUpload() {
 }
 
 void handleConfigImportDone() {
+  if (!ensureAuthorized()) return;
+  if (importFailed) {
+    server.send(500, "text/plain", "Configuration upload failed");
+    return;
+  }
   if (!loadConfig()) {
     server.send(400, "text/plain", "Invalid configuration file");
     return;
@@ -456,6 +490,8 @@ void handleConfigImportDone() {
 }
 
 void handleFactoryReset() {
+  if (!ensureAuthorized()) return;
+
   setFactoryDefaults();
   saveConfig();
   applyWifiSettings();
@@ -475,8 +511,11 @@ void setup() {
   delay(100);
 
   if (!LittleFS.begin()) {
+    Serial.println(F("LittleFS mount failed. Formatting filesystem..."));
     LittleFS.format();
-    LittleFS.begin();
+    if (!LittleFS.begin()) {
+      Serial.println(F("LittleFS mount failed after format."));
+    }
   }
 
   WiFi.mode(WIFI_AP_STA);

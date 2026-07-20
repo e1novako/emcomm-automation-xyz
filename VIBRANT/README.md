@@ -16,6 +16,7 @@ Change the password immediately in **Settings** after the first boot.
 - All configuration is persisted in LittleFS JSON file: `/vibrant_config.json`
 - English-only UI labels and source comments
 - Main page lists configured devices (model, name, status) and provides checkbox toggles
+- Settings, toggle actions, and config maintenance endpoints are protected with HTTP Basic Auth (`admin` / current Wi-Fi password)
 - Settings page supports:
   - MAC address
   - DHCP hostname
