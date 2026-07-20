@@ -31,6 +31,7 @@ Change the password immediately in **Settings** after the first boot.
 - Serial diagnostics print boot progress, Wi-Fi state, configured outputs, and important error/status messages
 - Firmware automatically attempts Wi-Fi reconnect after disconnects
 - Firmware performs a controlled restart for unrecoverable conditions after logging the reason to serial
+- FLASH/GPIO0 factory reset is checked only during a short boot-time sampling window
 
 ## Default factory values
 
