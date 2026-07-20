@@ -13,11 +13,15 @@ namespace {
 constexpr const char* CONFIG_PATH = "/vibrant_config.json";
 constexpr const char* IMPORT_CONFIG_PATH = "/vibrant_config_upload.json";
 constexpr const char* DEFAULT_AP_SSID = "Z-Wave Automation";
-constexpr const char* DEFAULT_AP_PASSWORD = "KoToTamoPeva2016";
+constexpr const char* DEFAULT_AP_PASSWORD = "Fiber714Cvet";
 constexpr uint8_t MAX_DEVICES = 16;
 constexpr int8_t MAX_GPIO_PIN = 15;
-constexpr float MIN_WIFI_POWER = 0.0f;
+constexpr float MIN_WIFI_POWER = 5.0f;
 constexpr float MAX_WIFI_POWER = 20.5f;
+constexpr unsigned long WIFI_RECONNECT_INTERVAL_MS = 15000UL;
+constexpr unsigned long WIFI_CONNECT_LOG_INTERVAL_MS = 5000UL;
+constexpr unsigned long WIFI_RECOVERY_WINDOW_MS = 180000UL;
+constexpr uint8_t MAX_WIFI_RECOVERY_ATTEMPTS = 12;
 
 struct DeviceEntry {
   String model;
@@ -39,6 +43,11 @@ DeviceConfig cfg;
 ESP8266WebServer server(80);
 File importFile;
 bool importFailed = false;
+wl_status_t lastWifiStatus = WL_IDLE_STATUS;
+unsigned long lastWifiReconnectAttemptMs = 0;
+unsigned long lastWifiConnectLogMs = 0;
+unsigned long wifiDisconnectSinceMs = 0;
+uint8_t wifiRecoveryAttempts = 0;
 
 String htmlEscape(const String& value) {
   String out;
@@ -53,6 +62,49 @@ String htmlEscape(const String& value) {
     else out += c;
   }
   return out;
+}
+
+const char* wifiStatusToString(wl_status_t status) {
+  switch (status) {
+    case WL_CONNECTED:
+      return "CONNECTED";
+    case WL_NO_SSID_AVAIL:
+      return "NO_SSID_AVAIL";
+    case WL_CONNECT_FAILED:
+      return "CONNECT_FAILED";
+    case WL_WRONG_PASSWORD:
+      return "WRONG_PASSWORD";
+    case WL_IDLE_STATUS:
+      return "IDLE";
+    case WL_DISCONNECTED:
+      return "DISCONNECTED";
+    case WL_CONNECTION_LOST:
+      return "CONNECTION_LOST";
+    case WL_SCAN_COMPLETED:
+      return "SCAN_COMPLETED";
+    default:
+      return "UNKNOWN";
+  }
+}
+
+void restartDevice(const String& reason) {
+  Serial.println();
+  Serial.println(F("[FATAL] Unrecoverable condition encountered."));
+  Serial.print(F("[FATAL] Reason: "));
+  Serial.println(reason);
+  Serial.println(F("[FATAL] Restarting device in 2 seconds..."));
+  delay(2000);
+  ESP.restart();
+}
+
+void logStatus(const String& message) {
+  Serial.print(F("[INFO] "));
+  Serial.println(message);
+}
+
+void logError(const String& message) {
+  Serial.print(F("[ERROR] "));
+  Serial.println(message);
 }
 
 String macLastThreeOctets(const String& mac) {
@@ -92,11 +144,22 @@ bool parseMac(const String& mac, uint8_t out[6]) {
   return true;
 }
 
-void applyConfiguredMac() {
+bool applyConfiguredMac() {
   uint8_t mac[6] = {0};
-  if (!parseMac(cfg.mac, mac)) return;
-  wifi_set_macaddr(STATION_IF, mac);
-  wifi_set_macaddr(SOFTAP_IF, mac);
+  if (!parseMac(cfg.mac, mac)) {
+    logError(F("Configured MAC address is invalid; skipping MAC apply."));
+    return false;
+  }
+
+  bool stationOk = wifi_set_macaddr(STATION_IF, mac);
+  bool apOk = wifi_set_macaddr(SOFTAP_IF, mac);
+  if (!stationOk || !apOk) {
+    logError(F("Failed to apply configured MAC address to one or more interfaces."));
+    return false;
+  }
+
+  logStatus(String(F("Applied MAC address: ")) + cfg.mac);
+  return true;
 }
 
 void setFactoryDefaults() {
@@ -111,6 +174,7 @@ void setFactoryDefaults() {
     cfg.devices[i].pin = -1;
     cfg.devices[i].state = false;
   }
+  logStatus(F("Factory defaults loaded."));
 }
 
 bool saveConfig() {
@@ -131,20 +195,33 @@ bool saveConfig() {
   }
 
   File file = LittleFS.open(CONFIG_PATH, "w");
-  if (!file) return false;
-  serializeJsonPretty(doc, file);
+  if (!file) {
+    logError(F("Failed to open config file for writing."));
+    return false;
+  }
+
+  if (serializeJsonPretty(doc, file) == 0) {
+    file.close();
+    logError(F("Failed to serialize config JSON."));
+    return false;
+  }
+
   file.close();
+  logStatus(F("Configuration saved to LittleFS."));
   return true;
 }
 
 bool loadConfig() {
+  logStatus(F("Loading configuration from LittleFS..."));
   if (!LittleFS.exists(CONFIG_PATH)) {
+    logStatus(F("Configuration file not found; generating factory defaults."));
     setFactoryDefaults();
     return saveConfig();
   }
 
   File file = LittleFS.open(CONFIG_PATH, "r");
   if (!file) {
+    logError(F("Unable to open configuration file; restoring factory defaults."));
     setFactoryDefaults();
     return saveConfig();
   }
@@ -153,6 +230,7 @@ bool loadConfig() {
   DeserializationError err = deserializeJson(doc, file);
   file.close();
   if (err) {
+    logError(String(F("Configuration JSON parse failed: ")) + err.c_str());
     setFactoryDefaults();
     return saveConfig();
   }
@@ -179,31 +257,95 @@ bool loadConfig() {
     }
   }
 
+  logStatus(F("Configuration loaded successfully."));
   return true;
 }
 
-void applyOutputs() {
+String pinLabel(int8_t pin) {
+  if (pin < 0 || pin > MAX_GPIO_PIN) {
+    return F("none");
+  }
+  return String(F("D")) + String(pin);
+}
+
+void logDeviceSummary() {
+  Serial.println(F("[INFO] Configured outputs:"));
   for (uint8_t i = 0; i < MAX_DEVICES; ++i) {
-    int8_t pin = cfg.devices[i].pin;
-    if (pin < 0 || pin > MAX_GPIO_PIN) continue;
-    pinMode(pin, OUTPUT);
-    digitalWrite(pin, cfg.devices[i].state ? HIGH : LOW);
+    Serial.print(F("  ["));
+    Serial.print(i + 1);
+    Serial.print(F("] Model='"));
+    Serial.print(cfg.devices[i].model);
+    Serial.print(F("' Name='"));
+    Serial.print(cfg.devices[i].name);
+    Serial.print(F("' Pin="));
+    Serial.print(pinLabel(cfg.devices[i].pin));
+    Serial.print(F(" State="));
+    Serial.println(cfg.devices[i].state ? F("ON") : F("OFF"));
   }
 }
 
+void applyOutputs() {
+  logStatus(F("Applying output states..."));
+  for (uint8_t i = 0; i < MAX_DEVICES; ++i) {
+    int8_t pin = cfg.devices[i].pin;
+    if (pin < 0 || pin > MAX_GPIO_PIN) {
+      continue;
+    }
+    pinMode(pin, OUTPUT);
+    digitalWrite(pin, cfg.devices[i].state ? HIGH : LOW);
+  }
+  logDeviceSummary();
+}
+
+void logWifiSummary() {
+  Serial.print(F("[INFO] SoftAP SSID: "));
+  Serial.println(cfg.ssid);
+  Serial.print(F("[INFO] Hostname: "));
+  Serial.println(cfg.hostname);
+  Serial.print(F("[INFO] Wi-Fi power: "));
+  Serial.print(cfg.wifiPower, 1);
+  Serial.println(F(" dBm"));
+  Serial.print(F("[INFO] SoftAP IP: "));
+  Serial.println(WiFi.softAPIP());
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.print(F("[INFO] Station connected. IP: "));
+    Serial.println(WiFi.localIP());
+  } else {
+    Serial.print(F("[INFO] Station status: "));
+    Serial.println(wifiStatusToString(WiFi.status()));
+  }
+}
+
+void resetWifiRecoveryState() {
+  wifiDisconnectSinceMs = 0;
+  wifiRecoveryAttempts = 0;
+}
+
 void applyWifiSettings() {
+  logStatus(F("Applying Wi-Fi settings..."));
   applyConfiguredMac();
   if (cfg.hostname.isEmpty()) {
     cfg.hostname = defaultHostnameFromMac(cfg.mac);
+    logStatus(String(F("Hostname was empty, defaulted to ")) + cfg.hostname);
   }
   cfg.wifiPower = constrain(cfg.wifiPower, MIN_WIFI_POWER, MAX_WIFI_POWER);
 
   WiFi.persistent(false);
   WiFi.mode(WIFI_AP_STA);
   WiFi.hostname(cfg.hostname);
+  WiFi.setAutoReconnect(true);
   WiFi.setOutputPower(cfg.wifiPower);
-  WiFi.softAP(cfg.ssid.c_str(), cfg.password.c_str());
+
+  bool apStarted = WiFi.softAP(cfg.ssid.c_str(), cfg.password.c_str());
+  if (!apStarted) {
+    restartDevice(F("Failed to start SoftAP with configured credentials."));
+  }
+
   WiFi.begin(cfg.ssid.c_str(), cfg.password.c_str());
+  logStatus(String(F("Starting station connection to SSID: ")) + cfg.ssid);
+  resetWifiRecoveryState();
+  lastWifiStatus = WiFi.status();
+  logWifiSummary();
 }
 
 String pinOption(int selectedPin, int pin) {
@@ -298,22 +440,26 @@ void handleToggle() {
   if (!ensureAuthorized()) return;
 
   if (!server.hasArg("idx") || !server.hasArg("state")) {
+    logError(F("Toggle request missing idx or state."));
     server.send(400, "text/plain", "Missing idx or state");
     return;
   }
 
   int idx = -1;
   if (!parseIndexValue(server.arg("idx"), idx) || idx < 0 || idx >= MAX_DEVICES) {
+    logError(F("Toggle request contained invalid device index."));
     server.send(400, "text/plain", "Invalid device index");
     return;
   }
   if (server.arg("state") != "0" && server.arg("state") != "1") {
+    logError(F("Toggle request contained invalid state value."));
     server.send(400, "text/plain", "Invalid state value");
     return;
   }
 
   DeviceEntry& d = cfg.devices[idx];
   if (d.pin < 0 || d.pin > MAX_GPIO_PIN) {
+    logError(String(F("Toggle request for unmapped output: ")) + d.name);
     server.sendHeader("Location", "/");
     server.send(303);
     return;
@@ -322,7 +468,13 @@ void handleToggle() {
   d.state = server.arg("state") == "1";
   pinMode(d.pin, OUTPUT);
   digitalWrite(d.pin, d.state ? HIGH : LOW);
-  saveConfig();
+  Serial.print(F("[INFO] Output toggled: "));
+  Serial.print(d.name);
+  Serial.print(F(" -> "));
+  Serial.println(d.state ? F("ON") : F("OFF"));
+  if (!saveConfig()) {
+    restartDevice(F("Failed to persist output toggle state."));
+  }
 
   server.sendHeader("Location", "/");
   server.send(303);
@@ -347,7 +499,7 @@ void handleSettingsGet() {
           "<label>Hostname for DHCP <input name='hostname' value='" + htmlEscape(cfg.hostname) + "'></label>"
           "<label>SSID <input name='ssid' value='" + htmlEscape(cfg.ssid) + "'></label>"
           "<label for='password'>Password</label><input id='password' name='password' type='password' value='' placeholder='Leave empty to keep current password'>"
-          "<label>Wi-Fi power (0.0 - 20.5 dBm) <input name='wifiPower' type='number' min='0' max='20.5' step='0.1' value='" + String(cfg.wifiPower, 1) + "'></label>"
+          "<label>Wi-Fi power (5.0 - 20.5 dBm) <input name='wifiPower' type='number' min='5' max='20.5' step='0.1' value='" + String(cfg.wifiPower, 1) + "'></label>"
           "</fieldset>";
 
   html += "<fieldset><legend>Devices (up to 16)</legend><table><tr><th>#</th><th>Model</th><th>Name</th><th>Control output</th></tr>";
@@ -385,12 +537,14 @@ void handleSettingsPost() {
   macValue.toUpperCase();
   uint8_t macBytes[6] = {0};
   if (!parseMac(macValue, macBytes)) {
+    logError(F("Settings save rejected due to invalid MAC address."));
     server.send(400, "text/plain", "Invalid MAC address format. Use AA:BB:CC:DD:EE:FF");
     return;
   }
 
   float parsedPower = 0.0f;
   if (!parseFloatValue(server.arg("wifiPower"), parsedPower)) {
+    logError(F("Settings save rejected due to invalid Wi-Fi power value."));
     server.send(400, "text/plain", "Invalid Wi-Fi power value");
     return;
   }
@@ -405,6 +559,7 @@ void handleSettingsPost() {
   cfg.wifiPower = constrain(parsedPower, MIN_WIFI_POWER, MAX_WIFI_POWER);
 
   if (cfg.ssid.isEmpty() || cfg.password.isEmpty()) {
+    logError(F("Settings save rejected because SSID or password was empty."));
     server.send(400, "text/plain", "SSID and password must not be empty");
     return;
   }
@@ -424,7 +579,10 @@ void handleSettingsPost() {
     }
   }
 
-  saveConfig();
+  logStatus(F("Settings updated from web UI."));
+  if (!saveConfig()) {
+    restartDevice(F("Failed to persist updated settings."));
+  }
   applyWifiSettings();
   applyOutputs();
 
@@ -436,14 +594,17 @@ void handleConfigExport() {
   if (!ensureAuthorized()) return;
 
   if (!LittleFS.exists(CONFIG_PATH)) {
+    logError(F("Config export requested but configuration file was not found."));
     server.send(404, "text/plain", "Configuration file not found");
     return;
   }
   File file = LittleFS.open(CONFIG_PATH, "r");
   if (!file) {
+    logError(F("Config export failed because the file could not be opened."));
     server.send(500, "text/plain", "Unable to open configuration file");
     return;
   }
+  logStatus(F("Configuration export started."));
   server.streamFile(file, "application/json");
   file.close();
 }
@@ -458,16 +619,21 @@ void handleConfigImportUpload() {
   HTTPUpload& upload = server.upload();
   if (upload.status == UPLOAD_FILE_START) {
     importFailed = false;
+    logStatus(F("Configuration import upload started."));
     if (LittleFS.exists(IMPORT_CONFIG_PATH)) {
       LittleFS.remove(IMPORT_CONFIG_PATH);
     }
     importFile = LittleFS.open(IMPORT_CONFIG_PATH, "w");
     if (!importFile) {
       importFailed = true;
+      logError(F("Failed to open temporary import file for writing."));
     }
   } else if (upload.status == UPLOAD_FILE_WRITE) {
     if (importFile) {
-      importFile.write(upload.buf, upload.currentSize);
+      if (importFile.write(upload.buf, upload.currentSize) != upload.currentSize) {
+        importFailed = true;
+        logError(F("Failed while writing uploaded config chunk."));
+      }
     } else {
       importFailed = true;
     }
@@ -475,17 +641,26 @@ void handleConfigImportUpload() {
     if (importFile) {
       importFile.close();
     }
+    logStatus(F("Configuration import upload finished."));
+  } else if (upload.status == UPLOAD_FILE_ABORTED) {
+    importFailed = true;
+    if (importFile) {
+      importFile.close();
+    }
+    logError(F("Configuration import upload was aborted."));
   }
 }
 
 void handleConfigImportDone() {
   if (!ensureAuthorized()) return;
   if (importFailed) {
+    logError(F("Configuration upload failed before validation."));
     server.send(500, "text/plain", "Configuration upload failed");
     return;
   }
   File uploaded = LittleFS.open(IMPORT_CONFIG_PATH, "r");
   if (!uploaded) {
+    logError(F("Uploaded configuration file was not found after upload."));
     server.send(400, "text/plain", "Uploaded configuration file not found");
     return;
   }
@@ -494,6 +669,7 @@ void handleConfigImportDone() {
   uploaded.close();
   if (verifyError) {
     LittleFS.remove(IMPORT_CONFIG_PATH);
+    logError(String(F("Uploaded configuration JSON is invalid: ")) + verifyError.c_str());
     server.send(400, "text/plain", "Uploaded configuration JSON is invalid");
     return;
   }
@@ -502,14 +678,17 @@ void handleConfigImportDone() {
   }
   if (!LittleFS.rename(IMPORT_CONFIG_PATH, CONFIG_PATH)) {
     LittleFS.remove(IMPORT_CONFIG_PATH);
+    logError(F("Failed to replace active configuration with imported file."));
     server.send(500, "text/plain", "Failed to replace configuration file");
     return;
   }
   if (!loadConfig()) {
-    server.send(400, "text/plain", "Invalid configuration file");
-    return;
+    restartDevice(F("Imported configuration could not be loaded after replace."));
   }
-  saveConfig();
+  if (!saveConfig()) {
+    restartDevice(F("Failed to normalize and save imported configuration."));
+  }
+  logStatus(F("Configuration import applied successfully."));
   applyWifiSettings();
   applyOutputs();
   server.sendHeader("Location", "/settings");
@@ -519,8 +698,11 @@ void handleConfigImportDone() {
 void handleFactoryReset() {
   if (!ensureAuthorized()) return;
 
+  logStatus(F("Factory reset requested."));
   setFactoryDefaults();
-  saveConfig();
+  if (!saveConfig()) {
+    restartDevice(F("Failed to persist factory reset configuration."));
+  }
   applyWifiSettings();
   applyOutputs();
   server.sendHeader("Location", "/settings");
@@ -531,29 +713,89 @@ void handleNotFound() {
   server.send(404, "text/plain", "Not found");
 }
 
+void maintainWifiConnection() {
+  wl_status_t status = WiFi.status();
+  if (status != lastWifiStatus) {
+    Serial.print(F("[INFO] Wi-Fi status changed: "));
+    Serial.print(wifiStatusToString(lastWifiStatus));
+    Serial.print(F(" -> "));
+    Serial.println(wifiStatusToString(status));
+    lastWifiStatus = status;
+  }
+
+  if (status == WL_CONNECTED) {
+    if (wifiDisconnectSinceMs != 0) {
+      logStatus(String(F("Wi-Fi reconnected. Station IP: ")) + WiFi.localIP().toString());
+    }
+    resetWifiRecoveryState();
+    return;
+  }
+
+  unsigned long now = millis();
+  if (wifiDisconnectSinceMs == 0) {
+    wifiDisconnectSinceMs = now;
+    lastWifiConnectLogMs = 0;
+    logError(String(F("Wi-Fi disconnected. Status: ")) + wifiStatusToString(status));
+  }
+
+  if (now - wifiDisconnectSinceMs >= WIFI_RECOVERY_WINDOW_MS && wifiRecoveryAttempts >= MAX_WIFI_RECOVERY_ATTEMPTS) {
+    restartDevice(F("Wi-Fi could not be recovered within the configured window."));
+  }
+
+  if (lastWifiConnectLogMs == 0 || now - lastWifiConnectLogMs >= WIFI_CONNECT_LOG_INTERVAL_MS) {
+    Serial.print(F("[INFO] Waiting for Wi-Fi recovery. Status="));
+    Serial.print(wifiStatusToString(status));
+    Serial.print(F(" Attempts="));
+    Serial.println(wifiRecoveryAttempts);
+    lastWifiConnectLogMs = now;
+  }
+
+  if (now - lastWifiReconnectAttemptMs >= WIFI_RECONNECT_INTERVAL_MS) {
+    lastWifiReconnectAttemptMs = now;
+    ++wifiRecoveryAttempts;
+    Serial.print(F("[INFO] Attempting Wi-Fi reconnect #"));
+    Serial.println(wifiRecoveryAttempts);
+    WiFi.disconnect(false);
+    WiFi.begin(cfg.ssid.c_str(), cfg.password.c_str());
+  }
+}
+
 }  // namespace
 
 void setup() {
   Serial.begin(115200);
   delay(100);
+  Serial.println();
+  Serial.println(F("[INFO] VIBRANT boot starting..."));
 
+  logStatus(F("Mounting LittleFS..."));
   if (!LittleFS.begin()) {
-    Serial.println(F("LittleFS mount failed. WARNING: formatting will erase all saved configuration."));
-    LittleFS.format();
-    if (!LittleFS.begin()) {
-      Serial.println(F("LittleFS mount failed after format. Running in degraded mode without persistent config."));
+    logError(F("LittleFS mount failed. Formatting filesystem; saved configuration will be erased."));
+    if (!LittleFS.format()) {
+      restartDevice(F("LittleFS format failed after mount failure."));
     }
+    if (!LittleFS.begin()) {
+      restartDevice(F("LittleFS mount failed after format."));
+    }
+    logStatus(F("LittleFS mount succeeded after format."));
+  } else {
+    logStatus(F("LittleFS mounted successfully."));
   }
 
   WiFi.mode(WIFI_AP_STA);
+  logStatus(F("Loading runtime configuration..."));
   if (!loadConfig()) {
+    logError(F("Configuration load path failed; restoring factory defaults."));
     setFactoryDefaults();
-    saveConfig();
+    if (!saveConfig()) {
+      restartDevice(F("Failed to save factory defaults during boot recovery."));
+    }
   }
 
   applyWifiSettings();
   applyOutputs();
 
+  logStatus(F("Registering web routes..."));
   server.on("/", HTTP_GET, handleHome);
   server.on("/toggle", HTTP_POST, handleToggle);
   server.on("/settings", HTTP_GET, handleSettingsGet);
@@ -564,8 +806,12 @@ void setup() {
   server.onNotFound(handleNotFound);
 
   server.begin();
+  logStatus(F("HTTP server started on port 80."));
+  logWifiSummary();
+  logStatus(F("Boot sequence complete."));
 }
 
 void loop() {
   server.handleClient();
+  maintainWifiConnection();
 }
