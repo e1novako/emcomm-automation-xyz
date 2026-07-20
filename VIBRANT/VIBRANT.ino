@@ -689,7 +689,7 @@ void handleSettingsGet() {
   html += F(
       "<h2>Configuration maintenance</h2>"
       "<p><a href='/config/export'>Download configuration backup</a></p>"
-      "<p>Hold the FLASH button during power-on (within the first second of boot) to trigger factory reset and restart.</p>"
+      "<p>Hold the FLASH button during power-on (during the first second of boot) to trigger factory reset and restart.</p>"
       "<form method='post' action='/config/factory-reset' onsubmit=\"return confirm('Factory reset?');\">"
       "<button type='submit'>Factory reset</button></form>"
       "<form method='post' action='/config/import' enctype='multipart/form-data'>"
