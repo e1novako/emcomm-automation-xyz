@@ -37,6 +37,8 @@ Change the password immediately in **Settings** after the first boot.
 
 Security note: factory credentials are public and meant only for first setup.
 
+Additional security note: HTTP Basic Auth is not encrypted on plain HTTP. Use this firmware only on trusted local networks/AP access.
+
 ## Arduino libraries
 
 - ESP8266 core libraries (`ESP8266WiFi`, `ESP8266WebServer`) from ESP8266 board package 3.x
@@ -55,3 +57,8 @@ Security note: factory credentials are public and meant only for first setup.
 4. Flash the firmware.
 
 After boot, join the configured AP and open the device IP in a browser.
+
+## Current networking behavior
+
+- The configured `SSID`/`Password` are used for both SoftAP and Station connect attempts.
+- Edited MAC address is applied to both SoftAP and Station interfaces.

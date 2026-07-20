@@ -223,7 +223,7 @@ bool parsePinValue(const String& raw, int& pin) {
   return pin >= 0 && pin <= MAX_GPIO_PIN;
 }
 
-bool parseUIntValue(const String& raw, int& value) {
+bool parseIndexValue(const String& raw, int& value) {
   if (raw.isEmpty()) return false;
   for (size_t i = 0; i < raw.length(); ++i) {
     if (raw[i] < '0' || raw[i] > '9') return false;
@@ -298,7 +298,7 @@ void handleToggle() {
   }
 
   int idx = -1;
-  if (!parseUIntValue(server.arg("idx"), idx) || idx < 0 || idx >= MAX_DEVICES) {
+  if (!parseIndexValue(server.arg("idx"), idx) || idx < 0 || idx >= MAX_DEVICES) {
     server.send(400, "text/plain", "Invalid device index");
     return;
   }
@@ -446,6 +446,7 @@ void handleConfigExport() {
 void handleConfigImportUpload() {
   if (!server.authenticate("admin", cfg.password.c_str())) {
     importFailed = true;
+    server.requestAuthentication();
     return;
   }
 
@@ -511,10 +512,10 @@ void setup() {
   delay(100);
 
   if (!LittleFS.begin()) {
-    Serial.println(F("LittleFS mount failed. Formatting filesystem..."));
+    Serial.println(F("LittleFS mount failed. WARNING: formatting will erase all saved configuration."));
     LittleFS.format();
     if (!LittleFS.begin()) {
-      Serial.println(F("LittleFS mount failed after format."));
+      Serial.println(F("LittleFS mount failed after format. Running in degraded mode without persistent config."));
     }
   }
 
