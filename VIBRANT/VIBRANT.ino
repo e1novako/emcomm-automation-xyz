@@ -372,6 +372,44 @@ void performFactoryResetAndRestart(const String& reason) {
   ESP.restart();
 }
 
+// ---------------------------------------------------------------------------
+// DIAGNOSTICS — log the effective loaded Wi-Fi configuration values.
+// Remove this function (and its call in setup()) once the Wi-Fi issue is
+// resolved.
+// ---------------------------------------------------------------------------
+void logLoadedWifiConfig() {
+  Serial.print(F("[INFO] [DIAG] Loaded station SSID: "));
+  Serial.println(cfg.staSsid);
+  Serial.print(F("[INFO] [DIAG] Loaded Wi-Fi power: "));
+  Serial.print(cfg.wifiPower, 1);
+  Serial.println(F(" dBm"));
+}
+
+// ---------------------------------------------------------------------------
+// DIAGNOSTICS — scan for visible Wi-Fi networks and print SSID + RSSI.
+// Remove this function (and its call in setup()) once the Wi-Fi issue is
+// resolved.
+// ---------------------------------------------------------------------------
+void logWifiScan() {
+  logStatus(F("[DIAG] Scanning for visible Wi-Fi networks (may take a few seconds)..."));
+  int n = WiFi.scanNetworks();
+  if (n <= 0) {
+    logStatus(F("[DIAG] No Wi-Fi networks found during scan."));
+  } else {
+    Serial.print(F("[INFO] [DIAG] Found "));
+    Serial.print(n);
+    Serial.println(F(" network(s):"));
+    for (int i = 0; i < n; ++i) {
+      Serial.print(F("[INFO] [DIAG]   SSID: \""));
+      Serial.print(WiFi.SSID(i));
+      Serial.print(F("\"  RSSI: "));
+      Serial.print(WiFi.RSSI(i));
+      Serial.println(F(" dBm"));
+    }
+  }
+  WiFi.scanDelete();
+}
+
 void applyWifiSettings() {
   logStatus(F("Applying Wi-Fi settings..."));
 #if WIFI_DIAG_APPLY_CUSTOM_MAC
@@ -894,7 +932,9 @@ void setup() {
     }
   }
 
+  logLoadedWifiConfig();   // [DIAG] log cfg.staSsid and cfg.wifiPower
   applyWifiSettings();
+  logWifiScan();           // [DIAG] log visible SSIDs with RSSI
   applyOutputs();
 
   logStatus(F("Registering web routes..."));
