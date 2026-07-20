@@ -11,6 +11,7 @@ extern "C" {
 namespace {
 
 constexpr const char* CONFIG_PATH = "/vibrant_config.json";
+constexpr const char* IMPORT_CONFIG_PATH = "/vibrant_config_upload.json";
 constexpr const char* DEFAULT_AP_SSID = "Z-Wave Automation";
 constexpr const char* DEFAULT_AP_PASSWORD = "KoToTamoPeva2016";
 constexpr uint8_t MAX_DEVICES = 16;
@@ -275,9 +276,13 @@ void handleHome() {
             "</td><td>" + status + "</td><td>";
 
     if (mapped) {
-      html += "<input type='checkbox'";
+      html += "<form method='post' action='/toggle' style='margin:0;'>"
+              "<input type='hidden' name='idx' value='" + String(i) + "'>"
+              "<input type='hidden' name='state' id='state_" + String(i) + "' value='" + String(d.state ? 1 : 0) + "'>"
+              "<input type='checkbox'";
       if (d.state) html += " checked";
-      html += " onchange=\"location.href='/toggle?idx=" + String(i) + "&state='+(this.checked?1:0);\">";
+      html += " onchange=\"document.getElementById('state_" + String(i) + "').value=this.checked?1:0;this.form.submit();\">"
+              "</form>";
     } else {
       html += "(none)";
     }
@@ -341,7 +346,7 @@ void handleSettingsGet() {
           "<label>MAC address <input name='mac' value='" + htmlEscape(cfg.mac) + "' maxlength='17'></label>"
           "<label>Hostname for DHCP <input name='hostname' value='" + htmlEscape(cfg.hostname) + "'></label>"
           "<label>SSID <input name='ssid' value='" + htmlEscape(cfg.ssid) + "'></label>"
-          "<label>Password <input name='password' type='password' value='' placeholder='Leave empty to keep current password'></label>"
+          "<label for='password'>Password</label><input id='password' name='password' type='password' value='' placeholder='Leave empty to keep current password'>"
           "<label>Wi-Fi power (0.0 - 20.5 dBm) <input name='wifiPower' type='number' min='0' max='20.5' step='0.1' value='" + String(cfg.wifiPower, 1) + "'></label>"
           "</fieldset>";
 
@@ -453,10 +458,10 @@ void handleConfigImportUpload() {
   HTTPUpload& upload = server.upload();
   if (upload.status == UPLOAD_FILE_START) {
     importFailed = false;
-    if (LittleFS.exists(CONFIG_PATH)) {
-      LittleFS.remove(CONFIG_PATH);
+    if (LittleFS.exists(IMPORT_CONFIG_PATH)) {
+      LittleFS.remove(IMPORT_CONFIG_PATH);
     }
-    importFile = LittleFS.open(CONFIG_PATH, "w");
+    importFile = LittleFS.open(IMPORT_CONFIG_PATH, "w");
     if (!importFile) {
       importFailed = true;
     }
@@ -477,6 +482,27 @@ void handleConfigImportDone() {
   if (!ensureAuthorized()) return;
   if (importFailed) {
     server.send(500, "text/plain", "Configuration upload failed");
+    return;
+  }
+  File uploaded = LittleFS.open(IMPORT_CONFIG_PATH, "r");
+  if (!uploaded) {
+    server.send(400, "text/plain", "Uploaded configuration file not found");
+    return;
+  }
+  JsonDocument verifyDoc;
+  DeserializationError verifyError = deserializeJson(verifyDoc, uploaded);
+  uploaded.close();
+  if (verifyError) {
+    LittleFS.remove(IMPORT_CONFIG_PATH);
+    server.send(400, "text/plain", "Uploaded configuration JSON is invalid");
+    return;
+  }
+  if (LittleFS.exists(CONFIG_PATH)) {
+    LittleFS.remove(CONFIG_PATH);
+  }
+  if (!LittleFS.rename(IMPORT_CONFIG_PATH, CONFIG_PATH)) {
+    LittleFS.remove(IMPORT_CONFIG_PATH);
+    server.send(500, "text/plain", "Failed to replace configuration file");
     return;
   }
   if (!loadConfig()) {
@@ -529,7 +555,7 @@ void setup() {
   applyOutputs();
 
   server.on("/", HTTP_GET, handleHome);
-  server.on("/toggle", HTTP_GET, handleToggle);
+  server.on("/toggle", HTTP_POST, handleToggle);
   server.on("/settings", HTTP_GET, handleSettingsGet);
   server.on("/settings", HTTP_POST, handleSettingsPost);
   server.on("/config/export", HTTP_GET, handleConfigExport);
