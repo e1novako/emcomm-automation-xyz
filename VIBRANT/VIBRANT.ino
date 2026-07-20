@@ -175,7 +175,7 @@ void setFactoryDefaults() {
   cfg.hostname = defaultHostnameFromMac(cfg.mac);
   cfg.ssid = DEFAULT_AP_SSID;
   cfg.password = DEFAULT_AP_PASSWORD;
-  cfg.wifiPower = 17.5f;
+  cfg.wifiPower = 20.5f;
   for (uint8_t i = 0; i < MAX_DEVICES; ++i) {
     cfg.devices[i].model = String(F("Model ")) + String(i + 1);
     cfg.devices[i].name = String(F("Output ")) + String(i + 1);
@@ -247,7 +247,7 @@ bool loadConfig() {
   cfg.hostname = doc["hostname"] | defaultHostnameFromMac(cfg.mac);
   cfg.ssid = doc["ssid"] | DEFAULT_AP_SSID;
   cfg.password = doc["password"] | DEFAULT_AP_PASSWORD;
-  cfg.wifiPower = doc["wifiPower"] | 17.5f;
+  cfg.wifiPower = doc["wifiPower"] | 20.5f;
 
   JsonArray devices = doc["devices"].as<JsonArray>();
   for (uint8_t i = 0; i < MAX_DEVICES; ++i) {
