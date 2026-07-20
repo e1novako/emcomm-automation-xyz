@@ -31,8 +31,9 @@ constexpr float MAX_WIFI_POWER = 20.5f;
 constexpr unsigned long WIFI_RECONNECT_INTERVAL_MS = 15000UL;
 constexpr unsigned long WIFI_CONNECT_LOG_INTERVAL_MS = 5000UL;
 constexpr uint8_t FLASH_BUTTON_PIN = 0;
-constexpr unsigned long FLASH_FACTORY_RESET_HOLD_MS = 5000UL;
-constexpr unsigned long FLASH_BUTTON_DEBOUNCE_MS = 20UL;
+constexpr unsigned long FLASH_BOOT_DETECTION_WINDOW_MS = 750UL;
+constexpr unsigned long FLASH_BOOT_SAMPLE_INTERVAL_MS = 10UL;
+constexpr uint8_t FLASH_BOOT_REQUIRED_LOW_PERCENT = 80;
 constexpr unsigned long WIFI_RECOVERY_WINDOW_MS = 180000UL;
 constexpr uint8_t MAX_WIFI_RECOVERY_ATTEMPTS = 12;
 
@@ -62,12 +63,6 @@ wl_status_t lastWifiStatus = WL_IDLE_STATUS;
 unsigned long lastWifiReconnectAttemptMs = 0;
 unsigned long lastWifiConnectLogMs = 0;
 unsigned long wifiDisconnectSinceMs = 0;
-unsigned long flashHoldStartMs = 0;
-bool flashResetArmed = false;
-bool flashButtonLastRawPressed = false;
-bool flashButtonStablePressed = false;
-unsigned long flashButtonLastChangeMs = 0;
-unsigned long flashButtonHoldLogMs = 0;
 uint8_t wifiRecoveryAttempts = 0;
 
 String htmlEscape(const String& value) {
@@ -398,6 +393,42 @@ void logLoadedWifiConfig() {
   Serial.println(F(" dBm"));
 }
 
+bool detectStableFlashPressDuringBoot() {
+  const unsigned long sampleCount = FLASH_BOOT_DETECTION_WINDOW_MS / FLASH_BOOT_SAMPLE_INTERVAL_MS;
+  unsigned long lowSamples = 0;
+
+  for (unsigned long i = 0; i < sampleCount; ++i) {
+    if (digitalRead(FLASH_BUTTON_PIN) == LOW) {
+      ++lowSamples;
+    }
+    delay(FLASH_BOOT_SAMPLE_INTERVAL_MS);
+  }
+
+  Serial.print(F("[INFO] [FLASH] Boot-time samples low="));
+  Serial.print(lowSamples);
+  Serial.print(F("/"));
+  Serial.println(sampleCount);
+
+  return sampleCount > 0 &&
+         (lowSamples * 100UL) >= (sampleCount * FLASH_BOOT_REQUIRED_LOW_PERCENT);
+}
+
+void checkFlashFactoryResetOnBoot() {
+  logStatus(F("[FLASH] Checking boot-time FLASH/GPIO0 factory reset trigger..."));
+  bool stablePressed = detectStableFlashPressDuringBoot();
+
+  Serial.print(F("[INFO] [FLASH] Stable pressed condition "));
+  Serial.println(stablePressed ? F("detected.") : F("not detected."));
+
+  if (!stablePressed) {
+    logStatus(F("[FLASH] Boot-time FLASH/GPIO0 reset skipped."));
+    return;
+  }
+
+  logWarning(F("[FLASH] Boot-time FLASH/GPIO0 reset trigger detected. Applying factory defaults."));
+  performFactoryResetAndRestart(F("FLASH/GPIO0 was held low during the boot-time detection window."));
+}
+
 // ---------------------------------------------------------------------------
 // DIAGNOSTICS — scan for visible Wi-Fi networks and print SSID + RSSI.
 // Remove this function (and its call in setup()) once the Wi-Fi issue is
@@ -637,7 +668,7 @@ void handleSettingsGet() {
   html += F(
       "<h2>Configuration maintenance</h2>"
       "<p><a href='/config/export'>Download configuration backup</a></p>"
-      "<p>Hold the FLASH button for 5 seconds after boot to trigger factory reset and restart.</p>"
+      "<p>Hold the FLASH button during boot to trigger factory reset and restart.</p>"
       "<form method='post' action='/config/factory-reset' onsubmit=\"return confirm('Factory reset?');\">"
       "<button type='submit'>Factory reset</button></form>"
       "<form method='post' action='/config/import' enctype='multipart/form-data'>"
@@ -848,63 +879,6 @@ void handleNotFound() {
   server.send(404, "text/plain", "Not found");
 }
 
-void maintainFlashFactoryResetRequest() {
-  bool rawPressed = digitalRead(FLASH_BUTTON_PIN) == LOW;
-  unsigned long now = millis();
-
-  // Log and debounce raw pin transitions
-  if (rawPressed != flashButtonLastRawPressed) {
-    flashButtonLastRawPressed = rawPressed;
-    flashButtonLastChangeMs = now;
-    Serial.print(F("[INFO] [FLASH] Raw pin: "));
-    Serial.println(rawPressed ? F("LOW (pressed)") : F("HIGH (released)"));
-  }
-
-  // Wait for signal to be stable for the debounce window
-  if (now - flashButtonLastChangeMs < FLASH_BUTTON_DEBOUNCE_MS) {
-    return;
-  }
-
-  // Stable (debounced) state changed
-  if (flashButtonStablePressed != rawPressed) {
-    flashButtonStablePressed = rawPressed;
-
-    if (flashButtonStablePressed) {
-      flashHoldStartMs = now;
-      flashResetArmed = true;
-      flashButtonHoldLogMs = now;
-      logWarning(F("FLASH button stable press detected. Hold for 5 seconds to factory reset."));
-    } else {
-      if (flashHoldStartMs != 0 && flashResetArmed) {
-        unsigned long heldMs = now - flashHoldStartMs;
-        Serial.print(F("[INFO] [FLASH] Released after "));
-        Serial.print(heldMs);
-        Serial.println(F(" ms. Factory reset canceled."));
-      }
-      flashHoldStartMs = 0;
-      flashResetArmed = false;
-      flashButtonHoldLogMs = 0;
-    }
-  }
-
-  // Log hold progress every second
-  if (flashButtonStablePressed && flashResetArmed && flashHoldStartMs != 0 &&
-      now - flashButtonHoldLogMs >= 1000UL) {
-    flashButtonHoldLogMs = now;
-    Serial.print(F("[INFO] [FLASH] Holding... "));
-    Serial.print((now - flashHoldStartMs) / 1000UL);
-    Serial.println(F("s / 5s"));
-  }
-
-  if (flashButtonStablePressed && flashResetArmed &&
-      flashHoldStartMs != 0 &&
-      now - flashHoldStartMs >= FLASH_FACTORY_RESET_HOLD_MS) {
-    flashResetArmed = false;
-    performFactoryResetAndRestart(F("FLASH button held for 5 seconds after boot. Applying factory defaults."));
-  }
-}
-
-
 void maintainWifiConnection() {
   wl_status_t status = WiFi.status();
   if (status != lastWifiStatus) {
@@ -989,6 +963,7 @@ void setup() {
     }
   }
 
+  checkFlashFactoryResetOnBoot();
   logLoadedWifiConfig();   // [DIAG] log cfg.staSsid and cfg.wifiPower
   applyWifiSettings();
   logWifiScan();           // [DIAG] log visible SSIDs with RSSI
@@ -1012,6 +987,5 @@ void setup() {
 
 void loop() {
   server.handleClient();
-  maintainFlashFactoryResetRequest();
   maintainWifiConnection();
 }
