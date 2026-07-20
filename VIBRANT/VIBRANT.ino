@@ -20,8 +20,6 @@ constexpr float MIN_WIFI_POWER = 5.0f;
 constexpr float MAX_WIFI_POWER = 20.5f;
 constexpr unsigned long WIFI_RECONNECT_INTERVAL_MS = 15000UL;
 constexpr unsigned long WIFI_CONNECT_LOG_INTERVAL_MS = 5000UL;
-constexpr unsigned long WIFI_RECOVERY_WINDOW_MS = 180000UL;
-constexpr uint8_t MAX_WIFI_RECOVERY_ATTEMPTS = 12;
 
 struct DeviceEntry {
   String model;
@@ -47,7 +45,6 @@ wl_status_t lastWifiStatus = WL_IDLE_STATUS;
 unsigned long lastWifiReconnectAttemptMs = 0;
 unsigned long lastWifiConnectLogMs = 0;
 unsigned long wifiDisconnectSinceMs = 0;
-uint8_t wifiRecoveryAttempts = 0;
 
 String htmlEscape(const String& value) {
   String out;
@@ -102,6 +99,11 @@ void logStatus(const String& message) {
   Serial.println(message);
 }
 
+void logWarning(const String& message) {
+  Serial.print(F("[WARN] "));
+  Serial.println(message);
+}
+
 void logError(const String& message) {
   Serial.print(F("[ERROR] "));
   Serial.println(message);
@@ -121,6 +123,10 @@ String macLastThreeOctets(const String& mac) {
 }
 
 String defaultHostnameFromMac(const String& mac) {
+  return String(F("C4-VIBRANT-")) + macLastThreeOctets(mac);
+}
+
+String defaultSoftApSsidFromMac(const String& mac) {
   return String(F("C4-VIBRANT-")) + macLastThreeOctets(mac);
 }
 
@@ -147,14 +153,14 @@ bool parseMac(const String& mac, uint8_t out[6]) {
 bool applyConfiguredMac() {
   uint8_t mac[6] = {0};
   if (!parseMac(cfg.mac, mac)) {
-    logError(F("Configured MAC address is invalid; skipping MAC apply."));
+    logWarning(F("Configured MAC address is invalid; continuing with hardware MAC."));
     return false;
   }
 
   bool stationOk = wifi_set_macaddr(STATION_IF, mac);
   bool apOk = wifi_set_macaddr(SOFTAP_IF, mac);
   if (!stationOk || !apOk) {
-    logError(F("Failed to apply configured MAC address to one or more interfaces."));
+    logWarning(F("Failed to apply configured MAC address to one or more interfaces; continuing with hardware MAC."));
     return false;
   }
 
@@ -297,8 +303,10 @@ void applyOutputs() {
   logDeviceSummary();
 }
 
-void logWifiSummary() {
+void logWifiSummary(const String& softApSsid) {
   Serial.print(F("[INFO] SoftAP SSID: "));
+  Serial.println(softApSsid);
+  Serial.print(F("[INFO] Station target SSID: "));
   Serial.println(cfg.ssid);
   Serial.print(F("[INFO] Hostname: "));
   Serial.println(cfg.hostname);
@@ -318,7 +326,6 @@ void logWifiSummary() {
 
 void resetWifiRecoveryState() {
   wifiDisconnectSinceMs = 0;
-  wifiRecoveryAttempts = 0;
 }
 
 void applyWifiSettings() {
@@ -330,13 +337,15 @@ void applyWifiSettings() {
   }
   cfg.wifiPower = constrain(cfg.wifiPower, MIN_WIFI_POWER, MAX_WIFI_POWER);
 
+  const String softApSsid = defaultSoftApSsidFromMac(cfg.mac);
+
   WiFi.persistent(false);
   WiFi.mode(WIFI_AP_STA);
   WiFi.hostname(cfg.hostname);
   WiFi.setAutoReconnect(true);
   WiFi.setOutputPower(cfg.wifiPower);
 
-  bool apStarted = WiFi.softAP(cfg.ssid.c_str(), cfg.password.c_str());
+  bool apStarted = WiFi.softAP(softApSsid.c_str(), cfg.password.c_str());
   if (!apStarted) {
     restartDevice(F("Failed to start SoftAP with configured credentials."));
   }
@@ -345,7 +354,7 @@ void applyWifiSettings() {
   logStatus(String(F("Starting station connection to SSID: ")) + cfg.ssid);
   resetWifiRecoveryState();
   lastWifiStatus = WiFi.status();
-  logWifiSummary();
+  logWifiSummary(softApSsid);
 }
 
 String pinOption(int selectedPin, int pin) {
@@ -497,8 +506,8 @@ void handleSettingsGet() {
   html += "<fieldset><legend>Network</legend>"
           "<label>MAC address <input name='mac' value='" + htmlEscape(cfg.mac) + "' maxlength='17'></label>"
           "<label>Hostname for DHCP <input name='hostname' value='" + htmlEscape(cfg.hostname) + "'></label>"
-          "<label>SSID <input name='ssid' value='" + htmlEscape(cfg.ssid) + "'></label>"
-          "<label for='password'>Password</label><input id='password' name='password' type='password' value='' placeholder='Leave empty to keep current password'>"
+          "<label>Station SSID <input name='ssid' value='" + htmlEscape(cfg.ssid) + "'></label>"
+          "<label for='password'>Station/AP password</label><input id='password' name='password' type='password' value='' placeholder='Leave empty to keep current password'>"
           "<label>Wi-Fi power (5.0 - 20.5 dBm) <input name='wifiPower' type='number' min='5' max='20.5' step='0.1' value='" + String(cfg.wifiPower, 1) + "'></label>"
           "</fieldset>";
 
@@ -735,26 +744,18 @@ void maintainWifiConnection() {
   if (wifiDisconnectSinceMs == 0) {
     wifiDisconnectSinceMs = now;
     lastWifiConnectLogMs = 0;
-    logError(String(F("Wi-Fi disconnected. Status: ")) + wifiStatusToString(status));
-  }
-
-  if (now - wifiDisconnectSinceMs >= WIFI_RECOVERY_WINDOW_MS && wifiRecoveryAttempts >= MAX_WIFI_RECOVERY_ATTEMPTS) {
-    restartDevice(F("Wi-Fi could not be recovered within the configured window."));
+    logWarning(String(F("Wi-Fi disconnected. Status: ")) + wifiStatusToString(status));
   }
 
   if (lastWifiConnectLogMs == 0 || now - lastWifiConnectLogMs >= WIFI_CONNECT_LOG_INTERVAL_MS) {
     Serial.print(F("[INFO] Waiting for Wi-Fi recovery. Status="));
-    Serial.print(wifiStatusToString(status));
-    Serial.print(F(" Attempts="));
-    Serial.println(wifiRecoveryAttempts);
+    Serial.println(wifiStatusToString(status));
     lastWifiConnectLogMs = now;
   }
 
   if (now - lastWifiReconnectAttemptMs >= WIFI_RECONNECT_INTERVAL_MS) {
     lastWifiReconnectAttemptMs = now;
-    ++wifiRecoveryAttempts;
-    Serial.print(F("[INFO] Attempting Wi-Fi reconnect #"));
-    Serial.println(wifiRecoveryAttempts);
+    logStatus(F("Attempting Wi-Fi reconnect."));
     WiFi.disconnect(false);
     WiFi.begin(cfg.ssid.c_str(), cfg.password.c_str());
   }
@@ -807,7 +808,7 @@ void setup() {
 
   server.begin();
   logStatus(F("HTTP server started on port 80."));
-  logWifiSummary();
+  logWifiSummary(defaultSoftApSsidFromMac(cfg.mac));
   logStatus(F("Boot sequence complete."));
 }
 
