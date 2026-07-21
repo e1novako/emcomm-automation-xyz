@@ -102,6 +102,8 @@ struct DeviceConfig {
   uint16_t mqttPort;
   String mqttUser;
   String mqttPassword;
+  // Debug
+  bool debugSerial;
 };
 
 // Background load-action state machine
@@ -340,6 +342,7 @@ void setFactoryDefaults() {
   cfg.mqttPort = DEFAULT_MQTT_PORT;
   cfg.mqttUser = "";
   cfg.mqttPassword = "";
+  cfg.debugSerial = false;
   clearOutputReservations();
 
   logStatus(F("Factory defaults loaded."));
@@ -359,6 +362,7 @@ bool saveConfig() {
   doc["mqttPort"] = cfg.mqttPort;
   doc["mqttUser"] = cfg.mqttUser;
   doc["mqttPassword"] = cfg.mqttPassword;
+  doc["debugSerial"] = cfg.debugSerial;
 
   JsonObject mqtt = doc["mqtt"].to<JsonObject>();
   mqtt["enabled"] = cfg.mqttEnabled;
@@ -459,6 +463,7 @@ bool loadConfig() {
   cfg.mqttUser = doc["mqttUser"] | String("");
   cfg.mqttPassword = doc["mqttPassword"] | String("");
   if (cfg.mqttPort == 0) cfg.mqttPort = DEFAULT_MQTT_PORT;
+  cfg.debugSerial = doc["debugSerial"] | false;
 
   logStatus(F("Configuration loaded successfully."));
   return true;
@@ -1048,7 +1053,7 @@ void handleStickserverMessage(const String& topicStr, const String& payloadStr) 
   }
 
   // Shared euid parser: accepts string or integer and normalizes to String.
-  auto parseEuidValue = [&](JsonVariantConst v) -> String {
+  auto parseEuidValue = [](JsonVariantConst v) -> String {
     if (v.is<const char*>()) return v.as<const char*>();
     if (v.is<int>()) return String(v.as<int>());
     if (v.is<long>()) return String(v.as<long>());
@@ -1257,15 +1262,19 @@ void handleStickserverMessage(const String& topicStr, const String& payloadStr) 
 
   if (cmd == F("join") || cmd == F("reboot")) {
     String euid = parseEuidValue(request["euid"]);
-    Serial.print(F("[INFO] [MQTT] Parsed euid: "));
-    Serial.println(euid.isEmpty() ? String(F("(none)")) : euid);
+    if (cfg.debugSerial) {
+      Serial.print(F("[INFO] [MQTT] Parsed euid: "));
+      Serial.println(euid.isEmpty() ? String(F("(none)")) : euid);
+    }
     if (euid.isEmpty()) {
       publishStickserverFailure(cmd, ver, mid, F("invalid_member"), F("euid"), F("Missing euid."));
       return;
     }
     int idx = findManagedOutputByEuid(euid);
-    Serial.print(F("[INFO] [MQTT] Resolved idx from euid: "));
-    Serial.println(idx);
+    if (cfg.debugSerial) {
+      Serial.print(F("[INFO] [MQTT] Resolved idx from euid: "));
+      Serial.println(idx);
+    }
     if (idx < 0) {
       publishStickserverFailure(cmd, ver, mid, F("invalid_member"), F("euid"), F("Unknown euid."));
       return;
@@ -1291,15 +1300,19 @@ void handleStickserverMessage(const String& topicStr, const String& payloadStr) 
   // Commands routed by euid: power_on, power_off, factory_reset
   if (cmd == F("power_on") || cmd == F("power_off") || cmd == F("factory_reset")) {
     String euid = parseEuidValue(request["euid"]);
-    Serial.print(F("[INFO] [MQTT] Parsed euid: "));
-    Serial.println(euid.isEmpty() ? String(F("(none)")) : euid);
+    if (cfg.debugSerial) {
+      Serial.print(F("[INFO] [MQTT] Parsed euid: "));
+      Serial.println(euid.isEmpty() ? String(F("(none)")) : euid);
+    }
     if (euid.isEmpty()) {
       publishStickserverFailure(cmd, ver, mid, F("invalid_member"), F("euid"), F("Missing euid."));
       return;
     }
     int idx = findManagedOutputByEuid(euid);
-    Serial.print(F("[INFO] [MQTT] Resolved idx from euid: "));
-    Serial.println(idx);
+    if (cfg.debugSerial) {
+      Serial.print(F("[INFO] [MQTT] Resolved idx from euid: "));
+      Serial.println(idx);
+    }
     if (idx < 0) {
       publishStickserverFailure(cmd, ver, mid, F("invalid_member"), F("euid"), F("Unknown euid."));
       return;
@@ -1328,16 +1341,20 @@ void handleStickserverMessage(const String& topicStr, const String& payloadStr) 
 
     if (!request["euid"].isNull()) {
       String euid = parseEuidValue(request["euid"]);
-      Serial.print(F("[INFO] [MQTT] Parsed euid: "));
-      Serial.println(euid.isEmpty() ? String(F("(none)")) : euid);
+      if (cfg.debugSerial) {
+        Serial.print(F("[INFO] [MQTT] Parsed euid: "));
+        Serial.println(euid.isEmpty() ? String(F("(none)")) : euid);
+      }
       if (euid.isEmpty()) {
         publishStickserverFailure(cmd, ver, mid, F("invalid_member"), F("euid"), F("Missing euid."));
         return;
       }
       totalRequested = 1;
       int idx = findManagedOutputByEuid(euid);
-      Serial.print(F("[INFO] [MQTT] Resolved idx from euid: "));
-      Serial.println(idx);
+      if (cfg.debugSerial) {
+        Serial.print(F("[INFO] [MQTT] Resolved idx from euid: "));
+        Serial.println(idx);
+      }
       JsonObject device = devices.add<JsonObject>();
       if (idx < 0) {
         device["euid"] = euid;
@@ -1361,8 +1378,10 @@ void handleStickserverMessage(const String& topicStr, const String& payloadStr) 
       totalRequested = euidCount;
       for (size_t i = 0; i < euidCount; ++i) {
         int idx = findManagedOutputByEuid(euids[i]);
-        Serial.print(F("[INFO] [MQTT] Resolved idx from euid: "));
-        Serial.println(idx);
+        if (cfg.debugSerial) {
+          Serial.print(F("[INFO] [MQTT] Resolved idx from euid: "));
+          Serial.println(idx);
+        }
         JsonObject device = devices.add<JsonObject>();
         if (idx < 0) {
           device["euid"] = euids[i];
@@ -2040,6 +2059,11 @@ void handleSettingsGet() {
           "Stickserver compatibility subscribes to <code>" + htmlEscape(String(STICKSERVER_ROOT_TOPIC)) + "</code> and replies on the device topic.</p>"
           "</fieldset>";
 
+  html += "<fieldset><legend>Diagnostics</legend>"
+          "<label><input type='checkbox' name='debugSerial' value='1'" +
+          String(cfg.debugSerial ? " checked" : "") + "> Enable verbose serial debug logging (euid parsing, idx resolution, etc.)</label>"
+          "</fieldset>";
+
   html += F("<button type='submit'>Save settings</button></form>");
 
   html += F(
@@ -2124,8 +2148,7 @@ void handleSettingsPost() {
   }
 
   cfg.mqttEnabled = server.hasArg("mqttEnabled") && server.arg("mqttEnabled") == "1";
-  cfg.mqttHost = server.arg("mqttHost");
-  {
+  cfg.mqttHost = server.arg("mqttHost");  {
     int parsedPort = -1;
     if (parseIndexValue(server.arg("mqttPort"), parsedPort) && parsedPort >= 1 && parsedPort <= 65535) {
       cfg.mqttPort = static_cast<uint16_t>(parsedPort);
@@ -2149,6 +2172,8 @@ void handleSettingsPost() {
       cfg.mqttPassword = newMqttPassword;
     }
   }
+
+  cfg.debugSerial = server.hasArg("debugSerial") && server.arg("debugSerial") == "1";
 
   logStatus(F("Settings updated from web UI."));
   if (!saveConfig()) {
