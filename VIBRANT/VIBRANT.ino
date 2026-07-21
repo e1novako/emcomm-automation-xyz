@@ -759,11 +759,12 @@ bool handleLoadAction(uint8_t idx, const String& cmd);
 
 void mqttCallback(char* topic, byte* payload, unsigned int length) {
   String topicStr(topic);
-  // MQTT payload is not null-terminated; use concat with explicit length for safe copy.
-  // If allocation fails, log and discard the message.
+  // MQTT payload bytes are not null-terminated; copy to String using explicit length.
+  // reserve() pre-allocates so concat does not reallocate; failure means low memory.
   String payloadStr;
+  payloadStr.reserve(length);
   if (!payloadStr.concat(reinterpret_cast<const char*>(payload), length)) {
-    logWarning(F("MQTT: dropped message -- payload String allocation failed."));
+    logWarning(F("MQTT: dropped message -- payload allocation failed."));
     return;
   }
 
@@ -1008,7 +1009,9 @@ void handleHome() {
   if (usingFactoryPassword()) {
     html += passwordWarningHtml();
   }
-  // Initial action-status banner rendered server-side; JS polling keeps it updated
+  // Initial action-status banner rendered server-side; JS polling keeps it updated.
+  // The phase-detail string is also formatted by the JS updater; they share the same
+  // visual format but run in different contexts (C++/server vs JS/browser).
   html += "<div id='action-status'>";
   if (actionRunning) {
     bool inCyclePhase = (bgAction.phase == APHASE_CYCLE_OFF || bgAction.phase == APHASE_CYCLE_ON);
@@ -1287,7 +1290,7 @@ void handleSettingsGet() {
           "<input id='mqttUser' name='mqttUser' value='" + htmlEscape(cfg.mqttUser) + "'>"
           "<label for='mqttPassword'>MQTT password (optional)</label>"
           "<input id='mqttPassword' name='mqttPassword' type='password' value='' placeholder='Leave empty to keep current'"
-          " oninput=\"document.getElementById('mqttPasswordClear').checked=false;\">"
+          " oninput=\"document.getElementById('mqttPasswordClear').checked = false;\">"
           "<label><input type='checkbox' id='mqttPasswordClear' name='mqttPasswordClear' value='1'"
           " onchange=\"if(this.checked)document.getElementById('mqttPassword').value='';\"> Clear MQTT password (remove broker authentication)</label>"
           "<p style='font-size:0.9em;color:#555;'>Topics (N = zero-based output index, e.g. 0 = Output 1): "
