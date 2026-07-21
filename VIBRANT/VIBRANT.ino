@@ -69,8 +69,6 @@ constexpr unsigned long FLASH_BOOT_REQUIRED_LOW_SAMPLES =
 static_assert(FLASH_BOOT_SAMPLE_INTERVAL_MS > 0, "FLASH boot sample interval must be greater than zero.");
 static_assert(FLASH_BOOT_SAMPLE_COUNT >= FLASH_BOOT_MIN_SAMPLES,
               "FLASH boot detection window must collect the minimum number of samples.");
-static_assert(DEFAULT_D0_D7_COUNT <= OUTPUT_PIN_MAPPING_COUNT,
-              "DEFAULT_D0_D7_COUNT exceeds available OUTPUT_PIN_MAPPINGS entries.");
 
 struct DeviceEntry {
   String model;
@@ -133,6 +131,8 @@ const PinMapping OUTPUT_PIN_MAPPINGS[] = {
 };
 
 constexpr size_t OUTPUT_PIN_MAPPING_COUNT = sizeof(OUTPUT_PIN_MAPPINGS) / sizeof(OUTPUT_PIN_MAPPINGS[0]);
+static_assert(DEFAULT_D0_D7_COUNT <= OUTPUT_PIN_MAPPING_COUNT,
+              "DEFAULT_D0_D7_COUNT exceeds available OUTPUT_PIN_MAPPINGS entries.");
 
 DeviceConfig cfg;
 ESP8266WebServer server(80);
@@ -775,8 +775,9 @@ void mqttPublishAllOutputStates() {
   }
 }
 
-// Forward declaration (defined below)
+// Forward declarations (defined below)
 bool handleLoadAction(uint8_t idx, const String& cmd);
+void cancelAction();
 
 void mqttCallback(char* topic, byte* payload, unsigned int length) {
   String topicStr(topic);
@@ -872,6 +873,14 @@ void maintainMqtt() {
   if (!mqttDoConnect()) {
     logWarning(String(F("MQTT connection failed. State: ")) + mqttStateString(mqttClient.state()));
   }
+}
+
+void mqttEnsureConnected() {
+  if (!cfg.mqttEnabled || cfg.mqttHost.isEmpty()) return;
+  if (WiFi.status() != WL_CONNECTED) return;
+  if (mqttClient.connected()) return;
+  lastMqttConnectAttemptMs = 0;
+  maintainMqtt();
 }
 
 // ---------------------------------------------------------------------------
