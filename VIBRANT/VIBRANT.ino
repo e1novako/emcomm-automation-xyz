@@ -995,7 +995,7 @@ void handleStickserverMessage(const String& topicStr, const String& payloadStr) 
   if (request["rsp"].is<const char*>()) return;
 
   String cmd = request["cmd"] | String("");
-  String mid;
+  String mid = "";
   if (request["mid"].is<const char*>()) {
     mid = request["mid"].as<const char*>();
   } else if (request["mid"].is<long>()) {
