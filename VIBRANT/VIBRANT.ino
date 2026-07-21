@@ -45,6 +45,7 @@ constexpr uint8_t MAX_WIFI_RECOVERY_ATTEMPTS = 12;
 constexpr uint16_t DEFAULT_MQTT_PORT = 1883;
 constexpr unsigned long MQTT_RECONNECT_INTERVAL_MS = 10000UL;
 constexpr uint16_t MQTT_PACKET_BUFFER_SIZE = 2048;
+constexpr uint16_t MQTT_PAYLOAD_LOG_MAX_LEN = 120;
 constexpr const char* STICKSERVER_ROOT_TOPIC = "s1/c4/stickserver/v1";
 constexpr uint8_t STICKSERVER_PROTOCOL_VERSION = 1;
 constexpr const char* STICKSERVER_OUTPUT_TYPE = "vibrant-output";
@@ -1341,10 +1342,10 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
   Serial.print(length);
   Serial.print(F("]: "));
   // Truncate long payloads in the log to avoid flooding serial
-  if (payloadStr.length() <= 120) {
+  if (payloadStr.length() <= MQTT_PAYLOAD_LOG_MAX_LEN) {
     Serial.println(payloadStr);
   } else {
-    Serial.print(payloadStr.substring(0, 120));
+    Serial.print(payloadStr.substring(0, MQTT_PAYLOAD_LOG_MAX_LEN));
     Serial.println(F("...(truncated)"));
   }
 
