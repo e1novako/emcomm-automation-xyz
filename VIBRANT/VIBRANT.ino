@@ -373,6 +373,8 @@ void applyOutputsNow() {
 }
 
 bool outputActivationDelayElapsed() {
+  // Unsigned subtraction keeps this short post-boot elapsed-time check valid
+  // even if millis() later wraps around.
   return (millis() - bootStartMillis) >= OUTPUT_BOOT_ACTIVATION_DELAY_MS;
 }
 
@@ -674,10 +676,11 @@ void handleToggle() {
   if (outputsActivated) {
     pinMode(d.pin, OUTPUT);
     digitalWrite(d.pin, d.state ? HIGH : LOW);
-  } else if (outputActivationDelayElapsed()) {
-    applyOutputsNow();
   } else {
-    logStatus(F("Stored output toggle during boot delay; hardware update remains deferred."));
+    applyOutputsWhenSafe();
+    if (!outputsActivated) {
+      logStatus(F("Stored output toggle during boot delay; hardware update remains deferred."));
+    }
   }
   Serial.print(F("[INFO] Output toggled: "));
   Serial.print(d.name);
@@ -714,7 +717,7 @@ void handleSettingsGet() {
           "  if(!first)return;\n"
           "  for(let i=0;i<" + String(cfg.numOutputs) + ";i++){\n"
           "    const field=document.getElementsByName('name_'+i)[0];\n"
-          "    if(field)field.value=first.value.replace(/#[0-9]+/g,'#'+(i+1));\n"
+          "    if(field)field.value=first.value.replace(/#\\d+/g,'#'+(i+1));\n"
           "  }\n"
           "}\n"
           "</script>";
