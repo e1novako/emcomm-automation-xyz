@@ -995,7 +995,12 @@ void handleStickserverMessage(const String& topicStr, const String& payloadStr) 
   if (request["rsp"].is<const char*>()) return;
 
   String cmd = request["cmd"] | String("");
-  String mid = request["mid"] | String("");
+  String mid = "";
+  if (request["mid"].is<const char*>()) {
+    mid = request["mid"].as<const char*>();
+  } else if (request["mid"].is<long>()) {
+    mid = String(request["mid"].as<long>());
+  }
   Serial.print(F("[INFO] [MQTT] Stickserver cmd: "));
   Serial.print(cmd.isEmpty() ? String(F("(none)")) : cmd.c_str());
   Serial.print(F(" mid: "));
