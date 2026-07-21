@@ -100,7 +100,7 @@ Starting with the bulb powered on:
 2. Wait 5 s (bulb turns green)
 3. Trigger: 2 s OFF → 1 s ON (cycles power while bulb is green)
 
-Total sequence duration: ~41 s
+Total sequence duration: ~38 s (5×6 s + 5 s + 3 s)
 
 ### Factory reset sequence (connected bulb)
 
@@ -109,7 +109,7 @@ Starting with the bulb powered on:
 2. Wait 5 s (bulb transitions from 1800 K/red to blue)
 3. Trigger: 2 s OFF → 1 s ON (cycles power while bulb is blue)
 
-Total sequence duration: ~97 s
+Total sequence duration: ~86 s (13×6 s + 5 s + 3 s)
 
 ### Non-blocking execution
 

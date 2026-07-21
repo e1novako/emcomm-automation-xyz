@@ -296,7 +296,8 @@ void setFactoryDefaults() {
   for (uint8_t i = 0; i < MAX_DEVICES; ++i) {
     cfg.devices[i].model = String(F("Model ")) + String(i + 1);
     cfg.devices[i].name = String(F("Output ")) + String(i + 1);
-    // Map first DEFAULT_D0_D7_COUNT outputs to D0-D7 by default; rest unassigned
+    // Map first DEFAULT_D0_D7_COUNT outputs to D0-D7 by default; rest unassigned.
+    // Compile-time static_assert above guarantees DEFAULT_D0_D7_COUNT <= OUTPUT_PIN_MAPPING_COUNT.
     cfg.devices[i].pin = (i < DEFAULT_D0_D7_COUNT) ? OUTPUT_PIN_MAPPINGS[i].gpio : -1;
     cfg.devices[i].state = false;
   }
@@ -758,9 +759,10 @@ bool handleLoadAction(uint8_t idx, const String& cmd);
 
 void mqttCallback(char* topic, byte* payload, unsigned int length) {
   String topicStr(topic);
-  // MQTT payload is not null-terminated; use concat with explicit length for safe copy
+  // MQTT payload is not null-terminated; use concat with explicit length for safe copy.
+  // If allocation fails, payloadStr stays empty and no command will match — safe to discard.
   String payloadStr;
-  payloadStr.concat(reinterpret_cast<const char*>(payload), length);
+  if (!payloadStr.concat(reinterpret_cast<const char*>(payload), length)) return;
 
   for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
     if (topicStr == mqttOutputSetTopic(i)) {
@@ -803,8 +805,10 @@ bool mqttDoConnect() {
   String clientId = cfg.hostname;
   bool connected;
   if (cfg.mqttUser.isEmpty()) {
+    // No credentials: connect anonymously
     connected = mqttClient.connect(clientId.c_str());
   } else {
+    // User is set; password may be empty (broker may allow empty password for a named user)
     connected = mqttClient.connect(clientId.c_str(),
                                    cfg.mqttUser.c_str(),
                                    cfg.mqttPassword.c_str());
@@ -963,20 +967,38 @@ bool handleLoadAction(uint8_t idx, const String& cmd) {
 void handleHome() {
   bool actionRunning = isActionRunning();
   String html = F(
-      "<!doctype html><html><head><meta charset='utf-8'><title>VIBRANT</title>");
-  if (actionRunning) {
-    html += F("<meta http-equiv='refresh' content='3'>");
-  }
-  html += F("<style>body{font-family:Arial,sans-serif;margin:20px;}table{border-collapse:collapse;width:100%;}"
-            "th,td{border:1px solid #ddd;padding:8px;}th{background:#f5f5f5;}a,button{padding:4px 8px;margin:2px;}"
-            "input[type='checkbox']{width:18px;height:18px;}"
-            ".action-banner{background:#fff3cd;border:1px solid #ffc107;padding:10px;margin:10px 0;border-radius:4px;}</style>"
-            "</head><body><h1>VIBRANT Output Control</h1><p>Version: ");
+      "<!doctype html><html><head><meta charset='utf-8'><title>VIBRANT</title>"
+      "<style>body{font-family:Arial,sans-serif;margin:20px;}table{border-collapse:collapse;width:100%;}"
+      "th,td{border:1px solid #ddd;padding:8px;}th{background:#f5f5f5;}a,button{padding:4px 8px;margin:2px;}"
+      "input[type='checkbox']{width:18px;height:18px;}"
+      ".action-banner{background:#fff3cd;border:1px solid #ffc107;padding:10px;margin:10px 0;border-radius:4px;}</style>"
+      "<script>\n"
+      "var _wasRunning=false;\n"
+      "function pollStatus(){\n"
+      "  fetch('/action/status').then(function(r){return r.json();})\n"
+      "  .then(function(d){\n"
+      "    var div=document.getElementById('action-status');\n"
+      "    if(d.running){\n"
+      "      var detail=d.cyclesRemaining>0?' (cycles remaining: '+d.cyclesRemaining+')':'';\n"
+      "      div.innerHTML='<div class=\"action-banner\"><strong>Action running on output '+(d.idx+1)+': '+d.phase+detail+'</strong>'"
+      "      +' &nbsp; <form method=\"post\" action=\"/action/cancel\" style=\"display:inline;\"><button type=\"submit\">Cancel</button></form></div>';\n"
+      "    } else {\n"
+      "      div.innerHTML='';\n"
+      "      if(_wasRunning){window.location.reload();}\n"
+      "    }\n"
+      "    _wasRunning=d.running;\n"
+      "  }).catch(function(){});\n"
+      "}\n"
+      "setInterval(pollStatus,3000);\n"
+      "</script>"
+      "</head><body><h1>VIBRANT Output Control</h1><p>Version: ");
   html += SOFTWARE_VERSION;
   html += F("</p><p><a href='/settings'>Settings</a></p>");
   if (usingFactoryPassword()) {
     html += passwordWarningHtml();
   }
+  // Initial action-status banner rendered server-side; JS polling keeps it updated
+  html += "<div id='action-status'>";
   if (actionRunning) {
     bool inCyclePhase = (bgAction.phase == APHASE_CYCLE_OFF || bgAction.phase == APHASE_CYCLE_ON);
     String phaseDetail = inCyclePhase
@@ -987,6 +1009,7 @@ void handleHome() {
             " &nbsp; <form method='post' action='/action/cancel' style='display:inline;'>"
             "<button type='submit'>Cancel</button></form></div>";
   }
+  html += "</div>";
   html += F("<table><tr><th>#</th><th>Model</th><th>Name</th><th>Status</th><th>Output</th><th>Actions</th></tr>");
 
   for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
@@ -1134,6 +1157,21 @@ void handleCancelAction() {
   server.send(303);
 }
 
+void handleActionStatus() {
+  bool running = isActionRunning();
+  String json = "{\"running\":";
+  json += running ? "true" : "false";
+  if (running) {
+    bool inCyclePhase = (bgAction.phase == APHASE_CYCLE_OFF || bgAction.phase == APHASE_CYCLE_ON);
+    json += ",\"idx\":" + String(bgAction.deviceIdx);
+    json += ",\"phase\":\"" + actionPhaseName() + "\"";
+    json += ",\"cyclesRemaining\":" + String(inCyclePhase ? bgAction.cyclesRemaining : 0);
+  }
+  json += "}";
+  server.sendHeader("Cache-Control", "no-store");
+  server.send(200, "application/json", json);
+}
+
 void handleSettingsGet() {
   if (!ensureAuthorized()) return;
 
@@ -1239,8 +1277,10 @@ void handleSettingsGet() {
           "<label for='mqttUser'>MQTT user (optional)</label>"
           "<input id='mqttUser' name='mqttUser' value='" + htmlEscape(cfg.mqttUser) + "'>"
           "<label for='mqttPassword'>MQTT password (optional)</label>"
-          "<input id='mqttPassword' name='mqttPassword' type='password' value='' placeholder='Leave empty to keep current'>"
-          "<label><input type='checkbox' name='mqttPasswordClear' value='1'> Clear MQTT password (remove broker authentication)</label>"
+          "<input id='mqttPassword' name='mqttPassword' type='password' value='' placeholder='Leave empty to keep current'"
+          " oninput=\"document.getElementById('mqttPasswordClear').checked=false;\">"
+          "<label><input type='checkbox' id='mqttPasswordClear' name='mqttPasswordClear' value='1'"
+          " onchange=\"if(this.checked)document.getElementById('mqttPassword').value='';\"> Clear MQTT password (remove broker authentication)</label>"
           "<p style='font-size:0.9em;color:#555;'>Topics (N = zero-based output index, e.g. 0 = Output 1): "
           "<code>vibrant/" + htmlEscape(cfg.hostname) + "/out/&lt;N&gt;/set</code> (ON/OFF) &amp; "
           "<code>vibrant/" + htmlEscape(cfg.hostname) + "/out/&lt;N&gt;/action</code> (power_on / power_off / leave_mesh / factory_reset)</p>"
@@ -1583,6 +1623,7 @@ void setup() {
   server.on("/toggle", HTTP_POST, handleToggle);
   server.on("/action", HTTP_POST, handleAction);
   server.on("/action/cancel", HTTP_POST, handleCancelAction);
+  server.on("/action/status", HTTP_GET, handleActionStatus);
   server.on("/settings", HTTP_GET, handleSettingsGet);
   server.on("/settings", HTTP_POST, handleSettingsPost);
   server.on("/config/export", HTTP_GET, handleConfigExport);
