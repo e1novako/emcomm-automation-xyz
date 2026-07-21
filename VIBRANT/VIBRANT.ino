@@ -40,9 +40,14 @@ constexpr unsigned long WIFI_RECOVERY_WINDOW_MS = 180000UL;
 constexpr uint8_t MAX_WIFI_RECOVERY_ATTEMPTS = 12;
 constexpr uint16_t DEFAULT_MQTT_PORT = 1883;
 constexpr unsigned long MQTT_RECONNECT_INTERVAL_MS = 10000UL;
+constexpr uint16_t MQTT_PACKET_BUFFER_SIZE = 2048;
+constexpr const char* STICKSERVER_ROOT_TOPIC = "s1/c4/stickserver/v1";
+constexpr uint8_t STICKSERVER_PROTOCOL_VERSION = 1;
+constexpr const char* STICKSERVER_OUTPUT_TYPE = "vibrant-output";
 // Background load-action timing
 constexpr uint8_t LEAVE_MESH_CYCLES = 5;
 constexpr uint8_t FACTORY_RESET_LOAD_CYCLES = 13;
+constexpr uint8_t REBOOT_LOAD_CYCLES = 1;
 // Number of D0-D7 entries at the start of OUTPUT_PIN_MAPPINGS used for default assignment
 constexpr uint8_t DEFAULT_D0_D7_COUNT = 8;
 constexpr unsigned long ACTION_CYCLE_OFF_MS = 5000UL;
@@ -111,6 +116,11 @@ struct ActiveAction {
   unsigned long phaseStartMs;
 };
 
+struct OutputReservation {
+  bool reserved;
+  String owner;
+};
+
 struct PinMapping {
   int8_t gpio;
   const char* label;
@@ -152,7 +162,7 @@ PubSubClient mqttClient(mqttWifiClient);
 unsigned long lastMqttConnectAttemptMs = 0;
 // Background load-action state
 ActiveAction bgAction = {APHASE_NONE, 0, 0, 0UL};
-unsigned long lastMqttReconnectMs = 0;
+OutputReservation outputReservations[MAX_DEVICES];
 
 String htmlEscape(const String& value) {
   String out;
@@ -248,6 +258,13 @@ String defaultSoftApSsidFromMac(const String& mac) {
   return String(F("C4-VIBRANT-")) + macLastThreeOctets(mac);
 }
 
+void clearOutputReservations() {
+  for (uint8_t i = 0; i < MAX_DEVICES; ++i) {
+    outputReservations[i].reserved = false;
+    outputReservations[i].owner = "";
+  }
+}
+
 bool parseMac(const String& mac, uint8_t out[6]) {
   if (mac.length() != 17) return false;
   for (uint8_t i = 0; i < 6; ++i) {
@@ -318,6 +335,7 @@ void setFactoryDefaults() {
   cfg.mqttPort = DEFAULT_MQTT_PORT;
   cfg.mqttUser = "";
   cfg.mqttPassword = "";
+  clearOutputReservations();
 
   logStatus(F("Factory defaults loaded."));
 }
@@ -423,6 +441,7 @@ bool loadConfig() {
       cfg.devices[i].state = false;
     }
   }
+  clearOutputReservations();
 
   if (cfg.staSsid.isEmpty()) cfg.staSsid = DEFAULT_STA_SSID;
   if (cfg.staPassword.isEmpty()) cfg.staPassword = DEFAULT_STA_PASSWORD;
@@ -775,12 +794,498 @@ void mqttPublishAllOutputStates() {
   }
 }
 
+String stickserverMacToken() {
+  String token;
+  token.reserve(cfg.mac.length());
+  for (size_t i = 0; i < cfg.mac.length(); ++i) {
+    char c = cfg.mac[i];
+    if (isxdigit(static_cast<unsigned char>(c))) {
+      token += static_cast<char>(tolower(static_cast<unsigned char>(c)));
+    }
+  }
+  if (token.isEmpty()) token = F("unknown");
+  return token;
+}
+
+String stickserverIdToken() {
+  String token;
+  token.reserve(cfg.hostname.length());
+  for (size_t i = 0; i < cfg.hostname.length(); ++i) {
+    char c = cfg.hostname[i];
+    if (isalnum(static_cast<unsigned char>(c))) {
+      token += static_cast<char>(tolower(static_cast<unsigned char>(c)));
+    } else if (c == '-' || c == '_') {
+      token += c;
+    } else if (!token.endsWith("-")) {
+      token += '-';
+    }
+  }
+  while (token.endsWith("-")) {
+    token.remove(token.length() - 1);
+  }
+  return token;
+}
+
+String stickserverInstanceId() {
+  String instanceId = String(F("ssvr-")) + stickserverMacToken();
+  String idToken = stickserverIdToken();
+  if (!idToken.isEmpty()) {
+    instanceId += '-';
+    instanceId += idToken;
+  }
+  return instanceId;
+}
+
+String stickserverInstanceTopic() {
+  return String(STICKSERVER_ROOT_TOPIC) + '/' + stickserverInstanceId();
+}
+
+bool isManagedOutput(uint8_t idx) {
+  return idx < cfg.numOutputs && isValidOutputPin(cfg.devices[idx].pin);
+}
+
+uint8_t managedOutputCount() {
+  uint8_t count = 0;
+  for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
+    if (isManagedOutput(i)) ++count;
+  }
+  return count;
+}
+
+uint8_t availableManagedOutputCount() {
+  uint8_t count = 0;
+  for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
+    if (isManagedOutput(i) && !outputReservations[i].reserved) ++count;
+  }
+  return count;
+}
+
+String stickserverOutputEuid(uint8_t idx) {
+  return String(F("vibrant-")) + stickserverMacToken() + F("-out-") + String(idx);
+}
+
+int findManagedOutputByEuid(const String& euid) {
+  for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
+    if (isManagedOutput(i) && euid == stickserverOutputEuid(i)) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+void populateStickserverDevice(JsonObject obj, uint8_t idx) {
+  obj["euid"] = stickserverOutputEuid(idx);
+  obj["idx"] = idx;
+  obj["name"] = cfg.devices[idx].name;
+  obj["model"] = cfg.devices[idx].model;
+  obj["pin"] = cfg.devices[idx].pin;
+  obj["state"] = cfg.devices[idx].state ? "ON" : "OFF";
+  obj["ntype"] = STICKSERVER_OUTPUT_TYPE;
+  obj["reserved"] = outputReservations[idx].reserved;
+  obj["available"] = isManagedOutput(idx) && !outputReservations[idx].reserved;
+  if (outputReservations[idx].reserved && !outputReservations[idx].owner.isEmpty()) {
+    obj["owner"] = outputReservations[idx].owner;
+  }
+}
+
+void buildStickserverEnvelope(JsonDocument& doc,
+                              const String& rsp,
+                              int ver,
+                              const String& mid,
+                              const char* status) {
+  doc["rsp"] = rsp;
+  doc["ver"] = ver;
+  doc["mid"] = mid;
+  doc["status"] = status;
+}
+
+bool publishStickserverResponse(JsonDocument& doc) {
+  if (!cfg.mqttEnabled || !mqttClient.connected()) return false;
+  String payload;
+  if (serializeJson(doc, payload) == 0) {
+    logWarning(F("Stickserver: failed to serialize response JSON."));
+    return false;
+  }
+  return mqttClient.publish(stickserverInstanceTopic().c_str(), payload.c_str());
+}
+
+void publishStickserverFailure(const String& rsp,
+                               int ver,
+                               const String& mid,
+                               const String& error,
+                               const String& member,
+                               const String& message) {
+  JsonDocument doc;
+  buildStickserverEnvelope(doc, rsp, ver, mid, "error");
+  doc["error"] = error;
+  if (!member.isEmpty()) doc["member"] = member;
+  if (!message.isEmpty()) doc["message"] = message;
+  publishStickserverResponse(doc);
+}
+
+bool extractStringArray(JsonVariantConst value, String out[], size_t& count) {
+  count = 0;
+  if (value.is<JsonArrayConst>()) {
+    JsonArrayConst array = value.as<JsonArrayConst>();
+    for (JsonVariantConst item : array) {
+      if (!item.is<const char*>()) return false;
+      if (count >= MAX_DEVICES) return false;
+      out[count] = item.as<String>();
+      if (out[count].isEmpty()) return false;
+      ++count;
+    }
+    return count > 0;
+  }
+  if (value.is<const char*>()) {
+    out[0] = value.as<String>();
+    count = out[0].isEmpty() ? 0 : 1;
+    return count == 1;
+  }
+  return false;
+}
+
+const char* aggregateStickserverStatus(size_t okCount, size_t totalCount) {
+  if (okCount == 0) return "not_found";
+  if (okCount == totalCount) return "ok";
+  return "partial";
+}
+
+void handleStickserverMessage(const String& topicStr, const String& payloadStr) {
+  JsonDocument request;
+  DeserializationError err = deserializeJson(request, payloadStr);
+  if (err) {
+    publishStickserverFailure(F("error"),
+                              STICKSERVER_PROTOCOL_VERSION,
+                              String(),
+                              F("invalid_json"),
+                              String(),
+                              err.c_str());
+    return;
+  }
+  if (request["rsp"].is<const char*>()) return;
+
+  String cmd = request["cmd"] | String("");
+  String mid = request["mid"] | String("");
+  if (!request["ver"].is<int>()) {
+    publishStickserverFailure(cmd.isEmpty() ? String(F("error")) : cmd,
+                              STICKSERVER_PROTOCOL_VERSION,
+                              mid,
+                              F("invalid_member"),
+                              F("ver"),
+                              F("Missing or invalid ver."));
+    return;
+  }
+  int ver = request["ver"].as<int>();
+  if (mid.isEmpty()) {
+    publishStickserverFailure(cmd.isEmpty() ? String(F("error")) : cmd,
+                              ver,
+                              mid,
+                              F("invalid_member"),
+                              F("mid"),
+                              F("Missing or invalid mid."));
+    return;
+  }
+  if (cmd.isEmpty()) {
+    publishStickserverFailure(F("error"),
+                              ver,
+                              mid,
+                              F("invalid_member"),
+                              F("cmd"),
+                              F("Missing or invalid cmd."));
+    return;
+  }
+  if (topicStr == STICKSERVER_ROOT_TOPIC && cmd != F("hello")) {
+    publishStickserverFailure(cmd,
+                              ver,
+                              mid,
+                              F("invalid_command"),
+                              F("cmd"),
+                              F("Only hello is accepted on the root topic."));
+    return;
+  }
+
+  if (cmd == F("hello")) {
+    JsonDocument response;
+    buildStickserverEnvelope(response, cmd, ver, mid, "ok");
+    response["id"] = cfg.hostname;
+    response["mac"] = cfg.mac;
+    response["topic"] = stickserverInstanceTopic();
+    response["instance"] = stickserverInstanceId();
+    response["count"] = managedOutputCount();
+    response["available"] = availableManagedOutputCount();
+    publishStickserverResponse(response);
+    return;
+  }
+
+  if (cmd == F("list")) {
+    JsonDocument response;
+    buildStickserverEnvelope(response, cmd, ver, mid, "ok");
+    response["id"] = cfg.hostname;
+    response["mac"] = cfg.mac;
+    response["count"] = managedOutputCount();
+    response["available"] = availableManagedOutputCount();
+    JsonArray devices = response["devices"].to<JsonArray>();
+    for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
+      if (!isManagedOutput(i)) continue;
+      populateStickserverDevice(devices.add<JsonObject>(), i);
+    }
+    publishStickserverResponse(response);
+    return;
+  }
+
+  if (cmd == F("reserve")) {
+    String owner = request["owner"] | String("");
+    String ntype = request["ntype"] | String("");
+    if (owner.isEmpty()) {
+      publishStickserverFailure(cmd, ver, mid, F("invalid_member"), F("owner"), F("Missing owner."));
+      return;
+    }
+    if (ntype.isEmpty()) {
+      publishStickserverFailure(cmd, ver, mid, F("invalid_member"), F("ntype"), F("Missing ntype."));
+      return;
+    }
+    if (!request["count"].is<int>()) {
+      publishStickserverFailure(cmd, ver, mid, F("invalid_member"), F("count"), F("Missing or invalid count."));
+      return;
+    }
+    int requestedCount = request["count"].as<int>();
+    if (requestedCount < 1) {
+      publishStickserverFailure(cmd, ver, mid, F("invalid_member"), F("count"), F("count must be >= 1."));
+      return;
+    }
+
+    uint8_t reservedIdx[MAX_DEVICES] = {0};
+    bool newReservation[MAX_DEVICES] = {false};
+    size_t reservedCount = 0;
+    for (uint8_t i = 0; i < cfg.numOutputs && reservedCount < static_cast<size_t>(requestedCount); ++i) {
+      if (!isManagedOutput(i)) continue;
+      if (outputReservations[i].reserved && outputReservations[i].owner == owner) {
+        reservedIdx[reservedCount] = i;
+        newReservation[reservedCount] = false;
+        ++reservedCount;
+      }
+    }
+    for (uint8_t i = 0; i < cfg.numOutputs && reservedCount < static_cast<size_t>(requestedCount); ++i) {
+      if (!isManagedOutput(i) || outputReservations[i].reserved) continue;
+      outputReservations[i].reserved = true;
+      outputReservations[i].owner = owner;
+      reservedIdx[reservedCount] = i;
+      newReservation[reservedCount] = true;
+      ++reservedCount;
+    }
+
+    JsonDocument response;
+    buildStickserverEnvelope(response,
+                             cmd,
+                             ver,
+                             mid,
+                             reservedCount == static_cast<size_t>(requestedCount)
+                                 ? "ok"
+                                 : (reservedCount > 0 ? "partial" : "unavailable"));
+    response["owner"] = owner;
+    response["ntype"] = ntype;
+    response["requested"] = requestedCount;
+    response["allocated"] = reservedCount;
+    response["available"] = availableManagedOutputCount();
+    JsonArray devices = response["devices"].to<JsonArray>();
+    for (size_t i = 0; i < reservedCount; ++i) {
+      JsonObject device = devices.add<JsonObject>();
+      populateStickserverDevice(device, reservedIdx[i]);
+      device["new"] = newReservation[i];
+    }
+    publishStickserverResponse(response);
+    return;
+  }
+
+  if (cmd == F("release")) {
+    String owner = request["owner"] | String("");
+    String euids[MAX_DEVICES];
+    size_t euidCount = 0;
+    bool hasEuids = !request["euids"].isNull();
+    if (hasEuids && !extractStringArray(request["euids"], euids, euidCount)) {
+      publishStickserverFailure(cmd, ver, mid, F("invalid_member"), F("euids"), F("Invalid euids list."));
+      return;
+    }
+    if (owner.isEmpty() && euidCount == 0) {
+      publishStickserverFailure(cmd,
+                                ver,
+                                mid,
+                                F("invalid_member"),
+                                F("owner/euids"),
+                                F("Release requires owner and/or euids."));
+      return;
+    }
+
+    bool selected[MAX_DEVICES] = {false};
+    JsonDocument response;
+    JsonArray devices = response["devices"].to<JsonArray>();
+    if (!owner.isEmpty()) {
+      for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
+        if (isManagedOutput(i) && outputReservations[i].reserved && outputReservations[i].owner == owner) {
+          selected[i] = true;
+        }
+      }
+      response["owner"] = owner;
+    }
+    for (size_t i = 0; i < euidCount; ++i) {
+      int idx = findManagedOutputByEuid(euids[i]);
+      if (idx < 0) {
+        JsonObject device = devices.add<JsonObject>();
+        device["euid"] = euids[i];
+        device["released"] = false;
+        device["status"] = "unknown_euid";
+      } else {
+        selected[idx] = true;
+      }
+    }
+
+    size_t releasedCount = 0;
+    size_t selectedCount = 0;
+    for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
+      if (!selected[i]) continue;
+      ++selectedCount;
+      JsonObject device = devices.add<JsonObject>();
+      populateStickserverDevice(device, i);
+      if (outputReservations[i].reserved) {
+        outputReservations[i].reserved = false;
+        outputReservations[i].owner = "";
+        device["released"] = true;
+        device["status"] = "ok";
+        device["available"] = true;
+        device.remove("owner");
+        ++releasedCount;
+      } else {
+        device["released"] = false;
+        device["status"] = "not_reserved";
+      }
+    }
+
+    buildStickserverEnvelope(response,
+                             cmd,
+                             ver,
+                             mid,
+                             releasedCount == selectedCount && devices.size() == selectedCount
+                                 ? "ok"
+                                 : (releasedCount > 0 ? "partial" : "not_found"));
+    response["released"] = releasedCount;
+    response["available"] = availableManagedOutputCount();
+    publishStickserverResponse(response);
+    return;
+  }
+
+  if (cmd == F("status")) {
+    String euids[MAX_DEVICES];
+    size_t euidCount = 0;
+    if (!extractStringArray(request["euids"], euids, euidCount)) {
+      publishStickserverFailure(cmd, ver, mid, F("invalid_member"), F("euids"), F("Invalid euids list."));
+      return;
+    }
+
+    JsonDocument response;
+    buildStickserverEnvelope(response, cmd, ver, mid, "ok");
+    JsonArray devices = response["devices"].to<JsonArray>();
+    size_t okCount = 0;
+    for (size_t i = 0; i < euidCount; ++i) {
+      int idx = findManagedOutputByEuid(euids[i]);
+      JsonObject device = devices.add<JsonObject>();
+      if (idx < 0) {
+        device["euid"] = euids[i];
+        device["status"] = "unknown_euid";
+      } else {
+        populateStickserverDevice(device, static_cast<uint8_t>(idx));
+        device["status"] = "ok";
+        ++okCount;
+      }
+    }
+    response["status"] = aggregateStickserverStatus(okCount, euidCount);
+    publishStickserverResponse(response);
+    return;
+  }
+
+  if (cmd == F("join") || cmd == F("reboot")) {
+    String euid = request["euid"] | String("");
+    if (euid.isEmpty()) {
+      publishStickserverFailure(cmd, ver, mid, F("invalid_member"), F("euid"), F("Missing euid."));
+      return;
+    }
+    int idx = findManagedOutputByEuid(euid);
+    if (idx < 0) {
+      publishStickserverFailure(cmd, ver, mid, F("invalid_member"), F("euid"), F("Unknown euid."));
+      return;
+    }
+    const String mappedCmd = (cmd == F("join")) ? String(F("power_on")) : String(F("reboot"));
+    bool ok = handleLoadAction(static_cast<uint8_t>(idx), mappedCmd);
+
+    JsonDocument response;
+    buildStickserverEnvelope(response, cmd, ver, mid, ok ? "ok" : "busy");
+    response["action"] = mappedCmd;
+    JsonObject device = response["device"].to<JsonObject>();
+    populateStickserverDevice(device, static_cast<uint8_t>(idx));
+    device["status"] = ok ? "ok" : "busy";
+    publishStickserverResponse(response);
+    return;
+  }
+
+  if (cmd == F("leave")) {
+    String euids[MAX_DEVICES];
+    size_t euidCount = 0;
+    if (!extractStringArray(request["euids"], euids, euidCount)) {
+      publishStickserverFailure(cmd, ver, mid, F("invalid_member"), F("euids"), F("Invalid euids list."));
+      return;
+    }
+
+    JsonDocument response;
+    JsonArray devices = response["devices"].to<JsonArray>();
+    size_t okCount = 0;
+    size_t knownCount = 0;
+    size_t unknownCount = 0;
+    for (size_t i = 0; i < euidCount; ++i) {
+      int idx = findManagedOutputByEuid(euids[i]);
+      JsonObject device = devices.add<JsonObject>();
+      if (idx < 0) {
+        device["euid"] = euids[i];
+        device["status"] = "unknown_euid";
+        ++unknownCount;
+        continue;
+      }
+      ++knownCount;
+      bool ok = handleLoadAction(static_cast<uint8_t>(idx), F("leave_mesh"));
+      populateStickserverDevice(device, static_cast<uint8_t>(idx));
+      device["action"] = "leave_mesh";
+      device["status"] = ok ? "ok" : "busy";
+      if (ok) ++okCount;
+    }
+    const char* responseStatus = "partial";
+    if (okCount == euidCount) {
+      responseStatus = "ok";
+    } else if (okCount > 0) {
+      responseStatus = "partial";
+    } else if (knownCount == 0) {
+      responseStatus = "not_found";
+    } else if (unknownCount == 0) {
+      responseStatus = "busy";
+    }
+    buildStickserverEnvelope(response, cmd, ver, mid, responseStatus);
+    publishStickserverResponse(response);
+    return;
+  }
+
+  publishStickserverFailure(cmd,
+                            ver,
+                            mid,
+                            F("invalid_command"),
+                            F("cmd"),
+                            F("Unsupported stickserver command."));
+}
+
 // Forward declarations (defined below)
 bool handleLoadAction(uint8_t idx, const String& cmd);
 void cancelAction();
 
 void mqttCallback(char* topic, byte* payload, unsigned int length) {
+  if (topic == nullptr || payload == nullptr || length == 0) return;
   String topicStr(topic);
+  if (topicStr.isEmpty()) return;
   // MQTT payload bytes are not null-terminated; copy to String using explicit length.
   // reserve() pre-allocates so concat does not reallocate; failure means low memory.
   String payloadStr;
@@ -789,6 +1294,7 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
     logWarning(F("MQTT: dropped message -- payload allocation failed."));
     return;
   }
+  if (payloadStr.isEmpty()) return;
 
   for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
     if (topicStr == mqttOutputSetTopic(i)) {
@@ -804,6 +1310,9 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
 
       return;
     }
+  }
+  if (topicStr == STICKSERVER_ROOT_TOPIC || topicStr == stickserverInstanceTopic()) {
+    handleStickserverMessage(topicStr, payloadStr);
   }
 }
 
@@ -825,6 +1334,7 @@ const char* mqttStateString(int state) {
 
 bool mqttDoConnect() {
   if (!cfg.mqttEnabled || cfg.mqttHost.isEmpty()) return false;
+  mqttClient.setBufferSize(MQTT_PACKET_BUFFER_SIZE);
   mqttClient.setServer(cfg.mqttHost.c_str(), cfg.mqttPort);
   mqttClient.setCallback(mqttCallback);
   String clientId = cfg.hostname;
@@ -839,6 +1349,8 @@ bool mqttDoConnect() {
                                    cfg.mqttPassword.c_str());
   }
   if (!connected) return false;
+  mqttClient.subscribe(STICKSERVER_ROOT_TOPIC);
+  mqttClient.subscribe(stickserverInstanceTopic().c_str());
   for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
     mqttClient.subscribe(mqttOutputSetTopic(i).c_str());
     mqttClient.subscribe(mqttOutputActionTopic(i).c_str());
@@ -853,6 +1365,7 @@ void applyMqttSettings() {
     if (mqttClient.connected()) mqttClient.disconnect();
     return;
   }
+  mqttClient.setBufferSize(MQTT_PACKET_BUFFER_SIZE);
   mqttClient.setServer(cfg.mqttHost.c_str(), cfg.mqttPort);
   mqttClient.setCallback(mqttCallback);
   if (mqttClient.connected()) mqttClient.disconnect();
@@ -1002,6 +1515,11 @@ bool handleLoadAction(uint8_t idx, const String& cmd) {
   if (cmd == F("factory_reset")) {
     logStatus(String(F("Starting factory_reset action for output ")) + String(idx + 1));
     startSequenceAction(idx, FACTORY_RESET_LOAD_CYCLES);
+    return true;
+  }
+  if (cmd == F("reboot")) {
+    logStatus(String(F("Starting reboot action for output ")) + String(idx + 1));
+    startSequenceAction(idx, REBOOT_LOAD_CYCLES);
     return true;
   }
   return false;
@@ -1291,21 +1809,6 @@ void handleSettingsGet() {
           "<label>Wi-Fi power (5.0 - 20.5 dBm) <input name='wifiPower' type='number' min='5' max='20.5' step='0.1' value='" + String(cfg.wifiPower, 1) + "'></label>"
           "</fieldset>";
 
-  html += "<fieldset><legend>MQTT</legend>"
-          "<label><input name='mqttEnabled' type='checkbox' value='1'";
-  if (cfg.mqttEnabled) html += " checked";
-  html += "> Enable MQTT</label>"
-          "<label>MQTT host <input name='mqttHost' value='" + htmlEscape(cfg.mqttHost) + "' placeholder='e.g. 192.168.1.10'></label>"
-          "<label>MQTT port <input name='mqttPort' type='number' min='1' max='65535' value='" + String(cfg.mqttPort) + "'></label>"
-          "<label>MQTT username <input name='mqttUser' value='" + htmlEscape(cfg.mqttUser) + "' placeholder='Leave empty for anonymous'></label>"
-          "<label for='mqttPass'>MQTT password</label>"
-          "<input id='mqttPass' name='mqttPass' type='password' value='' placeholder='Leave empty to keep current MQTT password'>"
-          "<p style='font-size:0.9em;color:#555;'>When enabled, each output state is published to "
-          "<code>vibrant/&lt;hostname&gt;/output/&lt;N&gt;/state</code> (retained). "
-          "Send <code>1</code> or <code>0</code> to "
-          "<code>vibrant/&lt;hostname&gt;/output/&lt;N&gt;/set</code> to control outputs via MQTT.</p>"
-          "</fieldset>";
-
   html += "<fieldset><legend>Devices</legend>"
           "<label>Number of outputs (1 - 16) <input name='numOutputs' type='number' min='1' max='16' step='1' value='" + String(cfg.numOutputs) + "'></label>"
           "<div class='bulk-actions'><button type='button' onclick='copyFirstModelToAll()'>Use first Model for all</button>"
@@ -1343,7 +1846,8 @@ void handleSettingsGet() {
           " onchange=\"if(this.checked)document.getElementById('mqttPassword').value='';\"> Clear MQTT password (remove broker authentication)</label>"
           "<p style='font-size:0.9em;color:#555;'>Topics (N = zero-based output index, e.g. 0 = Output 1): "
           "<code>vibrant/" + htmlEscape(cfg.hostname) + "/out/&lt;N&gt;/set</code> (ON/OFF) &amp; "
-          "<code>vibrant/" + htmlEscape(cfg.hostname) + "/out/&lt;N&gt;/action</code> (power_on / power_off / leave_mesh / factory_reset)</p>"
+          "<code>vibrant/" + htmlEscape(cfg.hostname) + "/out/&lt;N&gt;/action</code> (power_on / power_off / leave_mesh / factory_reset). "
+          "Stickserver compatibility subscribes to <code>" + htmlEscape(String(STICKSERVER_ROOT_TOPIC)) + "</code> and replies on the device topic.</p>"
           "</fieldset>";
 
   html += F("<button type='submit'>Save settings</button></form>");
@@ -1429,7 +1933,6 @@ void handleSettingsPost() {
     }
   }
 
-  // MQTT settings
   cfg.mqttEnabled = server.hasArg("mqttEnabled") && server.arg("mqttEnabled") == "1";
   cfg.mqttHost = server.arg("mqttHost");
   {
@@ -1441,8 +1944,12 @@ void handleSettingsPost() {
     }
   }
   cfg.mqttUser = server.arg("mqttUser");
-  {
-    String newMqttPassword = server.arg("mqttPass");
+  bool clearMqttPassword = server.hasArg("mqttPasswordClear") && server.arg("mqttPasswordClear") == "1";
+  if (clearMqttPassword) {
+    cfg.mqttPassword = "";
+  } else {
+    String newMqttPassword = server.arg("mqttPassword");
+    if (newMqttPassword.isEmpty()) newMqttPassword = server.arg("mqttPass");
     if (!newMqttPassword.isEmpty()) {
       cfg.mqttPassword = newMqttPassword;
     }
@@ -1454,35 +1961,8 @@ void handleSettingsPost() {
   }
   applyWifiSettings();
   refreshOutputsForCurrentBootPhase();
-  mqttClient.disconnect();
-  if (cfg.mqttEnabled) {
-    lastMqttReconnectMs = 0;
-    mqttEnsureConnected();
-  }
-
-  // Parse and apply MQTT settings
-  cfg.mqttEnabled = server.hasArg("mqttEnabled") && server.arg("mqttEnabled") == "1";
-  cfg.mqttHost = server.arg("mqttHost");
-  int parsedMqttPort = -1;
-  if (parseIndexValue(server.arg("mqttPort"), parsedMqttPort) && parsedMqttPort > 0 && parsedMqttPort <= 65535) {
-    cfg.mqttPort = static_cast<uint16_t>(parsedMqttPort);
-  } else {
-    cfg.mqttPort = DEFAULT_MQTT_PORT;
-  }
-  cfg.mqttUser = server.arg("mqttUser");
-  bool clearMqttPassword = server.hasArg("mqttPasswordClear") && server.arg("mqttPasswordClear") == "1";
-  if (clearMqttPassword) {
-    cfg.mqttPassword = "";
-  } else {
-    String newMqttPassword = server.arg("mqttPassword");
-    if (!newMqttPassword.isEmpty()) {
-      cfg.mqttPassword = newMqttPassword;
-    }
-  }
-  if (!saveConfig()) {
-    restartDevice(F("Failed to persist MQTT settings."));
-  }
   applyMqttSettings();
+  mqttEnsureConnected();
 
   server.sendHeader("Location", "/settings");
   server.send(303);
