@@ -23,8 +23,9 @@ Change the password immediately in **Settings** after the first boot.
   - SSID
   - Password
   - Wi-Fi output power/strength
-  - Bulk-copying the first Model/Name to all visible rows (`#<number>` in the first name expands per row)
-  - Up to 16 device entries (`model`, `name`, output `D0`–`D15` or `none`)
+  - Bulk-copying the first Model/Name to all visible rows (`#<number>` in the first name continues from the parsed starting number)
+  - Reversing GPIO assignments across the currently configured output rows
+  - Up to 16 device entries (`model`, `name`, output `D0`–`D8`, `RX`, `TX`, or `none`)
 - Configuration maintenance routes:
   - Export backup (`/config/export`)
   - Import backup (`/config/import`)

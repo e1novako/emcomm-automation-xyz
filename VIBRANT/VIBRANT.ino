@@ -25,7 +25,6 @@ constexpr const char* DEFAULT_AP_PASSWORD = "Fiber714Cvet";
 constexpr const char* SOFTWARE_VERSION = "1.2.1";
 constexpr uint8_t MAX_DEVICES = 16;
 constexpr uint8_t DEFAULT_NUM_OUTPUTS = 8;
-constexpr int8_t MAX_GPIO_PIN = 15;
 constexpr float MIN_WIFI_POWER = 5.0f;
 constexpr float MAX_WIFI_POWER = 20.5f;
 constexpr unsigned long OUTPUT_BOOT_ACTIVATION_DELAY_MS = 1000UL;
@@ -76,6 +75,27 @@ struct DeviceConfig {
   DeviceEntry devices[MAX_DEVICES];
 };
 
+struct PinMapping {
+  int8_t gpio;
+  const char* label;
+};
+
+const PinMapping OUTPUT_PIN_MAPPINGS[] = {
+    {16, "D0 (GPIO16)"},
+    {5, "D1 (GPIO5)"},
+    {4, "D2 (GPIO4)"},
+    {0, "D3 (GPIO0)"},
+    {2, "D4 (GPIO2)"},
+    {14, "D5 (GPIO14)"},
+    {12, "D6 (GPIO12)"},
+    {13, "D7 (GPIO13)"},
+    {15, "D8 (GPIO15)"},
+    {3, "RX (GPIO3)"},
+    {1, "TX (GPIO1)"},
+};
+
+constexpr size_t OUTPUT_PIN_MAPPING_COUNT = sizeof(OUTPUT_PIN_MAPPINGS) / sizeof(OUTPUT_PIN_MAPPINGS[0]);
+
 DeviceConfig cfg;
 ESP8266WebServer server(80);
 File importFile;
@@ -102,6 +122,15 @@ String htmlEscape(const String& value) {
     else out += c;
   }
   return out;
+}
+
+const PinMapping* findPinMapping(int pin) {
+  for (size_t i = 0; i < OUTPUT_PIN_MAPPING_COUNT; ++i) {
+    if (OUTPUT_PIN_MAPPINGS[i].gpio == pin) {
+      return &OUTPUT_PIN_MAPPINGS[i];
+    }
+  }
+  return nullptr;
 }
 
 const char* wifiStatusToString(wl_status_t status) {
@@ -330,14 +359,12 @@ bool loadConfig() {
 }
 
 String pinLabel(int8_t pin) {
-  if (pin < 0 || pin > MAX_GPIO_PIN) {
-    return F("none");
-  }
-  return String(F("D")) + String(pin);
+  const PinMapping* mapping = findPinMapping(pin);
+  return mapping ? String(mapping->label) : String(F("none"));
 }
 
 bool isValidOutputPin(int8_t pin) {
-  return pin >= 0 && pin <= MAX_GPIO_PIN;
+  return findPinMapping(pin) != nullptr;
 }
 
 void logDeviceSummary() {
@@ -557,9 +584,9 @@ void applyWifiSettings() {
   logWifiSummary(softApSsid);
 }
 
-String pinOption(int selectedPin, int pin) {
-  String selected = (selectedPin == pin) ? " selected" : "";
-  return "<option value=\"" + String(pin) + "\"" + selected + ">D" + String(pin) + "</option>";
+String pinOption(int selectedPin, const PinMapping& mapping) {
+  String selected = (selectedPin == mapping.gpio) ? " selected" : "";
+  return "<option value=\"" + String(mapping.gpio) + "\"" + selected + ">" + String(mapping.label) + "</option>";
 }
 
 bool parsePinValue(const String& raw, int& pin) {
@@ -572,7 +599,7 @@ bool parsePinValue(const String& raw, int& pin) {
     if (raw[i] < '0' || raw[i] > '9') return false;
   }
   pin = raw.toInt();
-  return pin >= 0 && pin <= MAX_GPIO_PIN;
+  return isValidOutputPin(pin);
 }
 
 bool parseIndexValue(const String& raw, int& value) {
@@ -706,10 +733,14 @@ void handleSettingsGet() {
       "th,td{border:1px solid #ddd;padding:8px;}th{background:#f5f5f5;}input,select{width:100%;padding:6px;box-sizing:border-box;}"
       "button{padding:8px 10px;margin-right:8px;}.bulk-actions{margin:10px 0;}</style>");
   html += "<script>\n"
-          "function sequentialNameValue(template,index){\n"
-          "  const match=template.match(/#[0-9]+/);\n"
-          "  if(!match)return template;\n"
-          "  return template.replace(match[0],'#'+(index+1));\n"
+          "function parseNameSequence(template){\n"
+          "  const match=template.match(/#(\\d+)/);\n"
+          "  if(!match)return null;\n"
+          "  return {token:match[0],start:parseInt(match[1],10)};\n"
+          "}\n"
+          "function sequentialNameValue(template,sequence,index){\n"
+          "  if(!sequence)return template;\n"
+          "  return template.replace(sequence.token,'#'+(sequence.start+index));\n"
           "}\n"
           "function copyFirstModelToAll(){\n"
           "  const form=document.forms[0];\n"
@@ -728,12 +759,19 @@ void handleSettingsGet() {
           "  const first=form.elements['name_0'];\n"
           "  if(!first)return;\n"
           "  const template=first.value;\n"
-          "  first.value=sequentialNameValue(template,0);\n"
+          "  const sequence=parseNameSequence(template);\n"
           "  const count=form.querySelectorAll(\"input[name^='name_']\").length;\n"
-          "  for(let i=1;i<count;i++){\n"
+          "  for(let i=0;i<count;i++){\n"
           "    const field=form.elements['name_'+i];\n"
-          "    if(field)field.value=sequentialNameValue(template,i);\n"
+          "    if(field)field.value=sequentialNameValue(template,sequence,i);\n"
           "  }\n"
+          "}\n"
+          "function reverseGpioAssignments(){\n"
+          "  const form=document.forms[0];\n"
+          "  if(!form)return;\n"
+          "  const fields=Array.from(form.querySelectorAll(\"select[name^='pin_']\"));\n"
+          "  const values=fields.map((field)=>field.value).reverse();\n"
+          "  fields.forEach((field,index)=>{field.value=values[index];});\n"
           "}\n"
           "</script>";
   html += F("</head><body><h1>Settings</h1>"
@@ -763,7 +801,8 @@ void handleSettingsGet() {
           "<label>Number of outputs (1 - 16) <input name='numOutputs' type='number' min='1' max='16' step='1' value='" + String(cfg.numOutputs) + "'></label>"
           "<div class='bulk-actions'><button type='button' onclick='copyFirstModelToAll()'>Use first Model for all</button>"
           "<button type='button' onclick='copyFirstNameToAll()'>Use first Name for all</button>"
-          "<span>If the first Name contains a placeholder like #1, copy rewrites the first row as #1 and fills later rows as #2, #3, and so on.</span></div>"
+          "<button type='button' onclick='reverseGpioAssignments()'>Reverse GPIO assignments</button>"
+          "<span>If the first Name contains #5, copy keeps the first row at #5 and fills later rows as #6, #7, and so on.</span></div>"
           "<table><tr><th>#</th><th>Model</th><th>Name</th><th>Control output</th></tr>";
   for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
     html += "<tr><td>" + String(i + 1) + "</td>"
@@ -772,8 +811,8 @@ void handleSettingsGet() {
             "<td><select name='pin_" + String(i) + "'>";
 
     html += (cfg.devices[i].pin < 0) ? "<option value='-1' selected>none</option>" : "<option value='-1'>none</option>";
-    for (int pin = 0; pin <= MAX_GPIO_PIN; ++pin) {
-      html += pinOption(cfg.devices[i].pin, pin);
+    for (size_t pinIndex = 0; pinIndex < OUTPUT_PIN_MAPPING_COUNT; ++pinIndex) {
+      html += pinOption(cfg.devices[i].pin, OUTPUT_PIN_MAPPINGS[pinIndex]);
     }
     html += "</select></td></tr>";
   }
