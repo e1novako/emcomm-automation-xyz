@@ -315,7 +315,7 @@ bool loadConfig() {
       cfg.devices[i].pin = -1;
       cfg.devices[i].state = false;
     }
-    if (!isSafeOutputPin(cfg.devices[i].pin)) {
+    if (cfg.devices[i].pin != -1 && !isSafeOutputPin(cfg.devices[i].pin)) {
       cfg.devices[i].pin = -1;
       cfg.devices[i].state = false;
     }
