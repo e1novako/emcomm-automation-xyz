@@ -405,6 +405,15 @@ void refreshOutputsForCurrentBootPhase() {
   logDeferredOutputActivation();
 }
 
+void prepareOutputsForBootPhase() {
+  if (outputsActivated) return;
+  if (outputActivationDelayElapsed()) {
+    applyOutputsNow();
+    return;
+  }
+  logDeferredOutputActivation();
+}
+
 void logWifiSummary(const String& softApSsid) {
   Serial.print(F("[INFO] SoftAP SSID: "));
   Serial.println(softApSsid);
@@ -754,7 +763,7 @@ void handleSettingsGet() {
           "<label>Number of outputs (1 - 16) <input name='numOutputs' type='number' min='1' max='16' step='1' value='" + String(cfg.numOutputs) + "'></label>"
           "<div class='bulk-actions'><button type='button' onclick='copyFirstModelToAll()'>Use first Model for all</button>"
           "<button type='button' onclick='copyFirstNameToAll()'>Use first Name for all</button>"
-          "<span>If the first Name contains a placeholder like #1, copy normalizes the first row to #1 and fills later rows as #2, #3, and so on.</span></div>"
+          "<span>If the first Name contains a placeholder like #1, copy rewrites the first row as #1 and fills later rows as #2, #3, and so on.</span></div>"
           "<table><tr><th>#</th><th>Model</th><th>Name</th><th>Control output</th></tr>";
   for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
     html += "<tr><td>" + String(i + 1) + "</td>"
@@ -1074,7 +1083,7 @@ void setup() {
   logLoadedWifiConfig();   // [DIAG] log cfg.staSsid and cfg.wifiPower
   applyWifiSettings();
   logWifiScan();           // [DIAG] log visible SSIDs with RSSI
-  applyOutputsWhenSafe();
+  prepareOutputsForBootPhase();
 
   logStatus(F("Registering web routes..."));
   server.on("/", HTTP_GET, handleHome);
@@ -1094,7 +1103,7 @@ void setup() {
 
 void loop() {
   server.handleClient();
-  if (!outputsActivated) {
+  if (!outputsActivated && outputActivationDelayElapsed()) {
     applyOutputsWhenSafe();
   }
   maintainWifiConnection();
