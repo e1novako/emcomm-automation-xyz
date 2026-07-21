@@ -760,16 +760,17 @@ bool handleLoadAction(uint8_t idx, const String& cmd);
 void mqttCallback(char* topic, byte* payload, unsigned int length) {
   String topicStr(topic);
   // MQTT payload is not null-terminated; use concat with explicit length for safe copy.
-  // If allocation fails, payloadStr stays empty and no command will match — safe to discard.
+  // If allocation fails, log and discard the message.
   String payloadStr;
-  if (!payloadStr.concat(reinterpret_cast<const char*>(payload), length)) return;
+  if (!payloadStr.concat(reinterpret_cast<const char*>(payload), length)) {
+    logWarning(F("MQTT: dropped message — payload String allocation failed."));
+    return;
+  }
 
   for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
     if (topicStr == mqttOutputSetTopic(i)) {
       bool newState = (payloadStr == "ON" || payloadStr == "1" || payloadStr == "true");
-      if (isActionRunning() && bgAction.deviceIdx == i) {
-        bgAction.phase = APHASE_NONE;
-      }
+      if (isActionRunning() && bgAction.deviceIdx == i) cancelAction();
       setOutputDirect(i, newState);
       mqttPublishOutputState(i);
       saveConfig();
@@ -933,17 +934,27 @@ void maintainBackgroundAction() {
 // Load-action command dispatcher (shared by HTTP and MQTT)
 // ---------------------------------------------------------------------------
 
+// Cancel any running background action, publish current output MQTT state.
+// Callers are responsible for saving config if needed.
+void cancelAction() {
+  if (!isActionRunning()) return;
+  uint8_t idx = bgAction.deviceIdx;
+  bgAction.phase = APHASE_NONE;
+  logStatus(String(F("Action cancelled for output ")) + String(idx + 1));
+  mqttPublishOutputState(idx);
+}
+
 bool handleLoadAction(uint8_t idx, const String& cmd) {
   if (idx >= cfg.numOutputs) return false;
   if (cmd == F("power_on")) {
-    if (isActionRunning() && bgAction.deviceIdx == idx) bgAction.phase = APHASE_NONE;
+    if (isActionRunning() && bgAction.deviceIdx == idx) cancelAction();
     setOutputDirect(idx, true);
     mqttPublishOutputState(idx);
     saveConfig();
     return true;
   }
   if (cmd == F("power_off")) {
-    if (isActionRunning() && bgAction.deviceIdx == idx) bgAction.phase = APHASE_NONE;
+    if (isActionRunning() && bgAction.deviceIdx == idx) cancelAction();
     setOutputDirect(idx, false);
     mqttPublishOutputState(idx);
     saveConfig();
@@ -1098,8 +1109,7 @@ void handleToggle() {
 
   // Abort any running sequence action on this output
   if (isActionRunning() && bgAction.deviceIdx == static_cast<uint8_t>(idx)) {
-    logStatus(F("Background action aborted by toggle request."));
-    bgAction.phase = APHASE_NONE;
+    cancelAction();
   }
 
   d.state = server.arg("state") == "1";
@@ -1149,8 +1159,7 @@ void handleAction() {
 void handleCancelAction() {
   if (!ensureAuthorized()) return;
   if (isActionRunning()) {
-    logStatus(F("Background action cancelled by user."));
-    bgAction.phase = APHASE_NONE;
+    cancelAction();
     saveConfig();
   }
   server.sendHeader("Location", "/");
