@@ -47,7 +47,7 @@ constexpr const char* STICKSERVER_OUTPUT_TYPE = "vibrant-output";
 // Background load-action timing
 constexpr uint8_t LEAVE_MESH_CYCLES = 5;
 constexpr uint8_t FACTORY_RESET_LOAD_CYCLES = 13;
-constexpr uint8_t REBOOT_LOAD_CYCLES = 1;
+constexpr uint8_t REBOOT_SEQUENCE_CYCLES = 1;
 // Number of D0-D7 entries at the start of OUTPUT_PIN_MAPPINGS used for default assignment
 constexpr uint8_t DEFAULT_D0_D7_COUNT = 8;
 constexpr unsigned long ACTION_CYCLE_OFF_MS = 5000UL;
@@ -796,7 +796,7 @@ void mqttPublishAllOutputStates() {
 
 String stickserverMacToken() {
   String token;
-  token.reserve(cfg.mac.length());
+  token.reserve(12);
   for (size_t i = 0; i < cfg.mac.length(); ++i) {
     char c = cfg.mac[i];
     if (isxdigit(static_cast<unsigned char>(c))) {
@@ -809,7 +809,7 @@ String stickserverMacToken() {
 
 String stickserverIdToken() {
   String token;
-  token.reserve(cfg.hostname.length());
+  token.reserve(cfg.hostname.length() + 8);
   for (size_t i = 0; i < cfg.hostname.length(); ++i) {
     char c = cfg.hostname[i];
     if (isalnum(static_cast<unsigned char>(c))) {
@@ -1213,7 +1213,12 @@ void handleStickserverMessage(const String& topicStr, const String& payloadStr) 
       publishStickserverFailure(cmd, ver, mid, F("invalid_member"), F("euid"), F("Unknown euid."));
       return;
     }
-    const String mappedCmd = (cmd == F("join")) ? String(F("power_on")) : String(F("reboot"));
+    String mappedCmd;
+    if (cmd == F("join")) {
+      mappedCmd = F("power_on");
+    } else {
+      mappedCmd = F("reboot");
+    }
     bool ok = handleLoadAction(static_cast<uint8_t>(idx), mappedCmd);
 
     JsonDocument response;
@@ -1258,8 +1263,6 @@ void handleStickserverMessage(const String& topicStr, const String& payloadStr) 
     const char* responseStatus = "partial";
     if (okCount == euidCount) {
       responseStatus = "ok";
-    } else if (okCount > 0) {
-      responseStatus = "partial";
     } else if (knownCount == 0) {
       responseStatus = "not_found";
     } else if (unknownCount == 0) {
@@ -1299,10 +1302,6 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
   payloadStr.reserve(length);
   if (!payloadStr.concat(reinterpret_cast<const char*>(payload), length)) {
     logWarning(F("MQTT: dropped message -- payload allocation failed."));
-    return;
-  }
-  if (payloadStr.isEmpty()) {
-    logWarning(F("MQTT: dropped empty payload string."));
     return;
   }
 
@@ -1529,7 +1528,7 @@ bool handleLoadAction(uint8_t idx, const String& cmd) {
   }
   if (cmd == F("reboot")) {
     logStatus(String(F("Starting reboot action for output ")) + String(idx + 1));
-    startSequenceAction(idx, REBOOT_LOAD_CYCLES);
+    startSequenceAction(idx, REBOOT_SEQUENCE_CYCLES);
     return true;
   }
   return false;
@@ -1963,7 +1962,7 @@ void handleSettingsPost() {
     if (newMqttPassword.isEmpty()) {
       newMqttPassword = legacyMqttPassword;
     } else if (!legacyMqttPassword.isEmpty() && legacyMqttPassword != newMqttPassword) {
-      logWarning(F("Settings POST contained both mqttPassword and legacy mqttPass; using mqttPassword."));
+      logWarning(F("Settings POST contained both mqttPassword and legacy mqttPass; applying mqttPassword."));
     }
     if (!newMqttPassword.isEmpty()) {
       cfg.mqttPassword = newMqttPassword;
