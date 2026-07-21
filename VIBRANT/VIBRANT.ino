@@ -336,7 +336,7 @@ String pinLabel(int8_t pin) {
   return String(F("D")) + String(pin);
 }
 
-bool isAssignedOutputPin(int8_t pin) {
+bool isValidOutputPin(int8_t pin) {
   return pin >= 0 && pin <= MAX_GPIO_PIN;
 }
 
@@ -360,7 +360,7 @@ void applyOutputsNow() {
   logStatus(F("Applying output states..."));
   for (uint8_t i = 0; i < MAX_DEVICES; ++i) {
     int8_t pin = cfg.devices[i].pin;
-    if (!isAssignedOutputPin(pin)) {
+    if (!isValidOutputPin(pin)) {
       continue;
     }
     pinMode(pin, OUTPUT);
@@ -373,7 +373,7 @@ void applyOutputsNow() {
 }
 
 bool outputActivationDelayElapsed() {
-  return static_cast<unsigned long>(millis() - bootStartMillis) >= OUTPUT_BOOT_ACTIVATION_DELAY_MS;
+  return (millis() - bootStartMillis) >= OUTPUT_BOOT_ACTIVATION_DELAY_MS;
 }
 
 void logDeferredOutputActivation() {
@@ -616,7 +616,7 @@ void handleHome() {
   for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
     const DeviceEntry& d = cfg.devices[i];
     String status = F("Unassigned");
-    bool mapped = isAssignedOutputPin(d.pin);
+    bool mapped = isValidOutputPin(d.pin);
     if (mapped) status = d.state ? F("ON") : F("OFF");
 
     html += "<tr><td>" + String(i + 1) + "</td><td>" + htmlEscape(d.model) + "</td><td>" + htmlEscape(d.name) +
@@ -663,7 +663,7 @@ void handleToggle() {
   }
 
   DeviceEntry& d = cfg.devices[idx];
-  if (!isAssignedOutputPin(d.pin)) {
+  if (!isValidOutputPin(d.pin)) {
     logError(String(F("Toggle request for unmapped output: ")) + d.name);
     server.sendHeader("Location", "/");
     server.send(303);
@@ -700,12 +700,23 @@ void handleSettingsGet() {
       "label{display:block;margin:6px 0;}table{border-collapse:collapse;width:100%;}"
       "th,td{border:1px solid #ddd;padding:8px;}th{background:#f5f5f5;}input,select{width:100%;padding:6px;box-sizing:border-box;}"
       "button{padding:8px 10px;margin-right:8px;}.bulk-actions{margin:10px 0;}</style>");
-  html += "<script>"
-          "function copyFirstModelToAll(){const first=document.getElementsByName('model_0')[0];if(!first)return;"
-          "for(let i=0;i<" + String(cfg.numOutputs) + ";i++){const field=document.getElementsByName('model_'+i)[0];if(field)field.value=first.value;}}"
-          "function copyFirstNameToAll(){const first=document.getElementsByName('name_0')[0];if(!first)return;"
-          "for(let i=0;i<" + String(cfg.numOutputs) + ";i++){const field=document.getElementsByName('name_'+i)[0];"
-          "if(field)field.value=first.value.replace(/#[0-9]+/g,'#'+(i+1));}}"
+  html += "<script>\n"
+          "function copyFirstModelToAll(){\n"
+          "  const first=document.getElementsByName('model_0')[0];\n"
+          "  if(!first)return;\n"
+          "  for(let i=0;i<" + String(cfg.numOutputs) + ";i++){\n"
+          "    const field=document.getElementsByName('model_'+i)[0];\n"
+          "    if(field)field.value=first.value;\n"
+          "  }\n"
+          "}\n"
+          "function copyFirstNameToAll(){\n"
+          "  const first=document.getElementsByName('name_0')[0];\n"
+          "  if(!first)return;\n"
+          "  for(let i=0;i<" + String(cfg.numOutputs) + ";i++){\n"
+          "    const field=document.getElementsByName('name_'+i)[0];\n"
+          "    if(field)field.value=first.value.replace(/#[0-9]+/g,'#'+(i+1));\n"
+          "  }\n"
+          "}\n"
           "</script>";
   html += F("</head><body><h1>Settings</h1>"
             "<p><a href='/'>Back to main page</a></p><form method='post' action='/settings'>");
@@ -734,7 +745,7 @@ void handleSettingsGet() {
           "<label>Number of outputs (1 - 16) <input name='numOutputs' type='number' min='1' max='16' step='1' value='" + String(cfg.numOutputs) + "'></label>"
           "<div class='bulk-actions'><button type='button' onclick='copyFirstModelToAll()'>Use first Model for all</button>"
           "<button type='button' onclick='copyFirstNameToAll()'>Use first Name for all</button>"
-          "<span>If the first Name contains #&lt;number&gt;, each row gets its own sequence number.</span></div>"
+          "<span>If the first Name contains #&lt;number&gt;, the copied rows become #1, #2, #3, and so on.</span></div>"
           "<table><tr><th>#</th><th>Model</th><th>Name</th><th>Control output</th></tr>";
   for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
     html += "<tr><td>" + String(i + 1) + "</td>"
@@ -826,7 +837,7 @@ void handleSettingsPost() {
       pin = -1;
     }
     cfg.devices[i].pin = pin;
-    if (!isAssignedOutputPin(cfg.devices[i].pin)) {
+    if (!isValidOutputPin(cfg.devices[i].pin)) {
       cfg.devices[i].state = false;
     }
   }
