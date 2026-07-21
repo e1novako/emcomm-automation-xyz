@@ -678,9 +678,6 @@ void handleToggle() {
     digitalWrite(d.pin, d.state ? HIGH : LOW);
   } else {
     applyOutputsWhenSafe();
-    if (!outputsActivated) {
-      logStatus(F("Stored output toggle during boot delay; hardware update remains deferred."));
-    }
   }
   Serial.print(F("[INFO] Output toggled: "));
   Serial.print(d.name);
@@ -705,7 +702,9 @@ void handleSettingsGet() {
       "button{padding:8px 10px;margin-right:8px;}.bulk-actions{margin:10px 0;}</style>");
   html += "<script>\n"
           "function sequentialNameValue(template,index){\n"
-          "  return template.replace(/#[0-9]+/g,'#'+(index+1));\n"
+          "  const match=template.match(/#[0-9]+/);\n"
+          "  if(!match)return template;\n"
+          "  return template.replace(match[0],'#'+(index+1));\n"
           "}\n"
           "function copyFirstModelToAll(){\n"
           "  const form=document.forms[0];\n"
@@ -757,7 +756,7 @@ void handleSettingsGet() {
           "<label>Number of outputs (1 - 16) <input name='numOutputs' type='number' min='1' max='16' step='1' value='" + String(cfg.numOutputs) + "'></label>"
           "<div class='bulk-actions'><button type='button' onclick='copyFirstModelToAll()'>Use first Model for all</button>"
           "<button type='button' onclick='copyFirstNameToAll()'>Use first Name for all</button>"
-          "<span>If the first Name contains #&lt;number&gt;, copy starts by normalizing the first row to #1, then fills later rows as #2, #3, and so on.</span></div>"
+          "<span>If the first Name contains a placeholder like #1, copy keeps the first row at #1 and fills later rows as #2, #3, and so on.</span></div>"
           "<table><tr><th>#</th><th>Model</th><th>Name</th><th>Control output</th></tr>";
   for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
     html += "<tr><td>" + String(i + 1) + "</td>"
@@ -1040,8 +1039,8 @@ void maintainWifiConnection() {
 
 void setup() {
   Serial.begin(115200);
-  delay(100);
   bootStartMillis = millis();
+  delay(100);
   Serial.println();
   Serial.println(F("[INFO] VIBRANT boot starting..."));
   Serial.print(F("[INFO] Software version: "));
