@@ -1283,9 +1283,16 @@ bool handleLoadAction(uint8_t idx, const String& cmd);
 void cancelAction();
 
 void mqttCallback(char* topic, byte* payload, unsigned int length) {
-  if (topic == nullptr || payload == nullptr || length == 0) return;
+  if (topic == nullptr || payload == nullptr) return;
+  if (length == 0) {
+    logWarning(F("MQTT: dropped empty payload."));
+    return;
+  }
   String topicStr(topic);
-  if (topicStr.isEmpty()) return;
+  if (topicStr.isEmpty()) {
+    logWarning(F("MQTT: dropped message with empty topic."));
+    return;
+  }
   // MQTT payload bytes are not null-terminated; copy to String using explicit length.
   // reserve() pre-allocates so concat does not reallocate; failure means low memory.
   String payloadStr;
@@ -1294,7 +1301,10 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
     logWarning(F("MQTT: dropped message -- payload allocation failed."));
     return;
   }
-  if (payloadStr.isEmpty()) return;
+  if (payloadStr.isEmpty()) {
+    logWarning(F("MQTT: dropped empty payload string."));
+    return;
+  }
 
   for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
     if (topicStr == mqttOutputSetTopic(i)) {
@@ -1949,7 +1959,12 @@ void handleSettingsPost() {
     cfg.mqttPassword = "";
   } else {
     String newMqttPassword = server.arg("mqttPassword");
-    if (newMqttPassword.isEmpty()) newMqttPassword = server.arg("mqttPass");
+    String legacyMqttPassword = server.arg("mqttPass");
+    if (newMqttPassword.isEmpty()) {
+      newMqttPassword = legacyMqttPassword;
+    } else if (!legacyMqttPassword.isEmpty() && legacyMqttPassword != newMqttPassword) {
+      logWarning(F("Settings POST contained both mqttPassword and legacy mqttPass; using mqttPassword."));
+    }
     if (!newMqttPassword.isEmpty()) {
       cfg.mqttPassword = newMqttPassword;
     }
