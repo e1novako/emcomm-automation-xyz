@@ -23,6 +23,7 @@ Change the password immediately in **Settings** after the first boot.
   - SSID
   - Password
   - Wi-Fi output power/strength
+  - MQTT broker host, port, username, and password (enable/disable toggle)
   - Bulk-copying the first Model/Name to all visible rows (`#<number>` in the first name continues from the parsed starting number)
   - Reversing GPIO assignments across the currently configured output rows
   - Up to 16 device entries (`model`, `name`, output `D0`–`D8`, `RX`, `TX`, or `none`)
@@ -42,16 +43,28 @@ Change the password immediately in **Settings** after the first boot.
 - Password: `Fiber714Cvet`
 - Hostname format: `C4-VIBRANT-<last three octets of MAC>`
 - Wi-Fi power range: `5.0 - 20.5 dBm`
+- Default GPIO assignments: outputs 1–8 mapped to D0–D7 (GPIO16, GPIO5, GPIO4, GPIO0, GPIO2, GPIO14, GPIO12, GPIO13)
 
 Security note: factory credentials are public and meant only for first setup.
 
 Additional security note: HTTP Basic Auth is not encrypted on plain HTTP. Use this firmware only on trusted local networks/AP access.
+
+## MQTT
+
+When MQTT is enabled in Settings, the firmware:
+
+- Connects to the configured broker on boot and reconnects automatically every 15 seconds if the connection is lost.
+- Publishes the retained state of each output to `vibrant/<hostname>/output/<N>/state` (`1` = ON, `0` = OFF) whenever a toggle is applied (from the web UI or MQTT).
+- Subscribes to `vibrant/<hostname>/output/<N>/set` for each output. Send `1`, `ON` (case-insensitive), or `true` (case-insensitive) to turn on; `0` or any other value to turn off.
+
+MQTT username and password are optional (leave blank for anonymous access). The MQTT password field is never pre-filled in the form; leave it empty to keep the current stored password.
 
 ## Arduino libraries
 
 - ESP8266 core libraries (`ESP8266WiFi`, `ESP8266WebServer`) from ESP8266 board package 3.x
 - `LittleFS`
 - `ArduinoJson` 7.x
+- `PubSubClient` 2.x
 
 ## File layout
 
@@ -61,7 +74,7 @@ Additional security note: HTTP Basic Auth is not encrypted on plain HTTP. Use th
 
 1. Open `VIBRANT/VIBRANT.ino` in Arduino IDE (or compile with `arduino-cli` for an ESP8266 board).
 2. Select a NodeMCU v3 compatible ESP8266 board profile.
-3. Ensure `ArduinoJson` is installed.
+3. Ensure `ArduinoJson` and `PubSubClient` are installed.
 4. Flash the firmware.
 
 After boot, join the configured AP and open the device IP in a browser.
