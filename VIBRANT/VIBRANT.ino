@@ -9,10 +9,6 @@ extern "C" {
 #include "user_interface.h"
 }
 
-// Forward declarations (defined below)
-bool handleLoadAction(uint8_t idx, const String& cmd);
-void cancelAction();
-
 // ---------------------------------------------------------------------------
 // DIAGNOSTICS FLAG — set to 1 to re-enable the custom MAC override, 0 to skip
 // it for testing.  Remove this block (and the #if guards below) once the
@@ -21,6 +17,10 @@ void cancelAction();
 #define WIFI_DIAG_APPLY_CUSTOM_MAC 0
 
 namespace {
+
+// Forward declarations (defined below)
+bool handleLoadAction(uint8_t idx, const String& cmd);
+void cancelAction();
 
 constexpr const char* CONFIG_PATH = "/vibrant_config.json";
 constexpr const char* IMPORT_CONFIG_PATH = "/vibrant_config_upload.json";
