@@ -87,6 +87,7 @@ unsigned long wifiDisconnectSinceMs = 0;
 uint8_t wifiRecoveryAttempts = 0;
 bool outputsActivated = false;
 bool outputActivationDeferredLogged = false;
+unsigned long bootStartMillis = 0;
 
 String htmlEscape(const String& value) {
   String out;
@@ -372,7 +373,7 @@ void applyOutputsNow() {
 }
 
 bool outputActivationDelayElapsed() {
-  return millis() >= OUTPUT_BOOT_ACTIVATION_DELAY_MS;
+  return static_cast<unsigned long>(millis() - bootStartMillis) >= OUTPUT_BOOT_ACTIVATION_DELAY_MS;
 }
 
 void logDeferredOutputActivation() {
@@ -393,7 +394,11 @@ void applyOutputsWhenSafe() {
 }
 
 void refreshOutputsForCurrentBootPhase() {
-  if (outputsActivated || outputActivationDelayElapsed()) {
+  if (outputsActivated) {
+    applyOutputsNow();
+    return;
+  }
+  if (outputActivationDelayElapsed()) {
     applyOutputsNow();
     return;
   }
@@ -696,10 +701,10 @@ void handleSettingsGet() {
       "th,td{border:1px solid #ddd;padding:8px;}th{background:#f5f5f5;}input,select{width:100%;padding:6px;box-sizing:border-box;}"
       "button{padding:8px 10px;margin-right:8px;}.bulk-actions{margin:10px 0;}</style>");
   html += "<script>"
-          "function copyFirstModelToAll(){var first=document.getElementsByName('model_0')[0];if(!first)return;"
-          "for(var i=0;i<" + String(cfg.numOutputs) + ";i++){var field=document.getElementsByName('model_'+i)[0];if(field)field.value=first.value;}}"
-          "function copyFirstNameToAll(){var first=document.getElementsByName('name_0')[0];if(!first)return;"
-          "for(var i=0;i<" + String(cfg.numOutputs) + ";i++){var field=document.getElementsByName('name_'+i)[0];"
+          "function copyFirstModelToAll(){const first=document.getElementsByName('model_0')[0];if(!first)return;"
+          "for(let i=0;i<" + String(cfg.numOutputs) + ";i++){const field=document.getElementsByName('model_'+i)[0];if(field)field.value=first.value;}}"
+          "function copyFirstNameToAll(){const first=document.getElementsByName('name_0')[0];if(!first)return;"
+          "for(let i=0;i<" + String(cfg.numOutputs) + ";i++){const field=document.getElementsByName('name_'+i)[0];"
           "if(field)field.value=first.value.replace(/#[0-9]+/g,'#'+(i+1));}}"
           "</script>";
   html += F("</head><body><h1>Settings</h1>"
@@ -1012,6 +1017,7 @@ void maintainWifiConnection() {
 
 void setup() {
   Serial.begin(115200);
+  bootStartMillis = millis();
   delay(100);
   Serial.println();
   Serial.println(F("[INFO] VIBRANT boot starting..."));
