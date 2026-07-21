@@ -396,11 +396,7 @@ void applyOutputsWhenSafe() {
 }
 
 void refreshOutputsForCurrentBootPhase() {
-  if (outputsActivated) {
-    applyOutputsNow();
-    return;
-  }
-  if (outputActivationDelayElapsed()) {
+  if (outputsActivated || outputActivationDelayElapsed()) {
     applyOutputsNow();
     return;
   }
@@ -1096,6 +1092,8 @@ void setup() {
 
 void loop() {
   server.handleClient();
-  applyOutputsWhenSafe();
+  if (!outputsActivated) {
+    applyOutputsWhenSafe();
+  }
   maintainWifiConnection();
 }
