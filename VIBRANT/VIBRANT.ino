@@ -497,7 +497,8 @@ void applyOutputsNow() {
       continue;
     }
     pinMode(pin, OUTPUT);
-    digitalWrite(pin, cfg.devices[i].state ? HIGH : LOW);
+    // Inverted output logic: logical ON -> LOW, logical OFF -> HIGH (active-low).
+    digitalWrite(pin, cfg.devices[i].state ? LOW : HIGH);
 
   }
   outputsActivated = true;
@@ -765,7 +766,8 @@ void setOutputDirect(uint8_t idx, bool state) {
   d.state = state;
   if (outputsActivated && isValidOutputPin(d.pin)) {
     pinMode(d.pin, OUTPUT);
-    digitalWrite(d.pin, state ? HIGH : LOW);
+    // Inverted output logic: logical ON -> LOW, logical OFF -> HIGH (active-low).
+    digitalWrite(d.pin, state ? LOW : HIGH);
   }
 }
 
@@ -1045,6 +1047,16 @@ void handleStickserverMessage(const String& topicStr, const String& payloadStr) 
     return;
   }
 
+  // Shared euid parser: accepts string or integer and normalizes to String.
+  auto parseEuidValue = [&](JsonVariantConst v) -> String {
+    if (v.is<const char*>()) return v.as<const char*>();
+    if (v.is<int>()) return String(v.as<int>());
+    if (v.is<long>()) return String(v.as<long>());
+    if (v.is<unsigned int>()) return String(v.as<unsigned int>());
+    if (v.is<unsigned long>()) return String(v.as<unsigned long>());
+    return String("");
+  };
+
   if (cmd == F("hello")) {
     JsonDocument response;
     buildStickserverEnvelope(response, cmd, ver, mid, "ok");
@@ -1244,12 +1256,16 @@ void handleStickserverMessage(const String& topicStr, const String& payloadStr) 
   }
 
   if (cmd == F("join") || cmd == F("reboot")) {
-    String euid = request["euid"] | String("");
+    String euid = parseEuidValue(request["euid"]);
+    Serial.print(F("[INFO] [MQTT] Parsed euid: "));
+    Serial.println(euid.isEmpty() ? String(F("(none)")) : euid);
     if (euid.isEmpty()) {
       publishStickserverFailure(cmd, ver, mid, F("invalid_member"), F("euid"), F("Missing euid."));
       return;
     }
     int idx = findManagedOutputByEuid(euid);
+    Serial.print(F("[INFO] [MQTT] Resolved idx from euid: "));
+    Serial.println(idx);
     if (idx < 0) {
       publishStickserverFailure(cmd, ver, mid, F("invalid_member"), F("euid"), F("Unknown euid."));
       return;
@@ -1272,37 +1288,99 @@ void handleStickserverMessage(const String& topicStr, const String& payloadStr) 
     return;
   }
 
-  if (cmd == F("leave")) {
-    String euids[MAX_DEVICES];
-    size_t euidCount = 0;
-    if (!extractStringArray(request["euids"], euids, euidCount)) {
-      publishStickserverFailure(cmd, ver, mid, F("invalid_member"), F("euids"), F("Invalid euids list."));
+  // Commands routed by euid: power_on, power_off, factory_reset
+  if (cmd == F("power_on") || cmd == F("power_off") || cmd == F("factory_reset")) {
+    String euid = parseEuidValue(request["euid"]);
+    Serial.print(F("[INFO] [MQTT] Parsed euid: "));
+    Serial.println(euid.isEmpty() ? String(F("(none)")) : euid);
+    if (euid.isEmpty()) {
+      publishStickserverFailure(cmd, ver, mid, F("invalid_member"), F("euid"), F("Missing euid."));
       return;
     }
+    int idx = findManagedOutputByEuid(euid);
+    Serial.print(F("[INFO] [MQTT] Resolved idx from euid: "));
+    Serial.println(idx);
+    if (idx < 0) {
+      publishStickserverFailure(cmd, ver, mid, F("invalid_member"), F("euid"), F("Unknown euid."));
+      return;
+    }
+    bool ok = handleLoadAction(static_cast<uint8_t>(idx), cmd);
 
+    JsonDocument response;
+    buildStickserverEnvelope(response, cmd, ver, mid, ok ? "ok" : "busy");
+    JsonObject device = response["device"].to<JsonObject>();
+    populateStickserverDevice(device, static_cast<uint8_t>(idx));
+    device["status"] = ok ? "ok" : "busy";
+    publishStickserverResponse(response);
+    return;
+  }
+
+  if (cmd == F("leave")) {
+    // leave supports either:
+    // - euid (single; string or int), or
+    // - euids (array/string list; existing behavior)
     JsonDocument response;
     JsonArray devices = response["devices"].to<JsonArray>();
     size_t okCount = 0;
     size_t knownCount = 0;
     size_t unknownCount = 0;
-    for (size_t i = 0; i < euidCount; ++i) {
-      int idx = findManagedOutputByEuid(euids[i]);
+    size_t totalRequested = 0;
+
+    if (!request["euid"].isNull()) {
+      String euid = parseEuidValue(request["euid"]);
+      Serial.print(F("[INFO] [MQTT] Parsed euid: "));
+      Serial.println(euid.isEmpty() ? String(F("(none)")) : euid);
+      if (euid.isEmpty()) {
+        publishStickserverFailure(cmd, ver, mid, F("invalid_member"), F("euid"), F("Missing euid."));
+        return;
+      }
+      totalRequested = 1;
+      int idx = findManagedOutputByEuid(euid);
+      Serial.print(F("[INFO] [MQTT] Resolved idx from euid: "));
+      Serial.println(idx);
       JsonObject device = devices.add<JsonObject>();
       if (idx < 0) {
-        device["euid"] = euids[i];
+        device["euid"] = euid;
         device["status"] = "unknown_euid";
         ++unknownCount;
-        continue;
+      } else {
+        ++knownCount;
+        bool ok = handleLoadAction(static_cast<uint8_t>(idx), F("leave_mesh"));
+        populateStickserverDevice(device, static_cast<uint8_t>(idx));
+        device["action"] = "leave_mesh";
+        device["status"] = ok ? "ok" : "busy";
+        if (ok) ++okCount;
       }
-      ++knownCount;
-      bool ok = handleLoadAction(static_cast<uint8_t>(idx), F("leave_mesh"));
-      populateStickserverDevice(device, static_cast<uint8_t>(idx));
-      device["action"] = "leave_mesh";
-      device["status"] = ok ? "ok" : "busy";
-      if (ok) ++okCount;
+    } else {
+      String euids[MAX_DEVICES];
+      size_t euidCount = 0;
+      if (!extractStringArray(request["euids"], euids, euidCount)) {
+        publishStickserverFailure(cmd, ver, mid, F("invalid_member"), F("euids"), F("Invalid euids list."));
+        return;
+      }
+      totalRequested = euidCount;
+      for (size_t i = 0; i < euidCount; ++i) {
+        int idx = findManagedOutputByEuid(euids[i]);
+        Serial.print(F("[INFO] [MQTT] Resolved idx from euid: "));
+        Serial.println(idx);
+        JsonObject device = devices.add<JsonObject>();
+        if (idx < 0) {
+          device["euid"] = euids[i];
+          device["status"] = "unknown_euid";
+          ++unknownCount;
+          continue;
+        }
+        ++knownCount;
+        bool ok = handleLoadAction(static_cast<uint8_t>(idx), F("leave_mesh"));
+        populateStickserverDevice(device, static_cast<uint8_t>(idx));
+        device["action"] = "leave_mesh";
+        device["status"] = ok ? "ok" : "busy";
+        if (ok) ++okCount;
+      }
     }
+
     const char* responseStatus = "partial";
-    if (okCount == euidCount) {
+    if (okCount == totalRequested) {
       responseStatus = "ok";
     } else if (knownCount == 0) {
       responseStatus = "not_found";
@@ -1366,7 +1444,7 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
       if (isActionRunning() && bgAction.deviceIdx == i) cancelAction();
       setOutputDirect(i, newState);
       mqttPublishOutputState(i);
-      saveConfig();
+      // Runtime state changes are not persisted to flash by design.
       return;
     }
     if (topicStr == mqttOutputActionTopic(i)) {
@@ -1528,7 +1606,7 @@ void finishAction() {
   // Leave output ON after completing the sequence
   setOutputDirect(idx, true);
   mqttPublishOutputState(idx);
-  saveConfig();
+  // Runtime state changes are not persisted to flash by design.
   logStatus(String(F("Load action complete for output ")) + String(idx + 1));
 }
 
@@ -1608,14 +1686,14 @@ bool handleLoadAction(uint8_t idx, const String& cmd) {
     if (isActionRunning() && bgAction.deviceIdx == idx) cancelAction();
     setOutputDirect(idx, true);
     mqttPublishOutputState(idx);
-    saveConfig();
+    // Runtime state changes are not persisted to flash by design.
     return true;
   }
   if (cmd == F("power_off")) {
     if (isActionRunning() && bgAction.deviceIdx == idx) cancelAction();
     setOutputDirect(idx, false);
     mqttPublishOutputState(idx);
-    saveConfig();
+    // Runtime state changes are not persisted to flash by design.
     return true;
   }
   if (!isValidOutputPin(cfg.devices[idx].pin)) return false;
@@ -1781,7 +1859,8 @@ void handleToggle() {
   d.state = server.arg("state") == "1";
   if (outputsActivated) {
     pinMode(d.pin, OUTPUT);
-    digitalWrite(d.pin, d.state ? HIGH : LOW);
+    // Inverted output logic: logical ON -> LOW, logical OFF -> HIGH (active-low).
+    digitalWrite(d.pin, d.state ? LOW : HIGH);
   } else {
     applyOutputsWhenSafe();
   }
@@ -1790,9 +1869,7 @@ void handleToggle() {
   Serial.print(d.name);
   Serial.print(F(" -> "));
   Serial.println(d.state ? F("ON") : F("OFF"));
-  if (!saveConfig()) {
-    restartDevice(F("Failed to persist output toggle state."));
-  }
+  // Runtime state changes are not persisted to flash by design.
   mqttPublishOutputState(static_cast<uint8_t>(idx));
 
   server.sendHeader("Location", "/");
@@ -1827,7 +1904,7 @@ void handleCancelAction() {
   if (!ensureAuthorized()) return;
   if (isActionRunning()) {
     cancelAction();
-    saveConfig();
+    // Cancelling an action does not persist transient output state to flash.
   }
   server.sendHeader("Location", "/");
   server.send(303);
