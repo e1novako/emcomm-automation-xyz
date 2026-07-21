@@ -9,6 +9,10 @@ extern "C" {
 #include "user_interface.h"
 }
 
+// Forward declarations (defined below)
+bool handleLoadAction(uint8_t idx, const String& cmd);
+void cancelAction();
+
 // ---------------------------------------------------------------------------
 // DIAGNOSTICS FLAG — set to 1 to re-enable the custom MAC override, 0 to skip
 // it for testing.  Remove this block (and the #if guards below) once the
@@ -1280,10 +1284,6 @@ void handleStickserverMessage(const String& topicStr, const String& payloadStr) 
                             F("cmd"),
                             F("Unsupported stickserver command."));
 }
-
-// Forward declarations (defined below)
-bool handleLoadAction(uint8_t idx, const String& cmd);
-void cancelAction();
 
 void mqttCallback(char* topic, byte* payload, unsigned int length) {
   if (topic == nullptr || payload == nullptr) return;
