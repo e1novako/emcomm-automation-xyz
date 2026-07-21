@@ -717,7 +717,7 @@ void handleSettingsGet() {
           "  if(!first)return;\n"
           "  for(let i=0;i<" + String(cfg.numOutputs) + ";i++){\n"
           "    const field=document.getElementsByName('name_'+i)[0];\n"
-          "    if(field)field.value=first.value.replace(/#\\d+/g,'#'+(i+1));\n"
+          "    if(field)field.value=first.value.replace(/#[0-9]+/g,'#'+(i+1));\n"
           "  }\n"
           "}\n"
           "</script>";
@@ -1031,8 +1031,8 @@ void maintainWifiConnection() {
 
 void setup() {
   Serial.begin(115200);
-  bootStartMillis = millis();
   delay(100);
+  bootStartMillis = millis();
   Serial.println();
   Serial.println(F("[INFO] VIBRANT boot starting..."));
   Serial.print(F("[INFO] Software version: "));
