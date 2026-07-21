@@ -758,10 +758,9 @@ bool handleLoadAction(uint8_t idx, const String& cmd);
 
 void mqttCallback(char* topic, byte* payload, unsigned int length) {
   String topicStr(topic);
-  // MQTT payload is not null-terminated; build String safely via single-allocation loop
+  // MQTT payload is not null-terminated; use concat with explicit length for safe copy
   String payloadStr;
-  payloadStr.reserve(length);
-  for (unsigned int j = 0; j < length; ++j) payloadStr += static_cast<char>(payload[j]);
+  payloadStr.concat(reinterpret_cast<const char*>(payload), length);
 
   for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
     if (topicStr == mqttOutputSetTopic(i)) {
@@ -982,7 +981,7 @@ void handleHome() {
     bool inCyclePhase = (bgAction.phase == APHASE_CYCLE_OFF || bgAction.phase == APHASE_CYCLE_ON);
     String phaseDetail = inCyclePhase
         ? String(F(" (cycles remaining: ")) + String(bgAction.cyclesRemaining) + ")"
-        : String(F(""));
+        : "";
     html += "<div class='action-banner'><strong>Action running on output " +
             String(bgAction.deviceIdx + 1) + ": " + actionPhaseName() + phaseDetail + "</strong>"
             " &nbsp; <form method='post' action='/action/cancel' style='display:inline;'>"
@@ -1017,7 +1016,7 @@ void handleHome() {
       if (thisActionRunning) {
         html += F("<em>Running...</em>");
       } else {
-        String disabledAttr = otherActionRunning ? String(F(" disabled")) : String(F(""));
+        const char* disabledAttr = otherActionRunning ? " disabled" : "";
         html += "<form method='post' action='/action' style='display:inline;margin:0;'>"
                 "<input type='hidden' name='idx' value='" + String(i) + "'>"
                 "<input type='hidden' name='cmd' value='power_on'>"
