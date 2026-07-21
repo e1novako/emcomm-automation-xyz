@@ -788,8 +788,18 @@ String mqttOutputActionTopic(uint8_t idx) {
 void mqttPublishOutputState(uint8_t idx) {
   if (!cfg.mqttEnabled || !mqttClient.connected()) return;
   if (idx >= cfg.numOutputs) return;
-  mqttClient.publish(mqttOutputStateTopic(idx).c_str(),
-                     cfg.devices[idx].state ? "ON" : "OFF", true);
+  const char* statePayload = cfg.devices[idx].state ? "ON" : "OFF";
+  String topic = mqttOutputStateTopic(idx);
+  bool ok = mqttClient.publish(topic.c_str(), statePayload, true);
+  if (ok) {
+    Serial.print(F("[INFO] [MQTT] Published state -> topic: "));
+    Serial.print(topic);
+    Serial.print(F(" payload: "));
+    Serial.println(statePayload);
+  } else {
+    Serial.print(F("[WARN] [MQTT] Failed to publish state -> topic: "));
+    Serial.println(topic);
+  }
 }
 
 void mqttPublishAllOutputStates() {
@@ -910,7 +920,20 @@ bool publishStickserverResponse(JsonDocument& doc) {
     logWarning(F("Stickserver: failed to serialize response JSON."));
     return false;
   }
-  return mqttClient.publish(stickserverInstanceTopic().c_str(), payload.c_str());
+  String topic = stickserverInstanceTopic();
+  bool ok = mqttClient.publish(topic.c_str(), payload.c_str());
+  if (ok) {
+    Serial.print(F("[INFO] [MQTT] Stickserver response -> topic: "));
+    Serial.print(topic);
+    Serial.print(F(" rsp: "));
+    Serial.print(doc["rsp"] | "?");
+    Serial.print(F(" status: "));
+    Serial.println(doc["status"] | "?");
+  } else {
+    Serial.print(F("[WARN] [MQTT] Stickserver publish failed -> topic: "));
+    Serial.println(topic);
+  }
+  return ok;
 }
 
 void publishStickserverFailure(const String& rsp,
@@ -958,6 +981,8 @@ void handleStickserverMessage(const String& topicStr, const String& payloadStr) 
   JsonDocument request;
   DeserializationError err = deserializeJson(request, payloadStr);
   if (err) {
+    Serial.print(F("[WARN] [MQTT] Stickserver JSON parse error: "));
+    Serial.println(err.c_str());
     publishStickserverFailure(F("error"),
                               STICKSERVER_PROTOCOL_VERSION,
                               String(),
@@ -970,6 +995,10 @@ void handleStickserverMessage(const String& topicStr, const String& payloadStr) 
 
   String cmd = request["cmd"] | String("");
   String mid = request["mid"] | String("");
+  Serial.print(F("[INFO] [MQTT] Stickserver cmd: "));
+  Serial.print(cmd.isEmpty() ? F("(none)") : cmd.c_str());
+  Serial.print(F(" mid: "));
+  Serial.println(mid.isEmpty() ? F("(none)") : mid.c_str());
   if (!request["ver"].is<int>()) {
     publishStickserverFailure(cmd.isEmpty() ? String(F("error")) : cmd,
                               STICKSERVER_PROTOCOL_VERSION,
@@ -1305,9 +1334,27 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
     return;
   }
 
+  // Log every incoming message for debugging
+  Serial.print(F("[INFO] [MQTT] Received -> topic: "));
+  Serial.print(topicStr);
+  Serial.print(F(" payload["));
+  Serial.print(length);
+  Serial.print(F("]: "));
+  // Truncate long payloads in the log to avoid flooding serial
+  if (payloadStr.length() <= 120) {
+    Serial.println(payloadStr);
+  } else {
+    Serial.print(payloadStr.substring(0, 120));
+    Serial.println(F("...(truncated)"));
+  }
+
   for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
     if (topicStr == mqttOutputSetTopic(i)) {
       bool newState = (payloadStr == "ON" || payloadStr == "1" || payloadStr == "true");
+      Serial.print(F("[INFO] [MQTT] Set command -> output "));
+      Serial.print(i + 1);
+      Serial.print(F(" state: "));
+      Serial.println(newState ? F("ON") : F("OFF"));
       if (isActionRunning() && bgAction.deviceIdx == i) cancelAction();
       setOutputDirect(i, newState);
       mqttPublishOutputState(i);
@@ -1315,14 +1362,23 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
       return;
     }
     if (topicStr == mqttOutputActionTopic(i)) {
+      Serial.print(F("[INFO] [MQTT] Action command -> output "));
+      Serial.print(i + 1);
+      Serial.print(F(" action: "));
+      Serial.println(payloadStr);
       handleLoadAction(i, payloadStr);
 
       return;
     }
   }
   if (topicStr == STICKSERVER_ROOT_TOPIC || topicStr == stickserverInstanceTopic()) {
+    Serial.print(F("[INFO] [MQTT] Stickserver message -> topic: "));
+    Serial.println(topicStr);
     handleStickserverMessage(topicStr, payloadStr);
+    return;
   }
+  Serial.print(F("[WARN] [MQTT] Unmatched topic (no handler): "));
+  Serial.println(topicStr);
 }
 
 const char* mqttStateString(int state) {
@@ -1347,37 +1403,76 @@ bool mqttDoConnect() {
   mqttClient.setServer(cfg.mqttHost.c_str(), cfg.mqttPort);
   mqttClient.setCallback(mqttCallback);
   String clientId = cfg.hostname;
+  Serial.print(F("[INFO] [MQTT] Connecting -> host: "));
+  Serial.print(cfg.mqttHost);
+  Serial.print(F(" port: "));
+  Serial.print(cfg.mqttPort);
+  Serial.print(F(" clientId: "));
+  Serial.println(clientId);
   bool connected;
   if (cfg.mqttUser.isEmpty()) {
     // No credentials: connect anonymously
+    Serial.println(F("[INFO] [MQTT] Auth mode: anonymous"));
     connected = mqttClient.connect(clientId.c_str());
   } else {
     // User is set; password may be empty (broker may allow empty password for a named user)
+    Serial.print(F("[INFO] [MQTT] Auth mode: credentials (user: "));
+    Serial.print(cfg.mqttUser);
+    Serial.println(F(")"));
     connected = mqttClient.connect(clientId.c_str(),
                                    cfg.mqttUser.c_str(),
                                    cfg.mqttPassword.c_str());
   }
-  if (!connected) return false;
+  if (!connected) {
+    Serial.print(F("[WARN] [MQTT] Connection refused -> state: "));
+    Serial.println(mqttStateString(mqttClient.state()));
+    return false;
+  }
+  // Subscribe to stickserver root and instance topics
+  Serial.print(F("[INFO] [MQTT] Subscribing -> "));
+  Serial.println(STICKSERVER_ROOT_TOPIC);
   mqttClient.subscribe(STICKSERVER_ROOT_TOPIC);
-  mqttClient.subscribe(stickserverInstanceTopic().c_str());
+  String instanceTopic = stickserverInstanceTopic();
+  Serial.print(F("[INFO] [MQTT] Subscribing -> "));
+  Serial.println(instanceTopic);
+  mqttClient.subscribe(instanceTopic.c_str());
+  // Subscribe to per-output set and action topics
   for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
-    mqttClient.subscribe(mqttOutputSetTopic(i).c_str());
-    mqttClient.subscribe(mqttOutputActionTopic(i).c_str());
+    String setTopic = mqttOutputSetTopic(i);
+    String actionTopic = mqttOutputActionTopic(i);
+    Serial.print(F("[INFO] [MQTT] Subscribing -> "));
+    Serial.println(setTopic);
+    mqttClient.subscribe(setTopic.c_str());
+    Serial.print(F("[INFO] [MQTT] Subscribing -> "));
+    Serial.println(actionTopic);
+    mqttClient.subscribe(actionTopic.c_str());
   }
   mqttPublishAllOutputStates();
-  logStatus(String(F("MQTT connected. Host: ")) + cfg.mqttHost);
+  logStatus(String(F("MQTT connected. Host: ")) + cfg.mqttHost + F(" port: ") + String(cfg.mqttPort));
   return true;
 }
 
 void applyMqttSettings() {
   if (!cfg.mqttEnabled || cfg.mqttHost.isEmpty()) {
-    if (mqttClient.connected()) mqttClient.disconnect();
+    if (mqttClient.connected()) {
+      logStatus(F("MQTT disabled or host cleared; disconnecting."));
+      mqttClient.disconnect();
+    } else {
+      logStatus(F("MQTT disabled or host not configured; skipping."));
+    }
     return;
   }
+  Serial.print(F("[INFO] [MQTT] Applying settings -> host: "));
+  Serial.print(cfg.mqttHost);
+  Serial.print(F(" port: "));
+  Serial.println(cfg.mqttPort);
   mqttClient.setBufferSize(MQTT_PACKET_BUFFER_SIZE);
   mqttClient.setServer(cfg.mqttHost.c_str(), cfg.mqttPort);
   mqttClient.setCallback(mqttCallback);
-  if (mqttClient.connected()) mqttClient.disconnect();
+  if (mqttClient.connected()) {
+    logStatus(F("MQTT settings updated; disconnecting to force reconnect."));
+    mqttClient.disconnect();
+  }
   lastMqttConnectAttemptMs = 0;
 }
 
@@ -1393,7 +1488,8 @@ void maintainMqtt() {
   lastMqttConnectAttemptMs = now;
   logStatus(F("Attempting MQTT connection..."));
   if (!mqttDoConnect()) {
-    logWarning(String(F("MQTT connection failed. State: ")) + mqttStateString(mqttClient.state()));
+    Serial.print(F("[WARN] [MQTT] Connection failed. State: "));
+    Serial.println(mqttStateString(mqttClient.state()));
   }
 }
 
