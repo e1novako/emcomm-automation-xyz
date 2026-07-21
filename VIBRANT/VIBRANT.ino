@@ -707,7 +707,8 @@ void handleSettingsGet() {
           "  if(!form)return;\n"
           "  const first=form.elements['model_0'];\n"
           "  if(!first)return;\n"
-          "  for(let i=1;i<" + String(cfg.numOutputs) + ";i++){\n"
+          "  const count=form.querySelectorAll(\"input[name^='model_']\").length;\n"
+          "  for(let i=1;i<count;i++){\n"
           "    const field=form.elements['model_'+i];\n"
           "    if(field)field.value=first.value;\n"
           "  }\n"
@@ -719,7 +720,8 @@ void handleSettingsGet() {
           "  if(!first)return;\n"
           "  const template=first.value;\n"
           "  first.value=sequentialNameValue(template,0);\n"
-          "  for(let i=1;i<" + String(cfg.numOutputs) + ";i++){\n"
+          "  const count=form.querySelectorAll(\"input[name^='name_']\").length;\n"
+          "  for(let i=1;i<count;i++){\n"
           "    const field=form.elements['name_'+i];\n"
           "    if(field)field.value=sequentialNameValue(template,i);\n"
           "  }\n"
@@ -752,7 +754,7 @@ void handleSettingsGet() {
           "<label>Number of outputs (1 - 16) <input name='numOutputs' type='number' min='1' max='16' step='1' value='" + String(cfg.numOutputs) + "'></label>"
           "<div class='bulk-actions'><button type='button' onclick='copyFirstModelToAll()'>Use first Model for all</button>"
           "<button type='button' onclick='copyFirstNameToAll()'>Use first Name for all</button>"
-          "<span>If the first Name contains a placeholder like #1, copy keeps the first row at #1 and fills later rows as #2, #3, and so on.</span></div>"
+          "<span>If the first Name contains a placeholder like #1, copy normalizes the first row to #1 and fills later rows as #2, #3, and so on.</span></div>"
           "<table><tr><th>#</th><th>Model</th><th>Name</th><th>Control output</th></tr>";
   for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
     html += "<tr><td>" + String(i + 1) + "</td>"
