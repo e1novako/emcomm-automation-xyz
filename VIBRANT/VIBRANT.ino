@@ -69,6 +69,8 @@ constexpr unsigned long FLASH_BOOT_REQUIRED_LOW_SAMPLES =
 static_assert(FLASH_BOOT_SAMPLE_INTERVAL_MS > 0, "FLASH boot sample interval must be greater than zero.");
 static_assert(FLASH_BOOT_SAMPLE_COUNT >= FLASH_BOOT_MIN_SAMPLES,
               "FLASH boot detection window must collect the minimum number of samples.");
+static_assert(DEFAULT_D0_D7_COUNT <= OUTPUT_PIN_MAPPING_COUNT,
+              "DEFAULT_D0_D7_COUNT exceeds available OUTPUT_PIN_MAPPINGS entries.");
 
 struct DeviceEntry {
   String model;
@@ -756,7 +758,10 @@ bool handleLoadAction(uint8_t idx, const String& cmd);
 
 void mqttCallback(char* topic, byte* payload, unsigned int length) {
   String topicStr(topic);
-  String payloadStr(reinterpret_cast<const char*>(payload), length);
+  // MQTT payload is not null-terminated; build String safely via single-allocation loop
+  String payloadStr;
+  payloadStr.reserve(length);
+  for (unsigned int j = 0; j < length; ++j) payloadStr += static_cast<char>(payload[j]);
 
   for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
     if (topicStr == mqttOutputSetTopic(i)) {
@@ -1235,8 +1240,8 @@ void handleSettingsGet() {
           "<label for='mqttUser'>MQTT user (optional)</label>"
           "<input id='mqttUser' name='mqttUser' value='" + htmlEscape(cfg.mqttUser) + "'>"
           "<label for='mqttPassword'>MQTT password (optional)</label>"
-          "<input id='mqttPassword' name='mqttPassword' type='password' value='' placeholder='Leave empty to keep current'>" +
-          (cfg.mqttPassword.isEmpty() ? "" : "<small>A password is currently set.</small>") +
+          "<input id='mqttPassword' name='mqttPassword' type='password' value='' placeholder='Leave empty to keep current'>"
+          "<label><input type='checkbox' name='mqttPasswordClear' value='1'> Clear MQTT password (remove broker authentication)</label>"
           "<p style='font-size:0.9em;color:#555;'>Topics (N = zero-based output index, e.g. 0 = Output 1): "
           "<code>vibrant/" + htmlEscape(cfg.hostname) + "/out/&lt;N&gt;/set</code> (ON/OFF) &amp; "
           "<code>vibrant/" + htmlEscape(cfg.hostname) + "/out/&lt;N&gt;/action</code> (power_on / power_off / leave_mesh / factory_reset)</p>"
@@ -1342,9 +1347,14 @@ void handleSettingsPost() {
     cfg.mqttPort = DEFAULT_MQTT_PORT;
   }
   cfg.mqttUser = server.arg("mqttUser");
-  String newMqttPassword = server.arg("mqttPassword");
-  if (!newMqttPassword.isEmpty()) {
-    cfg.mqttPassword = newMqttPassword;
+  bool clearMqttPassword = server.hasArg("mqttPasswordClear") && server.arg("mqttPasswordClear") == "1";
+  if (clearMqttPassword) {
+    cfg.mqttPassword = "";
+  } else {
+    String newMqttPassword = server.arg("mqttPassword");
+    if (!newMqttPassword.isEmpty()) {
+      cfg.mqttPassword = newMqttPassword;
+    }
   }
   if (!saveConfig()) {
     restartDevice(F("Failed to persist MQTT settings."));
