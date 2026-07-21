@@ -15,7 +15,7 @@ Change the password immediately in **Settings** after the first boot.
 
 - All configuration is persisted in LittleFS JSON file: `/vibrant_config.json`
 - English-only UI labels and source comments
-- Main page lists configured devices (model, name, status) and provides checkbox toggles
+- Main page lists configured devices (model, name, status) and provides checkbox toggles and per-output load action buttons
 - Settings, toggle actions, and config maintenance endpoints are protected with HTTP Basic Auth (`admin` / current Wi-Fi password)
 - Settings page supports:
   - MAC address
@@ -27,6 +27,7 @@ Change the password immediately in **Settings** after the first boot.
   - Bulk-copying the first Model/Name to all visible rows (`#<number>` in the first name continues from the parsed starting number)
   - Reversing GPIO assignments across the currently configured output rows
   - Up to 16 device entries (`model`, `name`, output `D0`–`D8`, `RX`, `TX`, or `none`)
+  - MQTT server/host, port, user, password, and enable toggle
 - Configuration maintenance routes:
   - Export backup (`/config/export`)
   - Import backup (`/config/import`)
@@ -37,12 +38,91 @@ Change the password immediately in **Settings** after the first boot.
 - Firmware performs a controlled restart for unrecoverable conditions after logging the reason to serial
 - FLASH/GPIO0 factory reset is checked only during a short boot-time sampling window
 
+## Default factory GPIO assignment
+
+On first boot (or after factory reset), outputs 1–8 are mapped to **D0–D7** in order:
+
+| Output | NodeMCU label | GPIO |
+|--------|--------------|------|
+| 1 | D0 | GPIO16 |
+| 2 | D1 | GPIO5 |
+| 3 | D2 | GPIO4 |
+| 4 | D3 | GPIO0 |
+| 5 | D4 | GPIO2 |
+| 6 | D5 | GPIO14 |
+| 7 | D6 | GPIO12 |
+| 8 | D7 | GPIO13 |
+
+Outputs 9–16 default to unassigned (`none`).
+
+## MQTT
+
+### Configuration
+
+Enable MQTT and set the broker host/port in **Settings → MQTT**.  Fields:
+
+| Field | Description |
+|-------|-------------|
+| Enable MQTT | Enables MQTT connectivity |
+| MQTT server host | Broker IP or hostname (e.g. `192.168.1.6`) |
+| MQTT port | Broker port (default `1883`) |
+| MQTT user | Optional broker username |
+| MQTT password | Optional broker password |
+
+### Topics
+
+Base: `vibrant/<hostname>/`
+
+| Topic | Direction | Payload | Description |
+|-------|-----------|---------|-------------|
+| `vibrant/<hostname>/out/<N>/set` | Subscribe | `ON` or `OFF` | Set output N state |
+| `vibrant/<hostname>/out/<N>/action` | Subscribe | command name | Run a load action on output N |
+| `vibrant/<hostname>/out/<N>/state` | Publish (retained) | `ON` or `OFF` | Current output N state |
+
+N is the zero-based output index (0 = output 1, 1 = output 2, …).
+
+Action commands accepted via the `action` topic: `power_on`, `power_off`, `leave_mesh`, `factory_reset`.
+
+## Load action commands
+
+The main page exposes per-output action buttons. The same commands are accepted via MQTT and the `/action` HTTP endpoint.
+
+| Command | Description |
+|---------|-------------|
+| `power_on` | Turn the output ON immediately |
+| `power_off` | Turn the output OFF immediately |
+| `leave_mesh` | Run the leave-mesh power-cycling sequence |
+| `factory_reset` | Run the factory-reset power-cycling sequence for the connected bulb |
+
+### Leave mesh sequence
+
+Starting with the bulb powered on:
+1. Cycle power **5 times**: 5 s OFF → 1 s ON per cycle
+2. Wait 5 s (bulb turns green)
+3. Trigger: 2 s OFF → 1 s ON (cycles power while bulb is green)
+
+Total sequence duration: ~38 s (5×6 s + 5 s + 3 s)
+
+### Factory reset sequence (connected bulb)
+
+Starting with the bulb powered on:
+1. Cycle power **13 times**: 5 s OFF → 1 s ON per cycle
+2. Wait 5 s (bulb transitions from 1800 K/red to blue)
+3. Trigger: 2 s OFF → 1 s ON (cycles power while bulb is blue)
+
+Total sequence duration: ~86 s (13×6 s + 5 s + 3 s)
+
+### Non-blocking execution
+
+All GPIO activity (including the timed cycling sequences) runs in the background via a `millis()`-based state machine in the main loop. The web UI and MQTT connection remain fully responsive during any running sequence. The running action is shown in a banner on the main page (auto-refreshes every 3 s) and can be cancelled at any time.
+
 ## Default factory values
 
 - SSID: `Z-Wave Automation`
 - Password: `Fiber714Cvet`
 - Hostname format: `C4-VIBRANT-<last three octets of MAC>`
 - Wi-Fi power range: `5.0 - 20.5 dBm`
+- MQTT: disabled by default
 - Default GPIO assignments: outputs 1–8 mapped to D0–D7 (GPIO16, GPIO5, GPIO4, GPIO0, GPIO2, GPIO14, GPIO12, GPIO13)
 
 Security note: factory credentials are public and meant only for first setup.
@@ -64,7 +144,7 @@ MQTT username and password are optional (leave blank for anonymous access). The 
 - ESP8266 core libraries (`ESP8266WiFi`, `ESP8266WebServer`) from ESP8266 board package 3.x
 - `LittleFS`
 - `ArduinoJson` 7.x
-- `PubSubClient` 2.x
+- `PubSubClient` 2.x (for MQTT)
 
 ## File layout
 
@@ -86,3 +166,4 @@ After boot, join the configured AP and open the device IP in a browser.
 - Wi-Fi power is clamped to a minimum of `5.0 dBm`.
 - If station connectivity drops, the firmware periodically attempts reconnect.
 - If storage or runtime recovery fails irrecoverably, the device logs the reason and restarts.
+- MQTT reconnects automatically (every 10 s) when the broker is unreachable.

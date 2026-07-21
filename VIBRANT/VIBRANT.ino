@@ -38,8 +38,18 @@ constexpr uint8_t FLASH_BOOT_REQUIRED_LOW_PERCENT = 30;
 constexpr unsigned long FLASH_BOOT_MIN_SAMPLES = 4UL;
 constexpr unsigned long WIFI_RECOVERY_WINDOW_MS = 180000UL;
 constexpr uint8_t MAX_WIFI_RECOVERY_ATTEMPTS = 12;
-constexpr unsigned long MQTT_RECONNECT_INTERVAL_MS = 15000UL;
 constexpr uint16_t DEFAULT_MQTT_PORT = 1883;
+constexpr unsigned long MQTT_RECONNECT_INTERVAL_MS = 10000UL;
+// Background load-action timing
+constexpr uint8_t LEAVE_MESH_CYCLES = 5;
+constexpr uint8_t FACTORY_RESET_LOAD_CYCLES = 13;
+// Number of D0-D7 entries at the start of OUTPUT_PIN_MAPPINGS used for default assignment
+constexpr uint8_t DEFAULT_D0_D7_COUNT = 8;
+constexpr unsigned long ACTION_CYCLE_OFF_MS = 5000UL;
+constexpr unsigned long ACTION_CYCLE_ON_MS = 1000UL;
+constexpr unsigned long ACTION_FINAL_WAIT_MS = 5000UL;
+constexpr unsigned long ACTION_TRIGGER_OFF_MS = 2000UL;
+constexpr unsigned long ACTION_TRIGGER_ON_MS = 1000UL;
 
 constexpr unsigned long ceilDiv(unsigned long numerator, unsigned long denominator) {
   if (denominator == 0) return 0;
@@ -59,6 +69,8 @@ constexpr unsigned long FLASH_BOOT_REQUIRED_LOW_SAMPLES =
 static_assert(FLASH_BOOT_SAMPLE_INTERVAL_MS > 0, "FLASH boot sample interval must be greater than zero.");
 static_assert(FLASH_BOOT_SAMPLE_COUNT >= FLASH_BOOT_MIN_SAMPLES,
               "FLASH boot detection window must collect the minimum number of samples.");
+static_assert(DEFAULT_D0_D7_COUNT <= OUTPUT_PIN_MAPPING_COUNT,
+              "DEFAULT_D0_D7_COUNT exceeds available OUTPUT_PIN_MAPPINGS entries.");
 
 struct DeviceEntry {
   String model;
@@ -76,11 +88,29 @@ struct DeviceConfig {
   float wifiPower;
   uint8_t numOutputs;
   DeviceEntry devices[MAX_DEVICES];
+  // MQTT
   bool mqttEnabled;
   String mqttHost;
   uint16_t mqttPort;
   String mqttUser;
   String mqttPassword;
+};
+
+// Background load-action state machine
+enum ActionPhase : uint8_t {
+  APHASE_NONE = 0,
+  APHASE_CYCLE_OFF,
+  APHASE_CYCLE_ON,
+  APHASE_FINAL_WAIT,
+  APHASE_TRIGGER_OFF,
+  APHASE_TRIGGER_ON
+};
+
+struct ActiveAction {
+  ActionPhase phase;
+  uint8_t deviceIdx;
+  uint8_t cyclesRemaining;
+  unsigned long phaseStartMs;
 };
 
 struct PinMapping {
@@ -116,8 +146,12 @@ uint8_t wifiRecoveryAttempts = 0;
 bool outputsActivated = false;
 bool outputActivationDeferredLogged = false;
 unsigned long bootStartMillis = 0;
+// MQTT
 WiFiClient mqttWifiClient;
 PubSubClient mqttClient(mqttWifiClient);
+unsigned long lastMqttConnectAttemptMs = 0;
+// Background load-action state
+ActiveAction bgAction = {APHASE_NONE, 0, 0, 0UL};
 unsigned long lastMqttReconnectMs = 0;
 
 String htmlEscape(const String& value) {
@@ -269,8 +303,14 @@ void setFactoryDefaults() {
   for (uint8_t i = 0; i < MAX_DEVICES; ++i) {
     cfg.devices[i].model = String(F("Model ")) + String(i + 1);
     cfg.devices[i].name = String(F("Output ")) + String(i + 1);
+    // Map first DEFAULT_D0_D7_COUNT outputs to D0-D7 by default; rest unassigned.
+    // Compile-time static_assert above guarantees DEFAULT_D0_D7_COUNT <= OUTPUT_PIN_MAPPING_COUNT.
+    cfg.devices[i].pin = (i < DEFAULT_D0_D7_COUNT) ? OUTPUT_PIN_MAPPINGS[i].gpio : -1;
+    cfg.devices[i].state = false;
+    /*
     cfg.devices[i].pin = (i < DEFAULT_OUTPUT_PIN_COUNT) ? DEFAULT_OUTPUT_PINS[i] : -1;
     cfg.devices[i].state = false;
+    */
   }
 
   cfg.mqttEnabled = false;
@@ -291,6 +331,11 @@ bool saveConfig() {
   doc["apPassword"] = cfg.apPassword;
   doc["wifiPower"] = cfg.wifiPower;
   doc["numOutputs"] = cfg.numOutputs;
+  doc["mqttEnabled"] = cfg.mqttEnabled;
+  doc["mqttHost"] = cfg.mqttHost;
+  doc["mqttPort"] = cfg.mqttPort;
+  doc["mqttUser"] = cfg.mqttUser;
+  doc["mqttPassword"] = cfg.mqttPassword;
 
   JsonObject mqtt = doc["mqtt"].to<JsonObject>();
   mqtt["enabled"] = cfg.mqttEnabled;
@@ -384,13 +429,12 @@ bool loadConfig() {
   if (cfg.apPassword.isEmpty()) cfg.apPassword = DEFAULT_AP_PASSWORD;
   if (cfg.hostname.isEmpty()) cfg.hostname = defaultHostnameFromMac(cfg.mac);
 
-  JsonVariantConst mqttSection = doc["mqtt"];
-  cfg.mqttEnabled = mqttSection["enabled"] | false;
-  cfg.mqttHost = mqttSection["host"] | String("");
-  cfg.mqttPort = static_cast<uint16_t>(mqttSection["port"] | static_cast<uint16_t>(DEFAULT_MQTT_PORT));
+  cfg.mqttEnabled = doc["mqttEnabled"] | false;
+  cfg.mqttHost = doc["mqttHost"] | String("");
+  cfg.mqttPort = static_cast<uint16_t>(doc["mqttPort"] | static_cast<uint16_t>(DEFAULT_MQTT_PORT));
+  cfg.mqttUser = doc["mqttUser"] | String("");
+  cfg.mqttPassword = doc["mqttPassword"] | String("");
   if (cfg.mqttPort == 0) cfg.mqttPort = DEFAULT_MQTT_PORT;
-  cfg.mqttUser = mqttSection["user"] | String("");
-  cfg.mqttPassword = mqttSection["password"] | String("");
 
   logStatus(F("Configuration loaded successfully."));
   return true;
@@ -672,101 +716,348 @@ bool ensureAuthorized() {
 }
 
 // ---------------------------------------------------------------------------
+// Background action helpers
+// ---------------------------------------------------------------------------
+
+bool isActionRunning() {
+  return bgAction.phase != APHASE_NONE;
+}
+
+String actionPhaseName() {
+  switch (bgAction.phase) {
+    case APHASE_CYCLE_OFF:   return F("cycling off");
+    case APHASE_CYCLE_ON:    return F("cycling on");
+    case APHASE_FINAL_WAIT:  return F("waiting (final)");
+    case APHASE_TRIGGER_OFF: return F("triggering off");
+    case APHASE_TRIGGER_ON:  return F("triggering on");
+    default:                 return F("idle");
+  }
+}
+
+// Drive a single output pin directly (no blocking).
+void setOutputDirect(uint8_t idx, bool state) {
+  if (idx >= MAX_DEVICES) return;
+  DeviceEntry& d = cfg.devices[idx];
+  d.state = state;
+  if (outputsActivated && isValidOutputPin(d.pin)) {
+    pinMode(d.pin, OUTPUT);
+    digitalWrite(d.pin, state ? HIGH : LOW);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // MQTT helpers
 // ---------------------------------------------------------------------------
+
 String mqttOutputStateTopic(uint8_t idx) {
-  return String(F("vibrant/")) + cfg.hostname + F("/output/") + String(idx) + F("/state");
+  return String(F("vibrant/")) + cfg.hostname + "/out/" + String(idx) + "/state";
 }
 
 String mqttOutputSetTopic(uint8_t idx) {
-  return String(F("vibrant/")) + cfg.hostname + F("/output/") + String(idx) + F("/set");
+  return String(F("vibrant/")) + cfg.hostname + "/out/" + String(idx) + "/set";
+}
+
+String mqttOutputActionTopic(uint8_t idx) {
+  return String(F("vibrant/")) + cfg.hostname + "/out/" + String(idx) + "/action";
+
 }
 
 void mqttPublishOutputState(uint8_t idx) {
   if (!cfg.mqttEnabled || !mqttClient.connected()) return;
-  String topic = mqttOutputStateTopic(idx);
-  const char* payload = cfg.devices[idx].state ? "1" : "0";
-  mqttClient.publish(topic.c_str(), payload, true);
+  if (idx >= cfg.numOutputs) return;
+  mqttClient.publish(mqttOutputStateTopic(idx).c_str(),
+                     cfg.devices[idx].state ? "ON" : "OFF", true);
 }
+
+void mqttPublishAllOutputStates() {
+  for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
+    mqttPublishOutputState(i);
+  }
+}
+
+// Forward declaration (defined below)
+bool handleLoadAction(uint8_t idx, const String& cmd);
 
 void mqttCallback(char* topic, byte* payload, unsigned int length) {
   String topicStr(topic);
-  String msg;
-  msg.reserve(length);
-  for (unsigned int i = 0; i < length; ++i) msg += (char)payload[i];
+  // MQTT payload bytes are not null-terminated; copy to String using explicit length.
+  // reserve() pre-allocates so concat does not reallocate; failure means low memory.
+  String payloadStr;
+  payloadStr.reserve(length);
+  if (!payloadStr.concat(reinterpret_cast<const char*>(payload), length)) {
+    logWarning(F("MQTT: dropped message -- payload allocation failed."));
+    return;
+  }
+
   for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
     if (topicStr == mqttOutputSetTopic(i)) {
-      DeviceEntry& d = cfg.devices[i];
-      if (!isValidOutputPin(d.pin)) return;
-      bool newState = (msg == "1" || msg.equalsIgnoreCase("ON") || msg.equalsIgnoreCase("true"));
-      d.state = newState;
-      if (outputsActivated) {
-        pinMode(d.pin, OUTPUT);
-        digitalWrite(d.pin, d.state ? HIGH : LOW);
-      }
-      Serial.print(F("[INFO] MQTT output set: "));
-      Serial.print(d.name);
-      Serial.print(F(" -> "));
-      Serial.println(d.state ? F("ON") : F("OFF"));
-      if (!saveConfig()) {
-        restartDevice(F("Failed to persist MQTT-triggered output state."));
-      }
+      bool newState = (payloadStr == "ON" || payloadStr == "1" || payloadStr == "true");
+      if (isActionRunning() && bgAction.deviceIdx == i) cancelAction();
+      setOutputDirect(i, newState);
       mqttPublishOutputState(i);
+      saveConfig();
+      return;
+    }
+    if (topicStr == mqttOutputActionTopic(i)) {
+      handleLoadAction(i, payloadStr);
+
       return;
     }
   }
 }
 
-bool mqttEnsureConnected() {
-  if (!cfg.mqttEnabled || cfg.mqttHost.isEmpty()) return false;
-  if (mqttClient.connected()) return true;
-  if (WiFi.status() != WL_CONNECTED) return false;
+const char* mqttStateString(int state) {
+  switch (state) {
+    case -4: return "CONNECTION_TIMEOUT";
+    case -3: return "CONNECTION_LOST";
+    case -2: return "CONNECT_FAILED";
+    case -1: return "DISCONNECTED";
+    case  0: return "CONNECTED";
+    case  1: return "BAD_PROTOCOL";
+    case  2: return "BAD_CLIENT_ID";
+    case  3: return "UNAVAILABLE";
+    case  4: return "BAD_CREDENTIALS";
+    case  5: return "UNAUTHORIZED";
+    default: return "UNKNOWN";
+  }
+}
 
+bool mqttDoConnect() {
+  if (!cfg.mqttEnabled || cfg.mqttHost.isEmpty()) return false;
   mqttClient.setServer(cfg.mqttHost.c_str(), cfg.mqttPort);
   mqttClient.setCallback(mqttCallback);
-
   String clientId = cfg.hostname;
-  bool ok;
-  if (!cfg.mqttUser.isEmpty()) {
-    ok = mqttClient.connect(clientId.c_str(), cfg.mqttUser.c_str(), cfg.mqttPassword.c_str());
+  bool connected;
+  if (cfg.mqttUser.isEmpty()) {
+    // No credentials: connect anonymously
+    connected = mqttClient.connect(clientId.c_str());
   } else {
-    ok = mqttClient.connect(clientId.c_str());
+    // User is set; password may be empty (broker may allow empty password for a named user)
+    connected = mqttClient.connect(clientId.c_str(),
+                                   cfg.mqttUser.c_str(),
+                                   cfg.mqttPassword.c_str());
   }
-  if (!ok) {
-    logWarning(String(F("MQTT connect failed, state=")) + String(mqttClient.state()));
-    return false;
-  }
-
+  if (!connected) return false;
   for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
-    String setTopic = mqttOutputSetTopic(i);
-    mqttClient.subscribe(setTopic.c_str());
+    mqttClient.subscribe(mqttOutputSetTopic(i).c_str());
+    mqttClient.subscribe(mqttOutputActionTopic(i).c_str());
   }
-  logStatus(String(F("MQTT connected to ")) + cfg.mqttHost + F(":") + String(cfg.mqttPort));
+  mqttPublishAllOutputStates();
+  logStatus(String(F("MQTT connected. Host: ")) + cfg.mqttHost);
   return true;
 }
 
+void applyMqttSettings() {
+  if (!cfg.mqttEnabled || cfg.mqttHost.isEmpty()) {
+    if (mqttClient.connected()) mqttClient.disconnect();
+    return;
+  }
+  mqttClient.setServer(cfg.mqttHost.c_str(), cfg.mqttPort);
+  mqttClient.setCallback(mqttCallback);
+  if (mqttClient.connected()) mqttClient.disconnect();
+  lastMqttConnectAttemptMs = 0;
+}
+
+void maintainMqtt() {
+  if (!cfg.mqttEnabled || cfg.mqttHost.isEmpty()) return;
+  if (WiFi.status() != WL_CONNECTED) return;
+  if (mqttClient.connected()) {
+    mqttClient.loop();
+    return;
+  }
+  unsigned long now = millis();
+  if (now - lastMqttConnectAttemptMs < MQTT_RECONNECT_INTERVAL_MS) return;
+  lastMqttConnectAttemptMs = now;
+  logStatus(F("Attempting MQTT connection..."));
+  if (!mqttDoConnect()) {
+    logWarning(String(F("MQTT connection failed. State: ")) + mqttStateString(mqttClient.state()));
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Background load-action state machine
+// ---------------------------------------------------------------------------
+
+void startSequenceAction(uint8_t deviceIdx, uint8_t totalCycles) {
+  bgAction.deviceIdx = deviceIdx;
+  bgAction.cyclesRemaining = totalCycles;
+  bgAction.phaseStartMs = millis();
+  bgAction.phase = APHASE_CYCLE_OFF;
+  setOutputDirect(deviceIdx, false);
+  mqttPublishOutputState(deviceIdx);
+}
+
+void finishAction() {
+  uint8_t idx = bgAction.deviceIdx;
+  bgAction.phase = APHASE_NONE;
+  // Leave output ON after completing the sequence
+  setOutputDirect(idx, true);
+  mqttPublishOutputState(idx);
+  saveConfig();
+  logStatus(String(F("Load action complete for output ")) + String(idx + 1));
+}
+
+void maintainBackgroundAction() {
+  if (bgAction.phase == APHASE_NONE) return;
+  unsigned long now = millis();
+  uint8_t idx = bgAction.deviceIdx;
+
+  switch (bgAction.phase) {
+    case APHASE_CYCLE_OFF:
+      if (now - bgAction.phaseStartMs >= ACTION_CYCLE_OFF_MS) {
+        setOutputDirect(idx, true);
+        mqttPublishOutputState(idx);
+        bgAction.phase = APHASE_CYCLE_ON;
+        bgAction.phaseStartMs = now;
+      }
+      break;
+    case APHASE_CYCLE_ON:
+      if (now - bgAction.phaseStartMs >= ACTION_CYCLE_ON_MS) {
+        --bgAction.cyclesRemaining;
+        if (bgAction.cyclesRemaining > 0) {
+          setOutputDirect(idx, false);
+          mqttPublishOutputState(idx);
+          bgAction.phase = APHASE_CYCLE_OFF;
+          bgAction.phaseStartMs = now;
+        } else {
+          // All cycles done; output is ON — enter final wait
+          bgAction.phase = APHASE_FINAL_WAIT;
+          bgAction.phaseStartMs = now;
+        }
+      }
+      break;
+    case APHASE_FINAL_WAIT:
+      if (now - bgAction.phaseStartMs >= ACTION_FINAL_WAIT_MS) {
+        setOutputDirect(idx, false);
+        mqttPublishOutputState(idx);
+        bgAction.phase = APHASE_TRIGGER_OFF;
+        bgAction.phaseStartMs = now;
+      }
+      break;
+    case APHASE_TRIGGER_OFF:
+      if (now - bgAction.phaseStartMs >= ACTION_TRIGGER_OFF_MS) {
+        setOutputDirect(idx, true);
+        mqttPublishOutputState(idx);
+        bgAction.phase = APHASE_TRIGGER_ON;
+        bgAction.phaseStartMs = now;
+      }
+      break;
+    case APHASE_TRIGGER_ON:
+      if (now - bgAction.phaseStartMs >= ACTION_TRIGGER_ON_MS) {
+        finishAction();
+      }
+      break;
+    default:
+      bgAction.phase = APHASE_NONE;
+      break;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Load-action command dispatcher (shared by HTTP and MQTT)
+// ---------------------------------------------------------------------------
+
+// Cancel any running background action, publish current output MQTT state.
+// Callers are responsible for saving config if needed.
+void cancelAction() {
+  if (!isActionRunning()) return;
+  uint8_t idx = bgAction.deviceIdx;
+  bgAction.phase = APHASE_NONE;
+  logStatus(String(F("Action cancelled for output ")) + String(idx + 1));
+  mqttPublishOutputState(idx);
+}
+
+bool handleLoadAction(uint8_t idx, const String& cmd) {
+  if (idx >= cfg.numOutputs) return false;
+  if (cmd == F("power_on")) {
+    if (isActionRunning() && bgAction.deviceIdx == idx) cancelAction();
+    setOutputDirect(idx, true);
+    mqttPublishOutputState(idx);
+    saveConfig();
+    return true;
+  }
+  if (cmd == F("power_off")) {
+    if (isActionRunning() && bgAction.deviceIdx == idx) cancelAction();
+    setOutputDirect(idx, false);
+    mqttPublishOutputState(idx);
+    saveConfig();
+    return true;
+  }
+  if (!isValidOutputPin(cfg.devices[idx].pin)) return false;
+  if (isActionRunning()) return false;
+  if (cmd == F("leave_mesh")) {
+    logStatus(String(F("Starting leave_mesh action for output ")) + String(idx + 1));
+    startSequenceAction(idx, LEAVE_MESH_CYCLES);
+    return true;
+  }
+  if (cmd == F("factory_reset")) {
+    logStatus(String(F("Starting factory_reset action for output ")) + String(idx + 1));
+    startSequenceAction(idx, FACTORY_RESET_LOAD_CYCLES);
+    return true;
+  }
+  return false;
+
+}
+
 void handleHome() {
+  bool actionRunning = isActionRunning();
   String html = F(
       "<!doctype html><html><head><meta charset='utf-8'><title>VIBRANT</title>"
       "<style>body{font-family:Arial,sans-serif;margin:20px;}table{border-collapse:collapse;width:100%;}"
-      "th,td{border:1px solid #ddd;padding:8px;}th{background:#f5f5f5;}a,button{padding:8px 10px;}"
-      "input[type='checkbox']{width:18px;height:18px;}</style>"
+      "th,td{border:1px solid #ddd;padding:8px;}th{background:#f5f5f5;}a,button{padding:4px 8px;margin:2px;}"
+      "input[type='checkbox']{width:18px;height:18px;}"
+      ".action-banner{background:#fff3cd;border:1px solid #ffc107;padding:10px;margin:10px 0;border-radius:4px;}</style>"
+      "<script>\n"
+      "var _wasRunning=false;\n"
+      "function pollStatus(){\n"
+      "  fetch('/action/status').then(function(r){return r.json();})\n"
+      "  .then(function(d){\n"
+      "    var div=document.getElementById('action-status');\n"
+      "    if(d.running){\n"
+      "      var detail=d.cyclesRemaining>0?' (cycles remaining: '+d.cyclesRemaining+')':'';\n"
+      "      div.innerHTML='<div class=\"action-banner\"><strong>Action running on output '+(d.idx+1)+': '+d.phase+detail+'</strong>'"
+      "      +' &nbsp; <form method=\"post\" action=\"/action/cancel\" style=\"display:inline;\"><button type=\"submit\">Cancel</button></form></div>';\n"
+      "    } else {\n"
+      "      div.innerHTML='';\n"
+      "      if(_wasRunning){window.location.reload();}\n"
+      "    }\n"
+      "    _wasRunning=d.running;\n"
+      "  }).catch(function(){});\n"
+      "}\n"
+      "setInterval(pollStatus,3000);\n"
+      "</script>"
       "</head><body><h1>VIBRANT Output Control</h1><p>Version: ");
   html += SOFTWARE_VERSION;
-  html += F("</p><p><a href='/settings'>Settings</a></p>"
-            "<table><tr><th>#</th><th>Model</th><th>Name</th><th>Status</th><th>Output</th></tr>");
+  html += F("</p><p><a href='/settings'>Settings</a></p>");
   if (usingFactoryPassword()) {
     html += passwordWarningHtml();
   }
+  // Initial action-status banner rendered server-side; JS polling keeps it updated.
+  // The phase-detail string is also formatted by the JS updater; they share the same
+  // visual format but run in different contexts (C++/server vs JS/browser).
+  html += "<div id='action-status'>";
+  if (actionRunning) {
+    bool inCyclePhase = (bgAction.phase == APHASE_CYCLE_OFF || bgAction.phase == APHASE_CYCLE_ON);
+    String phaseDetail = inCyclePhase
+        ? String(F(" (cycles remaining: ")) + String(bgAction.cyclesRemaining) + ")"
+        : "";
+    html += "<div class='action-banner'><strong>Action running on output " +
+            String(bgAction.deviceIdx + 1) + ": " + actionPhaseName() + phaseDetail + "</strong>"
+            " &nbsp; <form method='post' action='/action/cancel' style='display:inline;'>"
+            "<button type='submit'>Cancel</button></form></div>";
+  }
+  html += "</div>";
+  html += F("<table><tr><th>#</th><th>Model</th><th>Name</th><th>Status</th><th>Output</th><th>Actions</th></tr>");
 
   for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
     const DeviceEntry& d = cfg.devices[i];
-    String status = F("Unassigned");
     bool mapped = isValidOutputPin(d.pin);
-    if (mapped) status = d.state ? F("ON") : F("OFF");
+    String status = mapped ? (d.state ? String(F("ON")) : String(F("OFF"))) : String(F("Unassigned"));
+    bool thisActionRunning = actionRunning && bgAction.deviceIdx == i;
+    bool otherActionRunning = actionRunning && bgAction.deviceIdx != i;
 
-    html += "<tr><td>" + String(i + 1) + "</td><td>" + htmlEscape(d.model) + "</td><td>" + htmlEscape(d.name) +
-            "</td><td>" + status + "</td><td>";
+    html += "<tr><td>" + String(i + 1) + "</td><td>" + htmlEscape(d.model) + "</td><td>" +
+            htmlEscape(d.name) + "</td><td>" + status + "</td><td>";
 
     if (mapped) {
       html += "<form method='post' action='/toggle' style='margin:0;'>"
@@ -777,9 +1068,35 @@ void handleHome() {
       html += " onchange=\"document.getElementById('state_" + String(i) + "').value=this.checked?1:0;this.form.submit();\">"
               "</form>";
     } else {
-      html += "(none)";
+      html += F("(none)");
     }
 
+    html += "</td><td>";
+    if (mapped) {
+      if (thisActionRunning) {
+        html += F("<em>Running...</em>");
+      } else {
+        const char* disabledAttr = otherActionRunning ? " disabled" : "";
+        html += "<form method='post' action='/action' style='display:inline;margin:0;'>"
+                "<input type='hidden' name='idx' value='" + String(i) + "'>"
+                "<input type='hidden' name='cmd' value='power_on'>"
+                "<button type='submit'" + disabledAttr + ">On</button></form>"
+                "<form method='post' action='/action' style='display:inline;margin:0;'>"
+                "<input type='hidden' name='idx' value='" + String(i) + "'>"
+                "<input type='hidden' name='cmd' value='power_off'>"
+                "<button type='submit'" + disabledAttr + ">Off</button></form>"
+                "<form method='post' action='/action' style='display:inline;margin:0;'>"
+                "<input type='hidden' name='idx' value='" + String(i) + "'>"
+                "<input type='hidden' name='cmd' value='leave_mesh'>"
+                "<button type='submit'" + disabledAttr + ">Leave Mesh</button></form>"
+                "<form method='post' action='/action' style='display:inline;margin:0;'>"
+                "<input type='hidden' name='idx' value='" + String(i) + "'>"
+                "<input type='hidden' name='cmd' value='factory_reset'>"
+                "<button type='submit'" + disabledAttr + ">Factory Reset</button></form>";
+      }
+    } else {
+      html += F("(none)");
+    }
     html += "</td></tr>";
   }
 
@@ -816,6 +1133,11 @@ void handleToggle() {
     return;
   }
 
+  // Abort any running sequence action on this output
+  if (isActionRunning() && bgAction.deviceIdx == static_cast<uint8_t>(idx)) {
+    cancelAction();
+  }
+
   d.state = server.arg("state") == "1";
   if (outputsActivated) {
     pinMode(d.pin, OUTPUT);
@@ -823,6 +1145,7 @@ void handleToggle() {
   } else {
     applyOutputsWhenSafe();
   }
+  mqttPublishOutputState(static_cast<uint8_t>(idx));
   Serial.print(F("[INFO] Output toggled: "));
   Serial.print(d.name);
   Serial.print(F(" -> "));
@@ -834,6 +1157,55 @@ void handleToggle() {
 
   server.sendHeader("Location", "/");
   server.send(303);
+}
+
+void handleAction() {
+  if (!ensureAuthorized()) return;
+  if (!server.hasArg("idx") || !server.hasArg("cmd")) {
+    server.send(400, "text/plain", "Missing idx or cmd");
+    return;
+  }
+  int idx = -1;
+  if (!parseIndexValue(server.arg("idx"), idx) || idx < 0 || idx >= MAX_DEVICES) {
+    server.send(400, "text/plain", "Invalid device index");
+    return;
+  }
+  String cmd = server.arg("cmd");
+  if (!handleLoadAction(static_cast<uint8_t>(idx), cmd)) {
+    if (isActionRunning()) {
+      server.send(409, "text/plain", "Another action is already running");
+    } else {
+      server.send(400, "text/plain", "Unknown command or invalid output");
+    }
+    return;
+  }
+  server.sendHeader("Location", "/");
+  server.send(303);
+}
+
+void handleCancelAction() {
+  if (!ensureAuthorized()) return;
+  if (isActionRunning()) {
+    cancelAction();
+    saveConfig();
+  }
+  server.sendHeader("Location", "/");
+  server.send(303);
+}
+
+void handleActionStatus() {
+  bool running = isActionRunning();
+  String json = "{\"running\":";
+  json += running ? "true" : "false";
+  if (running) {
+    bool inCyclePhase = (bgAction.phase == APHASE_CYCLE_OFF || bgAction.phase == APHASE_CYCLE_ON);
+    json += ",\"idx\":" + String(bgAction.deviceIdx);
+    json += ",\"phase\":\"" + actionPhaseName() + "\"";
+    json += ",\"cyclesRemaining\":" + String(inCyclePhase ? bgAction.cyclesRemaining : 0);
+  }
+  json += "}";
+  server.sendHeader("Cache-Control", "no-store");
+  server.send(200, "application/json", json);
 }
 
 void handleSettingsGet() {
@@ -944,7 +1316,28 @@ void handleSettingsGet() {
     }
     html += "</select></td></tr>";
   }
-  html += "</table></fieldset><button type='submit'>Save settings</button></form>";
+  html += "</table></fieldset>";
+
+  html += "<fieldset><legend>MQTT</legend>"
+          "<label><input type='checkbox' name='mqttEnabled' value='1'" +
+          String(cfg.mqttEnabled ? " checked" : "") + "> Enable MQTT</label>"
+          "<label for='mqttHost'>MQTT server host</label>"
+          "<input id='mqttHost' name='mqttHost' value='" + htmlEscape(cfg.mqttHost) + "' placeholder='e.g. 192.168.1.6'>"
+          "<label for='mqttPort'>MQTT port</label>"
+          "<input id='mqttPort' name='mqttPort' type='number' min='1' max='65535' value='" + String(cfg.mqttPort) + "'>"
+          "<label for='mqttUser'>MQTT user (optional)</label>"
+          "<input id='mqttUser' name='mqttUser' value='" + htmlEscape(cfg.mqttUser) + "'>"
+          "<label for='mqttPassword'>MQTT password (optional)</label>"
+          "<input id='mqttPassword' name='mqttPassword' type='password' value='' placeholder='Leave empty to keep current'"
+          " oninput=\"document.getElementById('mqttPasswordClear').checked = false;\">"
+          "<label><input type='checkbox' id='mqttPasswordClear' name='mqttPasswordClear' value='1'"
+          " onchange=\"if(this.checked)document.getElementById('mqttPassword').value='';\"> Clear MQTT password (remove broker authentication)</label>"
+          "<p style='font-size:0.9em;color:#555;'>Topics (N = zero-based output index, e.g. 0 = Output 1): "
+          "<code>vibrant/" + htmlEscape(cfg.hostname) + "/out/&lt;N&gt;/set</code> (ON/OFF) &amp; "
+          "<code>vibrant/" + htmlEscape(cfg.hostname) + "/out/&lt;N&gt;/action</code> (power_on / power_off / leave_mesh / factory_reset)</p>"
+          "</fieldset>";
+
+  html += F("<button type='submit'>Save settings</button></form>");
 
   html += F(
       "<h2>Configuration maintenance</h2>"
@@ -1057,6 +1450,30 @@ void handleSettingsPost() {
     lastMqttReconnectMs = 0;
     mqttEnsureConnected();
   }
+
+  // Parse and apply MQTT settings
+  cfg.mqttEnabled = server.hasArg("mqttEnabled") && server.arg("mqttEnabled") == "1";
+  cfg.mqttHost = server.arg("mqttHost");
+  int parsedMqttPort = -1;
+  if (parseIndexValue(server.arg("mqttPort"), parsedMqttPort) && parsedMqttPort > 0 && parsedMqttPort <= 65535) {
+    cfg.mqttPort = static_cast<uint16_t>(parsedMqttPort);
+  } else {
+    cfg.mqttPort = DEFAULT_MQTT_PORT;
+  }
+  cfg.mqttUser = server.arg("mqttUser");
+  bool clearMqttPassword = server.hasArg("mqttPasswordClear") && server.arg("mqttPasswordClear") == "1";
+  if (clearMqttPassword) {
+    cfg.mqttPassword = "";
+  } else {
+    String newMqttPassword = server.arg("mqttPassword");
+    if (!newMqttPassword.isEmpty()) {
+      cfg.mqttPassword = newMqttPassword;
+    }
+  }
+  if (!saveConfig()) {
+    restartDevice(F("Failed to persist MQTT settings."));
+  }
+  applyMqttSettings();
 
   server.sendHeader("Location", "/settings");
   server.send(303);
@@ -1280,6 +1697,9 @@ void setup() {
   logStatus(F("Registering web routes..."));
   server.on("/", HTTP_GET, handleHome);
   server.on("/toggle", HTTP_POST, handleToggle);
+  server.on("/action", HTTP_POST, handleAction);
+  server.on("/action/cancel", HTTP_POST, handleCancelAction);
+  server.on("/action/status", HTTP_GET, handleActionStatus);
   server.on("/settings", HTTP_GET, handleSettingsGet);
   server.on("/settings", HTTP_POST, handleSettingsPost);
   server.on("/config/export", HTTP_GET, handleConfigExport);
@@ -1289,6 +1709,7 @@ void setup() {
 
   server.begin();
   logStatus(F("HTTP server started on port 80."));
+  applyMqttSettings();
   logWifiSummary(defaultSoftApSsidFromMac(cfg.mac));
   logStatus(F("Boot sequence complete."));
 }
@@ -1299,15 +1720,6 @@ void loop() {
     applyOutputsWhenSafe();
   }
   maintainWifiConnection();
-  if (cfg.mqttEnabled) {
-    if (mqttClient.connected()) {
-      mqttClient.loop();
-    } else {
-      unsigned long now = millis();
-      if (now - lastMqttReconnectMs >= MQTT_RECONNECT_INTERVAL_MS) {
-        lastMqttReconnectMs = now;
-        mqttEnsureConnected();
-      }
-    }
-  }
+  maintainMqtt();
+  maintainBackgroundAction();
 }
