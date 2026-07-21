@@ -22,7 +22,7 @@ constexpr const char* IMPORT_CONFIG_PATH = "/vibrant_config_upload.json";
 constexpr const char* DEFAULT_STA_SSID = "Z-Wave Automation";
 constexpr const char* DEFAULT_STA_PASSWORD = "Fiber714Cvet";
 constexpr const char* DEFAULT_AP_PASSWORD = "Fiber714Cvet";
-constexpr const char* SOFTWARE_VERSION = "1.2.0";
+constexpr const char* SOFTWARE_VERSION = "1.2.1";
 constexpr uint8_t MAX_DEVICES = 16;
 constexpr uint8_t DEFAULT_NUM_OUTPUTS = 8;
 constexpr int8_t MAX_GPIO_PIN = 15;
@@ -84,6 +84,8 @@ unsigned long lastWifiReconnectAttemptMs = 0;
 unsigned long lastWifiConnectLogMs = 0;
 unsigned long wifiDisconnectSinceMs = 0;
 uint8_t wifiRecoveryAttempts = 0;
+
+bool isSafeOutputPin(int pin);
 
 String htmlEscape(const String& value) {
   String out;
@@ -313,6 +315,10 @@ bool loadConfig() {
       cfg.devices[i].pin = -1;
       cfg.devices[i].state = false;
     }
+    if (!isSafeOutputPin(cfg.devices[i].pin)) {
+      cfg.devices[i].pin = -1;
+      cfg.devices[i].state = false;
+    }
   }
 
   if (cfg.staSsid.isEmpty()) cfg.staSsid = DEFAULT_STA_SSID;
@@ -352,7 +358,7 @@ void applyOutputs() {
   logStatus(F("Applying output states..."));
   for (uint8_t i = 0; i < MAX_DEVICES; ++i) {
     int8_t pin = cfg.devices[i].pin;
-    if (pin < 0 || pin > MAX_GPIO_PIN) {
+    if (!isSafeOutputPin(pin)) {
       continue;
     }
     pinMode(pin, OUTPUT);
@@ -510,6 +516,10 @@ String pinOption(int selectedPin, int pin) {
   return "<option value=\"" + String(pin) + "\"" + selected + ">D" + String(pin) + "</option>";
 }
 
+bool isSafeOutputPin(int pin) {
+  return pin == 4 || pin == 5 || pin == 12 || pin == 13 || pin == 14;
+}
+
 bool parsePinValue(const String& raw, int& pin) {
   if (raw == "-1") {
     pin = -1;
@@ -520,7 +530,7 @@ bool parsePinValue(const String& raw, int& pin) {
     if (raw[i] < '0' || raw[i] > '9') return false;
   }
   pin = raw.toInt();
-  return pin >= 0 && pin <= MAX_GPIO_PIN;
+  return isSafeOutputPin(pin);
 }
 
 bool parseIndexValue(const String& raw, int& value) {
@@ -570,7 +580,7 @@ void handleHome() {
   for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
     const DeviceEntry& d = cfg.devices[i];
     String status = F("Unassigned");
-    bool mapped = d.pin >= 0 && d.pin <= MAX_GPIO_PIN;
+    bool mapped = isSafeOutputPin(d.pin);
     if (mapped) status = d.state ? F("ON") : F("OFF");
 
     html += "<tr><td>" + String(i + 1) + "</td><td>" + htmlEscape(d.model) + "</td><td>" + htmlEscape(d.name) +
@@ -617,7 +627,7 @@ void handleToggle() {
   }
 
   DeviceEntry& d = cfg.devices[idx];
-  if (d.pin < 0 || d.pin > MAX_GPIO_PIN) {
+  if (!isSafeOutputPin(d.pin)) {
     logError(String(F("Toggle request for unmapped output: ")) + d.name);
     server.sendHeader("Location", "/");
     server.send(303);
@@ -672,6 +682,9 @@ void handleSettingsGet() {
 
   html += "<fieldset><legend>Devices</legend>"
           "<label>Number of outputs (1 - 16) <input name='numOutputs' type='number' min='1' max='16' step='1' value='" + String(cfg.numOutputs) + "'></label>"
+          "<p>Allowed output GPIO pins for reliable NodeMCU boot: D4, D5, D12, D13, D14.</p>"
+          "<div><button type='button' onclick='applyFirstModelToAll()'>Apply first Model to all</button>"
+          "<button type='button' onclick='applyFirstNameToAll()'>Apply first Name to all</button></div>"
           "<table><tr><th>#</th><th>Model</th><th>Name</th><th>Control output</th></tr>";
   for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
     html += "<tr><td>" + String(i + 1) + "</td>"
@@ -681,7 +694,9 @@ void handleSettingsGet() {
 
     html += (cfg.devices[i].pin < 0) ? "<option value='-1' selected>none</option>" : "<option value='-1'>none</option>";
     for (int pin = 0; pin <= MAX_GPIO_PIN; ++pin) {
-      html += pinOption(cfg.devices[i].pin, pin);
+      if (isSafeOutputPin(pin)) {
+        html += pinOption(cfg.devices[i].pin, pin);
+      }
     }
     html += "</select></td></tr>";
   }
@@ -698,7 +713,23 @@ void handleSettingsGet() {
           "<label>Import backup JSON <input type='file' name='config' accept='application/json' required></label>"
           "<button type='submit'>Upload and restore</button></form>";
 
-  html += F("</body></html>");
+  html += F("<script>"
+            "function applyFirstModelToAll(){"
+            "var fields=document.querySelectorAll(\"input[name^='model_']\");"
+            "if(!fields.length)return;"
+            "var source=fields[0].value;"
+            "for(var i=0;i<fields.length;++i){fields[i].value=source;}"
+            "}"
+            "function applyFirstNameToAll(){"
+            "var fields=document.querySelectorAll(\"input[name^='name_']\");"
+            "if(!fields.length)return;"
+            "var source=fields[0].value;"
+            "var hasSequenceToken=/#\\d+/.test(source);"
+            "for(var i=0;i<fields.length;++i){"
+            "fields[i].value=hasSequenceToken?source.replace(/#\\d+/g,'#'+(i+1)):source;"
+            "}"
+            "}"
+            "</script></body></html>");
   server.send(200, "text/html", html);
 }
 
@@ -759,8 +790,12 @@ void handleSettingsPost() {
     cfg.devices[i].name = server.arg("name_" + String(i));
     int pin = -1;
     String pinArgName = "pin_" + String(i);
-    if (!server.hasArg(pinArgName) || !parsePinValue(server.arg(pinArgName), pin)) {
+    if (!server.hasArg(pinArgName)) {
       pin = -1;
+    } else if (!parsePinValue(server.arg(pinArgName), pin)) {
+      logError(String(F("Settings save rejected due to unsafe output pin on row ")) + String(i + 1));
+      server.send(400, "text/plain", "Only D4, D5, D12, D13, D14 or none are allowed for outputs");
+      return;
     }
     cfg.devices[i].pin = pin;
     if (cfg.devices[i].pin < 0) {

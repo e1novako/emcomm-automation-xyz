@@ -23,7 +23,7 @@ Change the password immediately in **Settings** after the first boot.
   - SSID
   - Password
   - Wi-Fi output power/strength
-  - Up to 16 device entries (`model`, `name`, output `D0`–`D15` or `none`)
+  - Up to 16 device entries (`model`, `name`, output `D4`, `D5`, `D12`, `D13`, `D14` or `none`)
 - Configuration maintenance routes:
   - Export backup (`/config/export`)
   - Import backup (`/config/import`)
