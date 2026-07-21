@@ -763,7 +763,7 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
   // If allocation fails, log and discard the message.
   String payloadStr;
   if (!payloadStr.concat(reinterpret_cast<const char*>(payload), length)) {
-    logWarning(F("MQTT: dropped message — payload String allocation failed."));
+    logWarning(F("MQTT: dropped message -- payload String allocation failed."));
     return;
   }
 
