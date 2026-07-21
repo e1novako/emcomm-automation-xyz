@@ -43,6 +43,8 @@ constexpr unsigned long MQTT_RECONNECT_INTERVAL_MS = 10000UL;
 // Background load-action timing
 constexpr uint8_t LEAVE_MESH_CYCLES = 5;
 constexpr uint8_t FACTORY_RESET_LOAD_CYCLES = 13;
+// Number of D0-D7 entries at the start of OUTPUT_PIN_MAPPINGS used for default assignment
+constexpr uint8_t DEFAULT_D0_D7_COUNT = 8;
 constexpr unsigned long ACTION_CYCLE_OFF_MS = 5000UL;
 constexpr unsigned long ACTION_CYCLE_ON_MS = 1000UL;
 constexpr unsigned long ACTION_FINAL_WAIT_MS = 5000UL;
@@ -292,8 +294,8 @@ void setFactoryDefaults() {
   for (uint8_t i = 0; i < MAX_DEVICES; ++i) {
     cfg.devices[i].model = String(F("Model ")) + String(i + 1);
     cfg.devices[i].name = String(F("Output ")) + String(i + 1);
-    // Map first 8 outputs to D0-D7 by default; rest unassigned
-    cfg.devices[i].pin = (i < 8) ? OUTPUT_PIN_MAPPINGS[i].gpio : -1;
+    // Map first DEFAULT_D0_D7_COUNT outputs to D0-D7 by default; rest unassigned
+    cfg.devices[i].pin = (i < DEFAULT_D0_D7_COUNT) ? OUTPUT_PIN_MAPPINGS[i].gpio : -1;
     cfg.devices[i].state = false;
   }
   cfg.mqttEnabled = false;
@@ -754,9 +756,7 @@ bool handleLoadAction(uint8_t idx, const String& cmd);
 
 void mqttCallback(char* topic, byte* payload, unsigned int length) {
   String topicStr(topic);
-  String payloadStr;
-  payloadStr.reserve(length);
-  for (unsigned int i = 0; i < length; ++i) payloadStr += static_cast<char>(payload[i]);
+  String payloadStr(reinterpret_cast<const char*>(payload), length);
 
   for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
     if (topicStr == mqttOutputSetTopic(i)) {
@@ -765,7 +765,6 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
         bgAction.phase = APHASE_NONE;
       }
       setOutputDirect(i, newState);
-      cfg.devices[i].state = newState;
       mqttPublishOutputState(i);
       saveConfig();
       return;
@@ -774,6 +773,22 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
       handleLoadAction(i, payloadStr);
       return;
     }
+  }
+}
+
+const char* mqttStateString(int state) {
+  switch (state) {
+    case -4: return "CONNECTION_TIMEOUT";
+    case -3: return "CONNECTION_LOST";
+    case -2: return "CONNECT_FAILED";
+    case -1: return "DISCONNECTED";
+    case  0: return "CONNECTED";
+    case  1: return "BAD_PROTOCOL";
+    case  2: return "BAD_CLIENT_ID";
+    case  3: return "UNAVAILABLE";
+    case  4: return "BAD_CREDENTIALS";
+    case  5: return "UNAUTHORIZED";
+    default: return "UNKNOWN";
   }
 }
 
@@ -823,7 +838,7 @@ void maintainMqtt() {
   lastMqttConnectAttemptMs = now;
   logStatus(F("Attempting MQTT connection..."));
   if (!mqttDoConnect()) {
-    logWarning(String(F("MQTT connection failed. State: ")) + String(mqttClient.state()));
+    logWarning(String(F("MQTT connection failed. State: ")) + mqttStateString(mqttClient.state()));
   }
 }
 
@@ -959,9 +974,12 @@ void handleHome() {
     html += passwordWarningHtml();
   }
   if (actionRunning) {
+    bool inCyclePhase = (bgAction.phase == APHASE_CYCLE_OFF || bgAction.phase == APHASE_CYCLE_ON);
+    String phaseDetail = inCyclePhase
+        ? String(F(" (cycles remaining: ")) + String(bgAction.cyclesRemaining) + ")"
+        : String(F(""));
     html += "<div class='action-banner'><strong>Action running on output " +
-            String(bgAction.deviceIdx + 1) + ": " + actionPhaseName() +
-            " (cycles remaining: " + String(bgAction.cyclesRemaining) + ")</strong>"
+            String(bgAction.deviceIdx + 1) + ": " + actionPhaseName() + phaseDetail + "</strong>"
             " &nbsp; <form method='post' action='/action/cancel' style='display:inline;'>"
             "<button type='submit'>Cancel</button></form></div>";
   }
@@ -994,23 +1012,23 @@ void handleHome() {
       if (thisActionRunning) {
         html += F("<em>Running...</em>");
       } else {
-        String dis = otherActionRunning ? String(F(" disabled")) : String(F(""));
+        String disabledAttr = otherActionRunning ? String(F(" disabled")) : String(F(""));
         html += "<form method='post' action='/action' style='display:inline;margin:0;'>"
                 "<input type='hidden' name='idx' value='" + String(i) + "'>"
                 "<input type='hidden' name='cmd' value='power_on'>"
-                "<button type='submit'" + dis + ">On</button></form>"
+                "<button type='submit'" + disabledAttr + ">On</button></form>"
                 "<form method='post' action='/action' style='display:inline;margin:0;'>"
                 "<input type='hidden' name='idx' value='" + String(i) + "'>"
                 "<input type='hidden' name='cmd' value='power_off'>"
-                "<button type='submit'" + dis + ">Off</button></form>"
+                "<button type='submit'" + disabledAttr + ">Off</button></form>"
                 "<form method='post' action='/action' style='display:inline;margin:0;'>"
                 "<input type='hidden' name='idx' value='" + String(i) + "'>"
                 "<input type='hidden' name='cmd' value='leave_mesh'>"
-                "<button type='submit'" + dis + ">Leave Mesh</button></form>"
+                "<button type='submit'" + disabledAttr + ">Leave Mesh</button></form>"
                 "<form method='post' action='/action' style='display:inline;margin:0;'>"
                 "<input type='hidden' name='idx' value='" + String(i) + "'>"
                 "<input type='hidden' name='cmd' value='factory_reset'>"
-                "<button type='submit'" + dis + ">Factory Reset</button></form>";
+                "<button type='submit'" + disabledAttr + ">Factory Reset</button></form>";
       }
     } else {
       html += F("(none)");
@@ -1210,11 +1228,17 @@ void handleSettingsGet() {
   html += "<fieldset><legend>MQTT</legend>"
           "<label><input type='checkbox' name='mqttEnabled' value='1'" +
           String(cfg.mqttEnabled ? " checked" : "") + "> Enable MQTT</label>"
-          "<label>MQTT server host <input name='mqttHost' value='" + htmlEscape(cfg.mqttHost) + "' placeholder='e.g. 192.168.1.6'></label>"
-          "<label>MQTT port <input name='mqttPort' type='number' min='1' max='65535' value='" + String(cfg.mqttPort) + "'></label>"
-          "<label>MQTT user (optional) <input name='mqttUser' value='" + htmlEscape(cfg.mqttUser) + "'></label>"
-          "<label>MQTT password (optional) <input name='mqttPassword' type='password' value='' placeholder='Leave empty to keep current'></label>"
-          "<p style='font-size:0.9em;color:#555;'>Topics: <code>vibrant/" + htmlEscape(cfg.hostname) + "/out/&lt;N&gt;/set</code> (ON/OFF) &amp; "
+          "<label for='mqttHost'>MQTT server host</label>"
+          "<input id='mqttHost' name='mqttHost' value='" + htmlEscape(cfg.mqttHost) + "' placeholder='e.g. 192.168.1.6'>"
+          "<label for='mqttPort'>MQTT port</label>"
+          "<input id='mqttPort' name='mqttPort' type='number' min='1' max='65535' value='" + String(cfg.mqttPort) + "'>"
+          "<label for='mqttUser'>MQTT user (optional)</label>"
+          "<input id='mqttUser' name='mqttUser' value='" + htmlEscape(cfg.mqttUser) + "'>"
+          "<label for='mqttPassword'>MQTT password (optional)</label>"
+          "<input id='mqttPassword' name='mqttPassword' type='password' value='' placeholder='Leave empty to keep current'>" +
+          (cfg.mqttPassword.isEmpty() ? "" : "<small>A password is currently set.</small>") +
+          "<p style='font-size:0.9em;color:#555;'>Topics (N = zero-based output index, e.g. 0 = Output 1): "
+          "<code>vibrant/" + htmlEscape(cfg.hostname) + "/out/&lt;N&gt;/set</code> (ON/OFF) &amp; "
           "<code>vibrant/" + htmlEscape(cfg.hostname) + "/out/&lt;N&gt;/action</code> (power_on / power_off / leave_mesh / factory_reset)</p>"
           "</fieldset>";
 
