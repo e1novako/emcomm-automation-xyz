@@ -908,6 +908,9 @@ static String isoTimestamp() {
 static const size_t MQTT_EVENT_BUF_SIZE = 224;
 
 // Monotonic counter used to generate unique mid values for event messages.
+// Always called from the main loop (never from an ISR), so no atomic
+// operations are required.  On uint32_t overflow (~4 billion events) the
+// counter wraps to 0 and then increments to 1; mid remains non-empty.
 static uint32_t eventMsgSeq = 0;
 
 // Publish a JSON event message to T_EVENT.
