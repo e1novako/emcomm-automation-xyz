@@ -23,12 +23,14 @@ Change the password immediately in **Settings** after the first boot.
   - SSID
   - Password
   - Wi-Fi output power/strength
+  - Bulk-copying the first Model/Name to all visible rows (`#<number>` in the first name expands per row)
   - Up to 16 device entries (`model`, `name`, output `D0`–`D15` or `none`)
 - Configuration maintenance routes:
   - Export backup (`/config/export`)
   - Import backup (`/config/import`)
   - Factory reset to defaults (`/config/factory-reset`)
 - Serial diagnostics print boot progress, Wi-Fi state, configured outputs, and important error/status messages
+- Output pins are configured/driven only after a 1-second post-boot delay
 - Firmware automatically attempts Wi-Fi reconnect after disconnects
 - Firmware performs a controlled restart for unrecoverable conditions after logging the reason to serial
 - FLASH/GPIO0 factory reset is checked only during a short boot-time sampling window

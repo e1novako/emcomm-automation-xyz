@@ -22,12 +22,13 @@ constexpr const char* IMPORT_CONFIG_PATH = "/vibrant_config_upload.json";
 constexpr const char* DEFAULT_STA_SSID = "Z-Wave Automation";
 constexpr const char* DEFAULT_STA_PASSWORD = "Fiber714Cvet";
 constexpr const char* DEFAULT_AP_PASSWORD = "Fiber714Cvet";
-constexpr const char* SOFTWARE_VERSION = "1.2.0";
+constexpr const char* SOFTWARE_VERSION = "1.2.1";
 constexpr uint8_t MAX_DEVICES = 16;
 constexpr uint8_t DEFAULT_NUM_OUTPUTS = 8;
 constexpr int8_t MAX_GPIO_PIN = 15;
 constexpr float MIN_WIFI_POWER = 5.0f;
 constexpr float MAX_WIFI_POWER = 20.5f;
+constexpr unsigned long OUTPUT_BOOT_ACTIVATION_DELAY_MS = 1000UL;
 constexpr unsigned long WIFI_RECONNECT_INTERVAL_MS = 15000UL;
 constexpr unsigned long WIFI_CONNECT_LOG_INTERVAL_MS = 5000UL;
 constexpr uint8_t FLASH_BUTTON_PIN = 0;
@@ -84,6 +85,9 @@ unsigned long lastWifiReconnectAttemptMs = 0;
 unsigned long lastWifiConnectLogMs = 0;
 unsigned long wifiDisconnectSinceMs = 0;
 uint8_t wifiRecoveryAttempts = 0;
+bool outputsActivated = false;
+bool outputActivationDeferredLogged = false;
+unsigned long bootStartMillis = 0;
 
 String htmlEscape(const String& value) {
   String out;
@@ -332,6 +336,10 @@ String pinLabel(int8_t pin) {
   return String(F("D")) + String(pin);
 }
 
+bool isValidOutputPin(int8_t pin) {
+  return pin >= 0 && pin <= MAX_GPIO_PIN;
+}
+
 void logDeviceSummary() {
   Serial.println(F("[INFO] Configured outputs:"));
   for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
@@ -348,18 +356,62 @@ void logDeviceSummary() {
   }
 }
 
-void applyOutputs() {
+void applyOutputsNow() {
   logStatus(F("Applying output states..."));
   for (uint8_t i = 0; i < MAX_DEVICES; ++i) {
     int8_t pin = cfg.devices[i].pin;
-    if (pin < 0 || pin > MAX_GPIO_PIN) {
+    if (!isValidOutputPin(pin)) {
       continue;
     }
     pinMode(pin, OUTPUT);
     digitalWrite(pin, cfg.devices[i].state ? HIGH : LOW);
 
   }
+  outputsActivated = true;
+  outputActivationDeferredLogged = false;
   logDeviceSummary();
+}
+
+bool outputActivationDelayElapsed() {
+  // Unsigned subtraction keeps this short post-boot elapsed-time check valid
+  // even if millis() later wraps around.
+  return (millis() - bootStartMillis) >= OUTPUT_BOOT_ACTIVATION_DELAY_MS;
+}
+
+void logDeferredOutputActivation() {
+  if (outputActivationDeferredLogged) return;
+  logStatus(String(F("Deferring output activation until ")) + String(OUTPUT_BOOT_ACTIVATION_DELAY_MS) +
+            F(" ms after boot."));
+  outputActivationDeferredLogged = true;
+}
+
+void applyOutputsWhenSafe() {
+  if (outputsActivated) return;
+  if (!outputActivationDelayElapsed()) {
+    logDeferredOutputActivation();
+    return;
+  }
+  logStatus(F("Post-boot output activation delay elapsed."));
+  applyOutputsNow();
+}
+
+void refreshOutputsForCurrentBootPhase() {
+  if (outputsActivated || outputActivationDelayElapsed()) {
+    applyOutputsNow();
+    return;
+  }
+  logStatus(F("Output configuration updated during boot delay; hardware activation remains deferred."));
+  outputActivationDeferredLogged = false;
+  logDeferredOutputActivation();
+}
+
+void prepareOutputsForBootPhase() {
+  if (outputsActivated) return;
+  if (outputActivationDelayElapsed()) {
+    applyOutputsNow();
+    return;
+  }
+  logDeferredOutputActivation();
 }
 
 void logWifiSummary(const String& softApSsid) {
@@ -558,11 +610,12 @@ void handleHome() {
   String html = F(
       "<!doctype html><html><head><meta charset='utf-8'><title>VIBRANT</title>"
       "<style>body{font-family:Arial,sans-serif;margin:20px;}table{border-collapse:collapse;width:100%;}"
-      "th,td{border:1px solid #ddd;padding:8px;}th{background:#f5f5f5;}a,button{padding:8px 10px;}</style>"
+      "th,td{border:1px solid #ddd;padding:8px;}th{background:#f5f5f5;}a,button{padding:8px 10px;}"
+      "input[type='checkbox']{width:18px;height:18px;}</style>"
       "</head><body><h1>VIBRANT Output Control</h1><p>Version: ");
   html += SOFTWARE_VERSION;
   html += F("</p><p><a href='/settings'>Settings</a></p>"
-            "<table><tr><th>#</th><th>Model</th><th>Name</th><th>Status</th><th>Toggle</th></tr>");
+            "<table><tr><th>#</th><th>Model</th><th>Name</th><th>Status</th><th>Output</th></tr>");
   if (usingFactoryPassword()) {
     html += passwordWarningHtml();
   }
@@ -570,7 +623,7 @@ void handleHome() {
   for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
     const DeviceEntry& d = cfg.devices[i];
     String status = F("Unassigned");
-    bool mapped = d.pin >= 0 && d.pin <= MAX_GPIO_PIN;
+    bool mapped = isValidOutputPin(d.pin);
     if (mapped) status = d.state ? F("ON") : F("OFF");
 
     html += "<tr><td>" + String(i + 1) + "</td><td>" + htmlEscape(d.model) + "</td><td>" + htmlEscape(d.name) +
@@ -617,7 +670,7 @@ void handleToggle() {
   }
 
   DeviceEntry& d = cfg.devices[idx];
-  if (d.pin < 0 || d.pin > MAX_GPIO_PIN) {
+  if (!isValidOutputPin(d.pin)) {
     logError(String(F("Toggle request for unmapped output: ")) + d.name);
     server.sendHeader("Location", "/");
     server.send(303);
@@ -625,8 +678,12 @@ void handleToggle() {
   }
 
   d.state = server.arg("state") == "1";
-  pinMode(d.pin, OUTPUT);
-  digitalWrite(d.pin, d.state ? HIGH : LOW);
+  if (outputsActivated) {
+    pinMode(d.pin, OUTPUT);
+    digitalWrite(d.pin, d.state ? HIGH : LOW);
+  } else {
+    applyOutputsWhenSafe();
+  }
   Serial.print(F("[INFO] Output toggled: "));
   Serial.print(d.name);
   Serial.print(F(" -> "));
@@ -647,8 +704,40 @@ void handleSettingsGet() {
       "<style>body{font-family:Arial,sans-serif;margin:20px;}fieldset{margin-bottom:16px;}"
       "label{display:block;margin:6px 0;}table{border-collapse:collapse;width:100%;}"
       "th,td{border:1px solid #ddd;padding:8px;}th{background:#f5f5f5;}input,select{width:100%;padding:6px;box-sizing:border-box;}"
-      "button{padding:8px 10px;margin-right:8px;}</style></head><body><h1>Settings</h1>"
-      "<p><a href='/'>Back to main page</a></p><form method='post' action='/settings'>");
+      "button{padding:8px 10px;margin-right:8px;}.bulk-actions{margin:10px 0;}</style>");
+  html += "<script>\n"
+          "function sequentialNameValue(template,index){\n"
+          "  const match=template.match(/#[0-9]+/);\n"
+          "  if(!match)return template;\n"
+          "  return template.replace(match[0],'#'+(index+1));\n"
+          "}\n"
+          "function copyFirstModelToAll(){\n"
+          "  const form=document.forms[0];\n"
+          "  if(!form)return;\n"
+          "  const first=form.elements['model_0'];\n"
+          "  if(!first)return;\n"
+          "  const count=form.querySelectorAll(\"input[name^='model_']\").length;\n"
+          "  for(let i=1;i<count;i++){\n"
+          "    const field=form.elements['model_'+i];\n"
+          "    if(field)field.value=first.value;\n"
+          "  }\n"
+          "}\n"
+          "function copyFirstNameToAll(){\n"
+          "  const form=document.forms[0];\n"
+          "  if(!form)return;\n"
+          "  const first=form.elements['name_0'];\n"
+          "  if(!first)return;\n"
+          "  const template=first.value;\n"
+          "  first.value=sequentialNameValue(template,0);\n"
+          "  const count=form.querySelectorAll(\"input[name^='name_']\").length;\n"
+          "  for(let i=1;i<count;i++){\n"
+          "    const field=form.elements['name_'+i];\n"
+          "    if(field)field.value=sequentialNameValue(template,i);\n"
+          "  }\n"
+          "}\n"
+          "</script>";
+  html += F("</head><body><h1>Settings</h1>"
+            "<p><a href='/'>Back to main page</a></p><form method='post' action='/settings'>");
   if (usingFactoryPassword()) {
     html += passwordWarningHtml();
   }
@@ -672,6 +761,9 @@ void handleSettingsGet() {
 
   html += "<fieldset><legend>Devices</legend>"
           "<label>Number of outputs (1 - 16) <input name='numOutputs' type='number' min='1' max='16' step='1' value='" + String(cfg.numOutputs) + "'></label>"
+          "<div class='bulk-actions'><button type='button' onclick='copyFirstModelToAll()'>Use first Model for all</button>"
+          "<button type='button' onclick='copyFirstNameToAll()'>Use first Name for all</button>"
+          "<span>If the first Name contains a placeholder like #1, copy rewrites the first row as #1 and fills later rows as #2, #3, and so on.</span></div>"
           "<table><tr><th>#</th><th>Model</th><th>Name</th><th>Control output</th></tr>";
   for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
     html += "<tr><td>" + String(i + 1) + "</td>"
@@ -763,7 +855,7 @@ void handleSettingsPost() {
       pin = -1;
     }
     cfg.devices[i].pin = pin;
-    if (cfg.devices[i].pin < 0) {
+    if (!isValidOutputPin(cfg.devices[i].pin)) {
       cfg.devices[i].state = false;
     }
   }
@@ -773,7 +865,7 @@ void handleSettingsPost() {
     restartDevice(F("Failed to persist updated settings."));
   }
   applyWifiSettings();
-  applyOutputs();
+  refreshOutputsForCurrentBootPhase();
 
   server.sendHeader("Location", "/settings");
   server.send(303);
@@ -879,7 +971,7 @@ void handleConfigImportDone() {
   }
   logStatus(F("Configuration import applied successfully."));
   applyWifiSettings();
-  applyOutputs();
+  refreshOutputsForCurrentBootPhase();
   server.sendHeader("Location", "/settings");
   server.send(303);
 }
@@ -893,7 +985,7 @@ void handleFactoryReset() {
     restartDevice(F("Failed to persist factory reset configuration."));
   }
   applyWifiSettings();
-  applyOutputs();
+  refreshOutputsForCurrentBootPhase();
   server.sendHeader("Location", "/settings");
   server.send(303);
 }
@@ -954,6 +1046,7 @@ void maintainWifiConnection() {
 
 void setup() {
   Serial.begin(115200);
+  bootStartMillis = millis();
   delay(100);
   Serial.println();
   Serial.println(F("[INFO] VIBRANT boot starting..."));
@@ -990,7 +1083,7 @@ void setup() {
   logLoadedWifiConfig();   // [DIAG] log cfg.staSsid and cfg.wifiPower
   applyWifiSettings();
   logWifiScan();           // [DIAG] log visible SSIDs with RSSI
-  applyOutputs();
+  prepareOutputsForBootPhase();
 
   logStatus(F("Registering web routes..."));
   server.on("/", HTTP_GET, handleHome);
@@ -1010,5 +1103,8 @@ void setup() {
 
 void loop() {
   server.handleClient();
+  if (!outputsActivated && outputActivationDelayElapsed()) {
+    applyOutputsWhenSafe();
+  }
   maintainWifiConnection();
 }
