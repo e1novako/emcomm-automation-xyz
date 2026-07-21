@@ -998,6 +998,8 @@ void handleStickserverMessage(const String& topicStr, const String& payloadStr) 
   String mid = "";
   if (request["mid"].is<const char*>()) {
     mid = request["mid"].as<const char*>();
+  } else if (request["mid"].is<int>()) {
+    mid = String(request["mid"].as<int>());
   } else if (request["mid"].is<long>()) {
     mid = String(request["mid"].as<long>());
   }
