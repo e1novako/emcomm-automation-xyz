@@ -997,9 +997,9 @@ void handleStickserverMessage(const String& topicStr, const String& payloadStr) 
   String cmd = request["cmd"] | String("");
   String mid = request["mid"] | String("");
   Serial.print(F("[INFO] [MQTT] Stickserver cmd: "));
-  Serial.print(cmd.isEmpty() ? F("(none)") : cmd.c_str());
+  Serial.print(cmd.isEmpty() ? String(F("(none)")) : cmd.c_str());
   Serial.print(F(" mid: "));
-  Serial.println(mid.isEmpty() ? F("(none)") : mid.c_str());
+  Serial.println(mid.isEmpty() ? String(F("(none)")) : mid.c_str());
   if (!request["ver"].is<int>()) {
     publishStickserverFailure(cmd.isEmpty() ? String(F("error")) : cmd,
                               STICKSERVER_PROTOCOL_VERSION,
