@@ -15,12 +15,14 @@ Required fields for every event message
   command   : str  — non-empty command identifier
   steps     : int  — current step position counter
   timestamp : str  — ISO-8601 UTC (or "T+<millis>ms" uptime fallback)
+  mid       : str  — non-empty message ID for stickserver correlation
 """
 
 import json
 import re
 import sys
 from datetime import datetime, timezone
+from itertools import count
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -29,8 +31,11 @@ ISO8601_RE = re.compile(
 )
 UPTIME_RE = re.compile(r"^T\+\d+ms$")
 
-REQUIRED_KEYS = {"event", "command", "steps", "timestamp"}
+REQUIRED_KEYS = {"event", "command", "steps", "timestamp", "mid"}
 VALID_EVENTS  = {"motion_started", "endstop_reached"}
+
+# Monotonic counter for generating unique mid values in test payloads.
+_mid_counter = count(1)
 
 
 def validate_payload(raw: str) -> dict:
@@ -55,19 +60,26 @@ def validate_payload(raw: str) -> dict:
         f"timestamp '{ts}' is neither ISO-8601 UTC nor uptime fallback"
     )
 
+    assert isinstance(payload["mid"], str) and payload["mid"], \
+        "mid must be a non-empty string"
+
     return payload
 
 
 def make_payload(event: str, command: str, steps: int,
-                 timestamp: str | None = None) -> str:
+                 timestamp: str | None = None,
+                 mid: str | None = None) -> str:
     """Build a JSON event payload string (mirrors firmware logic)."""
     if timestamp is None:
         timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    if mid is None:
+        mid = f"test-device-{next(_mid_counter)}"
     return json.dumps({
         "event":     event,
         "command":   command,
         "steps":     steps,
         "timestamp": timestamp,
+        "mid":       mid,
     })
 
 
@@ -146,6 +158,42 @@ def test_missing_key_rejected() -> None:
             raise
 
 
+def test_mid_is_present_and_non_empty() -> None:
+    """Every event payload must carry a non-empty mid for stickserver correlation."""
+    raw = make_payload("motion_started", "move:100", 0, mid="device-abc-1")
+    p   = validate_payload(raw)
+    assert p["mid"] == "device-abc-1"
+    print(f"  PASS  mid present and non-empty      payload={raw}")
+
+
+def test_missing_mid_rejected() -> None:
+    payload = {"event": "motion_started", "command": "move:1",
+               "steps": 0, "timestamp": "T+0ms"}
+    raw = json.dumps(payload)
+    try:
+        validate_payload(raw)
+        raise AssertionError("Should have raised on missing 'mid'")
+    except AssertionError as exc:
+        if "Missing keys" in str(exc):
+            print("  PASS  missing mid correctly rejected")
+        else:
+            raise
+
+
+def test_empty_mid_rejected() -> None:
+    payload = {"event": "motion_started", "command": "move:1",
+               "steps": 0, "timestamp": "T+0ms", "mid": ""}
+    raw = json.dumps(payload)
+    try:
+        validate_payload(raw)
+        raise AssertionError("Should have raised on empty 'mid'")
+    except AssertionError as exc:
+        if "mid must be a non-empty string" in str(exc):
+            print("  PASS  empty mid correctly rejected")
+        else:
+            raise
+
+
 def test_unknown_command_fallback() -> None:
     """Firmware emits 'unknown' when activeCommand is empty."""
     raw = make_payload("motion_started", "unknown", 0)
@@ -165,6 +213,9 @@ TESTS = [
     test_unknown_command_fallback,
     test_invalid_event_rejected,
     test_missing_key_rejected,
+    test_mid_is_present_and_non_empty,
+    test_missing_mid_rejected,
+    test_empty_mid_rejected,
 ]
 
 if __name__ == "__main__":

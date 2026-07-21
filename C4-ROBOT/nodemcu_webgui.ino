@@ -904,11 +904,17 @@ static String isoTimestamp() {
 
 // Maximum serialised byte length of one event payload.
 // Breakdown: ~15 (keys+braces) + 20 (event value) + 30 (command) +
-//            12 (steps) + 25 (timestamp) + margin = ~160 bytes.
-static const size_t MQTT_EVENT_BUF_SIZE = 160;
+//            12 (steps) + 25 (timestamp) + 50 (mid) + margin = ~224 bytes.
+static const size_t MQTT_EVENT_BUF_SIZE = 224;
+
+// Monotonic counter used to generate unique mid values for event messages.
+static uint32_t eventMsgSeq = 0;
 
 // Publish a JSON event message to T_EVENT.
-// Payload fields: event, command, steps, timestamp.
+// Payload fields: event, command, steps, timestamp, mid.
+// The mid field is a unique message ID (<deviceName>-<counter>) that
+// downstream consumers can use for request-response correlation when
+// forwarding commands to the stickserver (e.g. VIBRANT).
 // Non-blocking: mqtt.publish() buffers the message; it is flushed
 // during the next mqtt.loop() call (serviceBackground in the step loop).
 static void publishEvent(const char* event, long steps) {
@@ -918,6 +924,7 @@ static void publishEvent(const char* event, long steps) {
   doc["command"]   = activeCommand.length() ? activeCommand : String("unknown");
   doc["steps"]     = steps;
   doc["timestamp"] = isoTimestamp();
+  doc["mid"]       = deviceName + "-" + String(++eventMsgSeq);
   char buf[MQTT_EVENT_BUF_SIZE];
   serializeJson(doc, buf, sizeof(buf));
   mqtt.publish(T_EVENT.c_str(), buf);
