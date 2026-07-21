@@ -1053,12 +1053,16 @@ void handleStickserverMessage(const String& topicStr, const String& payloadStr) 
   }
 
   // Shared euid parser: accepts string or integer and normalizes to String.
-  auto parseEuidValue = [](JsonVariantConst v) -> String {
+  // Logs unrecognized types when cfg.debugSerial is enabled.
+  auto parseEuidValue = [&](JsonVariantConst v) -> String {
     if (v.is<const char*>()) return v.as<const char*>();
     if (v.is<int>()) return String(v.as<int>());
     if (v.is<long>()) return String(v.as<long>());
     if (v.is<unsigned int>()) return String(v.as<unsigned int>());
     if (v.is<unsigned long>()) return String(v.as<unsigned long>());
+    if (cfg.debugSerial && !v.isNull()) {
+      Serial.println(F("[WARN] [MQTT] parseEuidValue: unrecognized euid type; treating as missing."));
+    }
     return String("");
   };
 
