@@ -2,6 +2,7 @@
 #include <LittleFS.h>
 #include <ESP8266WiFi.h>
 #include <ESP8266WebServer.h>
+#include <PubSubClient.h>
 #include <ArduinoJson.h>
 
 extern "C" {
@@ -37,6 +38,8 @@ constexpr uint8_t FLASH_BOOT_REQUIRED_LOW_PERCENT = 30;
 constexpr unsigned long FLASH_BOOT_MIN_SAMPLES = 4UL;
 constexpr unsigned long WIFI_RECOVERY_WINDOW_MS = 180000UL;
 constexpr uint8_t MAX_WIFI_RECOVERY_ATTEMPTS = 12;
+constexpr unsigned long MQTT_RECONNECT_INTERVAL_MS = 15000UL;
+constexpr uint16_t DEFAULT_MQTT_PORT = 1883;
 
 constexpr unsigned long ceilDiv(unsigned long numerator, unsigned long denominator) {
   if (denominator == 0) return 0;
@@ -73,6 +76,11 @@ struct DeviceConfig {
   float wifiPower;
   uint8_t numOutputs;
   DeviceEntry devices[MAX_DEVICES];
+  bool mqttEnabled;
+  String mqttHost;
+  uint16_t mqttPort;
+  String mqttUser;
+  String mqttPassword;
 };
 
 struct PinMapping {
@@ -108,6 +116,9 @@ uint8_t wifiRecoveryAttempts = 0;
 bool outputsActivated = false;
 bool outputActivationDeferredLogged = false;
 unsigned long bootStartMillis = 0;
+WiFiClient mqttWifiClient;
+PubSubClient mqttClient(mqttWifiClient);
+unsigned long lastMqttReconnectMs = 0;
 
 String htmlEscape(const String& value) {
   String out;
@@ -249,12 +260,25 @@ void setFactoryDefaults() {
   cfg.apPassword = DEFAULT_AP_PASSWORD;
   cfg.wifiPower = 20.5f;
   cfg.numOutputs = DEFAULT_NUM_OUTPUTS;
+
+  // Default GPIO pins for D0-D7 in NodeMCU v3 order
+  static const int8_t DEFAULT_OUTPUT_PINS[] = {16, 5, 4, 0, 2, 14, 12, 13};
+  static const uint8_t DEFAULT_OUTPUT_PIN_COUNT =
+      sizeof(DEFAULT_OUTPUT_PINS) / sizeof(DEFAULT_OUTPUT_PINS[0]);
+
   for (uint8_t i = 0; i < MAX_DEVICES; ++i) {
     cfg.devices[i].model = String(F("Model ")) + String(i + 1);
     cfg.devices[i].name = String(F("Output ")) + String(i + 1);
-    cfg.devices[i].pin = -1;
+    cfg.devices[i].pin = (i < DEFAULT_OUTPUT_PIN_COUNT) ? DEFAULT_OUTPUT_PINS[i] : -1;
     cfg.devices[i].state = false;
   }
+
+  cfg.mqttEnabled = false;
+  cfg.mqttHost = "";
+  cfg.mqttPort = DEFAULT_MQTT_PORT;
+  cfg.mqttUser = "";
+  cfg.mqttPassword = "";
+
   logStatus(F("Factory defaults loaded."));
 }
 
@@ -267,6 +291,13 @@ bool saveConfig() {
   doc["apPassword"] = cfg.apPassword;
   doc["wifiPower"] = cfg.wifiPower;
   doc["numOutputs"] = cfg.numOutputs;
+
+  JsonObject mqtt = doc["mqtt"].to<JsonObject>();
+  mqtt["enabled"] = cfg.mqttEnabled;
+  mqtt["host"] = cfg.mqttHost;
+  mqtt["port"] = cfg.mqttPort;
+  mqtt["user"] = cfg.mqttUser;
+  mqtt["password"] = cfg.mqttPassword;
 
   JsonArray devices = doc["devices"].to<JsonArray>();
   for (uint8_t i = 0; i < MAX_DEVICES; ++i) {
@@ -353,6 +384,13 @@ bool loadConfig() {
   if (cfg.apPassword.isEmpty()) cfg.apPassword = DEFAULT_AP_PASSWORD;
   if (cfg.hostname.isEmpty()) cfg.hostname = defaultHostnameFromMac(cfg.mac);
 
+  JsonVariantConst mqttSection = doc["mqtt"];
+  cfg.mqttEnabled = mqttSection["enabled"] | false;
+  cfg.mqttHost = mqttSection["host"] | String("");
+  cfg.mqttPort = static_cast<uint16_t>(mqttSection["port"] | static_cast<uint16_t>(DEFAULT_MQTT_PORT));
+  if (cfg.mqttPort == 0) cfg.mqttPort = DEFAULT_MQTT_PORT;
+  cfg.mqttUser = mqttSection["user"] | String("");
+  cfg.mqttPassword = mqttSection["password"] | String("");
 
   logStatus(F("Configuration loaded successfully."));
   return true;
@@ -633,6 +671,80 @@ bool ensureAuthorized() {
   return false;
 }
 
+// ---------------------------------------------------------------------------
+// MQTT helpers
+// ---------------------------------------------------------------------------
+String mqttOutputStateTopic(uint8_t idx) {
+  return String(F("vibrant/")) + cfg.hostname + F("/output/") + String(idx) + F("/state");
+}
+
+String mqttOutputSetTopic(uint8_t idx) {
+  return String(F("vibrant/")) + cfg.hostname + F("/output/") + String(idx) + F("/set");
+}
+
+void mqttPublishOutputState(uint8_t idx) {
+  if (!cfg.mqttEnabled || !mqttClient.connected()) return;
+  String topic = mqttOutputStateTopic(idx);
+  const char* payload = cfg.devices[idx].state ? "1" : "0";
+  mqttClient.publish(topic.c_str(), payload, true);
+}
+
+void mqttCallback(char* topic, byte* payload, unsigned int length) {
+  String topicStr(topic);
+  String msg;
+  msg.reserve(length);
+  for (unsigned int i = 0; i < length; ++i) msg += (char)payload[i];
+  for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
+    if (topicStr == mqttOutputSetTopic(i)) {
+      DeviceEntry& d = cfg.devices[i];
+      if (!isValidOutputPin(d.pin)) return;
+      bool newState = (msg == "1" || msg.equalsIgnoreCase("ON") || msg.equalsIgnoreCase("true"));
+      d.state = newState;
+      if (outputsActivated) {
+        pinMode(d.pin, OUTPUT);
+        digitalWrite(d.pin, d.state ? HIGH : LOW);
+      }
+      Serial.print(F("[INFO] MQTT output set: "));
+      Serial.print(d.name);
+      Serial.print(F(" -> "));
+      Serial.println(d.state ? F("ON") : F("OFF"));
+      if (!saveConfig()) {
+        restartDevice(F("Failed to persist MQTT-triggered output state."));
+      }
+      mqttPublishOutputState(i);
+      return;
+    }
+  }
+}
+
+bool mqttEnsureConnected() {
+  if (!cfg.mqttEnabled || cfg.mqttHost.isEmpty()) return false;
+  if (mqttClient.connected()) return true;
+  if (WiFi.status() != WL_CONNECTED) return false;
+
+  mqttClient.setServer(cfg.mqttHost.c_str(), cfg.mqttPort);
+  mqttClient.setCallback(mqttCallback);
+
+  String clientId = cfg.hostname;
+  bool ok;
+  if (!cfg.mqttUser.isEmpty()) {
+    ok = mqttClient.connect(clientId.c_str(), cfg.mqttUser.c_str(), cfg.mqttPassword.c_str());
+  } else {
+    ok = mqttClient.connect(clientId.c_str());
+  }
+  if (!ok) {
+    logWarning(String(F("MQTT connect failed, state=")) + String(mqttClient.state()));
+    return false;
+  }
+
+  for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
+    String setTopic = mqttOutputSetTopic(i);
+    mqttClient.subscribe(setTopic.c_str());
+  }
+  logStatus(String(F("MQTT connected to ")) + cfg.mqttHost + F(":") + String(cfg.mqttPort));
+  return true;
+}
+
 void handleHome() {
   String html = F(
       "<!doctype html><html><head><meta charset='utf-8'><title>VIBRANT</title>"
@@ -718,6 +830,7 @@ void handleToggle() {
   if (!saveConfig()) {
     restartDevice(F("Failed to persist output toggle state."));
   }
+  mqttPublishOutputState(static_cast<uint8_t>(idx));
 
   server.sendHeader("Location", "/");
   server.send(303);
@@ -795,6 +908,21 @@ void handleSettingsGet() {
           "<label>Hostname for DHCP <input name='hostname' value='" + htmlEscape(cfg.hostname) + "'></label>"
 
           "<label>Wi-Fi power (5.0 - 20.5 dBm) <input name='wifiPower' type='number' min='5' max='20.5' step='0.1' value='" + String(cfg.wifiPower, 1) + "'></label>"
+          "</fieldset>";
+
+  html += "<fieldset><legend>MQTT</legend>"
+          "<label><input name='mqttEnabled' type='checkbox' value='1'";
+  if (cfg.mqttEnabled) html += " checked";
+  html += "> Enable MQTT</label>"
+          "<label>MQTT host <input name='mqttHost' value='" + htmlEscape(cfg.mqttHost) + "' placeholder='e.g. 192.168.1.10'></label>"
+          "<label>MQTT port <input name='mqttPort' type='number' min='1' max='65535' value='" + String(cfg.mqttPort) + "'></label>"
+          "<label>MQTT username <input name='mqttUser' value='" + htmlEscape(cfg.mqttUser) + "' placeholder='Leave empty for anonymous'></label>"
+          "<label for='mqttPass'>MQTT password</label>"
+          "<input id='mqttPass' name='mqttPass' type='password' value='' placeholder='Leave empty to keep current MQTT password'>"
+          "<p style='font-size:0.9em;color:#555;'>When enabled, each output state is published to "
+          "<code>vibrant/&lt;hostname&gt;/output/&lt;N&gt;/state</code> (retained). "
+          "Send <code>1</code> or <code>0</code> to "
+          "<code>vibrant/&lt;hostname&gt;/output/&lt;N&gt;/set</code> to control outputs via MQTT.</p>"
           "</fieldset>";
 
   html += "<fieldset><legend>Devices</legend>"
@@ -899,12 +1027,36 @@ void handleSettingsPost() {
     }
   }
 
+  // MQTT settings
+  cfg.mqttEnabled = server.hasArg("mqttEnabled") && server.arg("mqttEnabled") == "1";
+  cfg.mqttHost = server.arg("mqttHost");
+  {
+    int parsedPort = -1;
+    if (parseIndexValue(server.arg("mqttPort"), parsedPort) && parsedPort >= 1 && parsedPort <= 65535) {
+      cfg.mqttPort = static_cast<uint16_t>(parsedPort);
+    } else {
+      cfg.mqttPort = DEFAULT_MQTT_PORT;
+    }
+  }
+  cfg.mqttUser = server.arg("mqttUser");
+  {
+    String newMqttPassword = server.arg("mqttPass");
+    if (!newMqttPassword.isEmpty()) {
+      cfg.mqttPassword = newMqttPassword;
+    }
+  }
+
   logStatus(F("Settings updated from web UI."));
   if (!saveConfig()) {
     restartDevice(F("Failed to persist updated settings."));
   }
   applyWifiSettings();
   refreshOutputsForCurrentBootPhase();
+  mqttClient.disconnect();
+  if (cfg.mqttEnabled) {
+    lastMqttReconnectMs = 0;
+    mqttEnsureConnected();
+  }
 
   server.sendHeader("Location", "/settings");
   server.send(303);
@@ -1123,6 +1275,7 @@ void setup() {
   applyWifiSettings();
   logWifiScan();           // [DIAG] log visible SSIDs with RSSI
   prepareOutputsForBootPhase();
+  mqttEnsureConnected();
 
   logStatus(F("Registering web routes..."));
   server.on("/", HTTP_GET, handleHome);
@@ -1146,4 +1299,15 @@ void loop() {
     applyOutputsWhenSafe();
   }
   maintainWifiConnection();
+  if (cfg.mqttEnabled) {
+    if (mqttClient.connected()) {
+      mqttClient.loop();
+    } else {
+      unsigned long now = millis();
+      if (now - lastMqttReconnectMs >= MQTT_RECONNECT_INTERVAL_MS) {
+        lastMqttReconnectMs = now;
+        mqttEnsureConnected();
+      }
+    }
+  }
 }
