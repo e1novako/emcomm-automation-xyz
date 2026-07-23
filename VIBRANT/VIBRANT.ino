@@ -51,7 +51,6 @@ constexpr uint8_t STICKSERVER_PROTOCOL_VERSION = 1;
 constexpr const char* STICKSERVER_OUTPUT_TYPE = "vibrant-output";
 // Background load-action timing
 constexpr uint8_t LEAVE_MESH_CYCLES = 5;
-constexpr uint8_t FACTORY_RESET_LOAD_CYCLES = 13;
 constexpr uint8_t REBOOT_SEQUENCE_CYCLES = 1;
 // Number of D0-D7 entries at the start of OUTPUT_PIN_MAPPINGS used for default assignment
 constexpr uint8_t DEFAULT_D0_D7_COUNT = 8;
@@ -60,6 +59,13 @@ constexpr unsigned long ACTION_CYCLE_ON_MS = 1000UL;
 constexpr unsigned long ACTION_FINAL_WAIT_MS = 5000UL;
 constexpr unsigned long ACTION_TRIGGER_OFF_MS = 2000UL;
 constexpr unsigned long ACTION_TRIGGER_ON_MS = 1000UL;
+// Dedicated factory-reset load action timing
+constexpr uint8_t FACTORY_RESET_CYCLES = 5;
+constexpr unsigned long FACTORY_RESET_PREP_ON_MS = 2000UL;
+constexpr unsigned long FACTORY_RESET_CYCLE_OFF_MS = 500UL;
+constexpr unsigned long FACTORY_RESET_CYCLE_ON_MS = 1200UL;
+constexpr unsigned long FACTORY_RESET_FINAL_WAIT_MS = 2000UL;
+constexpr unsigned long FACTORY_RESET_FINAL_OFF_MS = 500UL;
 
 constexpr unsigned long ceilDiv(unsigned long numerator, unsigned long denominator) {
   if (denominator == 0) return 0;
@@ -113,7 +119,13 @@ enum ActionPhase : uint8_t {
   APHASE_CYCLE_ON,
   APHASE_FINAL_WAIT,
   APHASE_TRIGGER_OFF,
-  APHASE_TRIGGER_ON
+  APHASE_TRIGGER_ON,
+  // Dedicated factory-reset phases
+  APHASE_FACTORY_RESET_PREP_ON,
+  APHASE_FACTORY_RESET_CYCLE_OFF,
+  APHASE_FACTORY_RESET_CYCLE_ON,
+  APHASE_FACTORY_RESET_FINAL_WAIT,
+  APHASE_FACTORY_RESET_FINAL_OFF
 };
 
 struct ActiveAction {
@@ -442,7 +454,7 @@ bool loadConfig() {
       cfg.devices[i].model = d["model"] | String(F("Model ")) + String(i + 1);
       cfg.devices[i].name = d["name"] | String(F("Output ")) + String(i + 1);
       cfg.devices[i].pin = static_cast<int8_t>(d["pin"] | -1);
-      cfg.devices[i].state = d["state"] | false;
+      cfg.devices[i].state = false;  // Always boot OFF; do not restore runtime ON state
     } else {
       cfg.devices[i].model = String(F("Model ")) + String(i + 1);
       cfg.devices[i].name = String(F("Output ")) + String(i + 1);
@@ -760,6 +772,11 @@ String actionPhaseName() {
     case APHASE_FINAL_WAIT:  return F("waiting (final)");
     case APHASE_TRIGGER_OFF: return F("triggering off");
     case APHASE_TRIGGER_ON:  return F("triggering on");
+    case APHASE_FACTORY_RESET_PREP_ON:    return F("factory reset prep on");
+    case APHASE_FACTORY_RESET_CYCLE_OFF:  return F("factory reset cycling off");
+    case APHASE_FACTORY_RESET_CYCLE_ON:   return F("factory reset cycling on");
+    case APHASE_FACTORY_RESET_FINAL_WAIT: return F("factory reset waiting");
+    case APHASE_FACTORY_RESET_FINAL_OFF:  return F("factory reset final off");
     default:                 return F("idle");
   }
 }
@@ -1623,6 +1640,25 @@ void startSequenceAction(uint8_t deviceIdx, uint8_t totalCycles) {
   mqttPublishOutputState(deviceIdx);
 }
 
+void startFactoryResetAction(uint8_t deviceIdx) {
+  bgAction.deviceIdx = deviceIdx;
+  bgAction.cyclesRemaining = FACTORY_RESET_CYCLES;
+  bgAction.phaseStartMs = millis();
+  if (!cfg.devices[deviceIdx].state) {
+    // Output was OFF: turn it ON and wait before starting cycles
+    logStatus(String(F("factory_reset: output was OFF, turning ON for prep")) );
+    setOutputDirect(deviceIdx, true);
+    mqttPublishOutputState(deviceIdx);
+    bgAction.phase = APHASE_FACTORY_RESET_PREP_ON;
+  } else {
+    // Output was ON: start cycling immediately
+    logStatus(String(F("factory_reset: output was ON, starting cycles immediately")));
+    setOutputDirect(deviceIdx, false);
+    mqttPublishOutputState(deviceIdx);
+    bgAction.phase = APHASE_FACTORY_RESET_CYCLE_OFF;
+  }
+}
+
 void finishAction() {
   uint8_t idx = bgAction.deviceIdx;
   bgAction.phase = APHASE_NONE;
@@ -1683,6 +1719,50 @@ void maintainBackgroundAction() {
         finishAction();
       }
       break;
+    case APHASE_FACTORY_RESET_PREP_ON:
+      if (now - bgAction.phaseStartMs >= FACTORY_RESET_PREP_ON_MS) {
+        setOutputDirect(idx, false);
+        mqttPublishOutputState(idx);
+        bgAction.phase = APHASE_FACTORY_RESET_CYCLE_OFF;
+        bgAction.phaseStartMs = now;
+      }
+      break;
+    case APHASE_FACTORY_RESET_CYCLE_OFF:
+      if (now - bgAction.phaseStartMs >= FACTORY_RESET_CYCLE_OFF_MS) {
+        setOutputDirect(idx, true);
+        mqttPublishOutputState(idx);
+        bgAction.phase = APHASE_FACTORY_RESET_CYCLE_ON;
+        bgAction.phaseStartMs = now;
+      }
+      break;
+    case APHASE_FACTORY_RESET_CYCLE_ON:
+      if (now - bgAction.phaseStartMs >= FACTORY_RESET_CYCLE_ON_MS) {
+        --bgAction.cyclesRemaining;
+        if (bgAction.cyclesRemaining > 0) {
+          setOutputDirect(idx, false);
+          mqttPublishOutputState(idx);
+          bgAction.phase = APHASE_FACTORY_RESET_CYCLE_OFF;
+          bgAction.phaseStartMs = now;
+        } else {
+          // All cycles done; enter final wait (output is ON)
+          bgAction.phase = APHASE_FACTORY_RESET_FINAL_WAIT;
+          bgAction.phaseStartMs = now;
+        }
+      }
+      break;
+    case APHASE_FACTORY_RESET_FINAL_WAIT:
+      if (now - bgAction.phaseStartMs >= FACTORY_RESET_FINAL_WAIT_MS) {
+        setOutputDirect(idx, false);
+        mqttPublishOutputState(idx);
+        bgAction.phase = APHASE_FACTORY_RESET_FINAL_OFF;
+        bgAction.phaseStartMs = now;
+      }
+      break;
+    case APHASE_FACTORY_RESET_FINAL_OFF:
+      if (now - bgAction.phaseStartMs >= FACTORY_RESET_FINAL_OFF_MS) {
+        finishAction();
+      }
+      break;
     default:
       bgAction.phase = APHASE_NONE;
       break;
@@ -1728,7 +1808,7 @@ bool handleLoadAction(uint8_t idx, const String& cmd) {
   }
   if (cmd == F("factory_reset")) {
     logStatus(String(F("Starting factory_reset action for output ")) + String(idx + 1));
-    startSequenceAction(idx, FACTORY_RESET_LOAD_CYCLES);
+    startFactoryResetAction(idx);
     return true;
   }
   if (cmd == F("reboot")) {
@@ -1938,7 +2018,8 @@ void handleActionStatus() {
   String json = "{\"running\":";
   json += running ? "true" : "false";
   if (running) {
-    bool inCyclePhase = (bgAction.phase == APHASE_CYCLE_OFF || bgAction.phase == APHASE_CYCLE_ON);
+    bool inCyclePhase = (bgAction.phase == APHASE_CYCLE_OFF || bgAction.phase == APHASE_CYCLE_ON ||
+                         bgAction.phase == APHASE_FACTORY_RESET_CYCLE_OFF || bgAction.phase == APHASE_FACTORY_RESET_CYCLE_ON);
     json += ",\"idx\":" + String(bgAction.deviceIdx);
     json += ",\"phase\":\"" + actionPhaseName() + "\"";
     json += ",\"cyclesRemaining\":" + String(inCyclePhase ? bgAction.cyclesRemaining : 0);
