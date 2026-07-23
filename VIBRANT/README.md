@@ -32,6 +32,7 @@ Change the password immediately in **Settings** after the first boot.
   - Export backup (`/config/export`)
   - Import backup (`/config/import`)
   - Factory reset to defaults (`/config/factory-reset`)
+- Web-based OTA firmware update (`/firmware/update`): upload a compiled `.bin` directly from the browser; the device reboots automatically after a successful flash
 - Serial diagnostics print boot progress, Wi-Fi state, configured outputs, and important error/status messages
 - Output pins are configured/driven only after a 1-second post-boot delay
 - Firmware automatically attempts Wi-Fi reconnect after disconnects
@@ -139,9 +140,36 @@ When MQTT is enabled in Settings, the firmware:
 
 MQTT username and password are optional (leave blank for anonymous access). The MQTT password field is never pre-filled in the form; leave it empty to keep the current stored password.
 
+## Firmware update (OTA)
+
+VIBRANT supports web-based over-the-air (OTA) firmware updates. This is the primary supported method for updating the firmware without a USB cable.
+
+### Web UI firmware upload (primary method)
+
+1. Compile `VIBRANT/VIBRANT.ino` for your NodeMCU board to produce a `.bin` file.
+   - Arduino IDE: **Sketch → Export Compiled Binary**
+   - `arduino-cli`: `arduino-cli compile --fqbn esp8266:esp8266:nodemcuv2 --export-binaries VIBRANT/VIBRANT.ino`
+2. Open the device web UI and log in.
+3. Go to **Settings → Firmware update** and click **Open firmware update page**, or navigate directly to `http://<device-ip>/firmware/update`.
+4. Select the compiled `.bin` file and click **Upload and flash**.
+5. Wait for the upload to complete. The device reboots automatically.
+6. The page reloads after 15 seconds. Verify the new firmware is running.
+
+> **Warning:** Do not power off the device during an update. A power loss mid-flash may require USB reflashing to recover.
+
+### ArduinoOTA (not included)
+
+ArduinoOTA (IDE-based OTA via Wi-Fi) is **not included** in this firmware. The web UI upload approach is preferred because:
+
+- It matches the existing browser-based admin workflow.
+- It does not require the Arduino IDE or network service discovery (mDNS) to be working.
+- It allows non-developer field updates using only a browser.
+
+If ArduinoOTA is needed for a specific development workflow, it can be added by including `<ArduinoOTA.h>`, calling `ArduinoOTA.begin()` in `setup()`, and `ArduinoOTA.handle()` in `loop()`. It is intentionally excluded from the default build.
+
 ## Arduino libraries
 
-- ESP8266 core libraries (`ESP8266WiFi`, `ESP8266WebServer`) from ESP8266 board package 3.x
+- ESP8266 core libraries (`ESP8266WiFi`, `ESP8266WebServer`, `Updater`) from ESP8266 board package 3.x
 - `LittleFS`
 - `ArduinoJson` 7.x
 - `PubSubClient` 2.x (for MQTT)
