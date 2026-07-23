@@ -2498,8 +2498,9 @@ void handleFirmwareUpdateDone() {
                 "<h1>Firmware update successful</h1>"
                 "<p>The device is rebooting. This page will reload in 15 seconds.</p>"
                 "</body></html>"));
-  // Allow time for the HTTP response to be fully transmitted before rebooting.
-  delay(500);
+  // Flush the TCP send buffer and allow time for the HTTP response to reach the client.
+  server.client().flush();
+  delay(200);
   ESP.restart();
 }
 
