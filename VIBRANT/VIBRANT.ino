@@ -4,6 +4,7 @@
 #include <ESP8266WebServer.h>
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
+#include <Updater.h>
 
 extern "C" {
 #include "user_interface.h"
@@ -167,6 +168,8 @@ DeviceConfig cfg;
 ESP8266WebServer server(80);
 File importFile;
 bool importFailed = false;
+bool otaUpdateFailed = false;
+String otaUpdateError;
 wl_status_t lastWifiStatus = WL_IDLE_STATUS;
 unsigned long lastWifiReconnectAttemptMs = 0;
 unsigned long lastWifiConnectLogMs = 0;
@@ -2160,7 +2163,11 @@ void handleSettingsGet() {
           "<button type='submit'>Factory reset</button></form>"
           "<form method='post' action='/config/import' enctype='multipart/form-data'>"
           "<label>Import backup JSON <input type='file' name='config' accept='application/json' required></label>"
-          "<button type='submit'>Upload and restore</button></form>";
+          "<button type='submit'>Upload and restore</button></form>"
+          "<h2>Firmware update</h2>"
+          "<p>Upload a compiled <code>.bin</code> to update firmware over the network. "
+          "The device reboots automatically after a successful flash.</p>"
+          "<p><a href='/firmware/update'>Open firmware update page</a></p>";
 
   html += F("</body></html>");
   server.send(200, "text/html", html);
@@ -2392,6 +2399,98 @@ void handleFactoryReset() {
   server.send(303);
 }
 
+void handleFirmwareUpdatePage() {
+  if (!ensureAuthorized()) return;
+
+  String html = F(
+      "<!doctype html><html><head><meta charset='utf-8'><title>Firmware Update</title>"
+      "<style>body{font-family:Arial,sans-serif;margin:20px;}fieldset{margin-bottom:16px;}"
+      "label{display:block;margin:6px 0;}button{padding:8px 10px;margin-right:8px;}"
+      ".warn{color:#b00020;font-weight:bold;}</style></head><body>"
+      "<h1>Firmware Update</h1>"
+      "<p><a href='/settings'>Back to Settings</a></p>"
+      "<p>Upload a compiled <code>.bin</code> firmware file to update the device. "
+      "The device will reboot automatically after a successful update.</p>"
+      "<p class='warn'>Warning: Do not power off the device during an update. "
+      "Interrupted updates may require USB reflashing to recover.</p>"
+      "<form method='post' action='/firmware/update' enctype='multipart/form-data'>"
+      "<label>Firmware file (.bin) <input type='file' name='firmware' accept='.bin' required></label>"
+      "<button type='submit'>Upload and flash</button></form>"
+      "</body></html>");
+  server.send(200, "text/html", html);
+}
+
+void handleFirmwareUpdateUpload() {
+  if (!server.authenticate("admin", cfg.apPassword.c_str())) {
+    otaUpdateFailed = true;
+    server.requestAuthentication();
+    return;
+  }
+
+  HTTPUpload& upload = server.upload();
+  if (upload.status == UPLOAD_FILE_START) {
+    otaUpdateFailed = false;
+    otaUpdateError = "";
+    logStatus(String(F("OTA firmware update upload started: ")) + upload.filename);
+    uint32_t maxSketchSize = (ESP.getFreeSketchSpace() - 0x1000) & 0xFFFFF000;
+    if (!Update.begin(maxSketchSize)) {
+      otaUpdateFailed = true;
+      otaUpdateError = Update.getErrorString();
+      logError(String(F("OTA Update.begin failed: ")) + otaUpdateError);
+    }
+  } else if (upload.status == UPLOAD_FILE_WRITE) {
+    if (!otaUpdateFailed) {
+      if (Update.write(upload.buf, upload.currentSize) != upload.currentSize) {
+        otaUpdateFailed = true;
+        otaUpdateError = Update.getErrorString();
+        logError(String(F("OTA Update.write failed: ")) + otaUpdateError);
+      }
+    }
+  } else if (upload.status == UPLOAD_FILE_END) {
+    if (!otaUpdateFailed) {
+      if (!Update.end(true)) {
+        otaUpdateFailed = true;
+        otaUpdateError = Update.getErrorString();
+        logError(String(F("OTA Update.end failed: ")) + otaUpdateError);
+      } else {
+        logStatus(String(F("OTA firmware update upload complete: ")) + String(upload.totalSize) + F(" bytes written."));
+      }
+    }
+  } else if (upload.status == UPLOAD_FILE_ABORTED) {
+    otaUpdateFailed = true;
+    otaUpdateError = F("Upload aborted by client.");
+    Update.end(false);
+    logError(F("OTA firmware update upload was aborted."));
+  }
+}
+
+void handleFirmwareUpdateDone() {
+  if (!ensureAuthorized()) return;
+  if (otaUpdateFailed) {
+    logError(String(F("OTA firmware update failed: ")) + otaUpdateError);
+    String html = F(
+        "<!doctype html><html><head><meta charset='utf-8'><title>Firmware Update Failed</title>"
+        "<style>body{font-family:Arial,sans-serif;margin:20px;}.err{color:#b00020;}</style></head><body>"
+        "<h1 class='err'>Firmware Update Failed</h1><p>");
+    html += htmlEscape(otaUpdateError);
+    html += F("</p><p><a href='/firmware/update'>Try again</a> | <a href='/settings'>Settings</a></p>"
+              "</body></html>");
+    server.send(500, "text/html", html);
+    return;
+  }
+  logStatus(F("OTA firmware update succeeded. Rebooting..."));
+  server.send(200, "text/html",
+              F("<!doctype html><html><head><meta charset='utf-8'>"
+                "<meta http-equiv='refresh' content='15;url=/'>"
+                "<title>Update OK</title>"
+                "<style>body{font-family:Arial,sans-serif;margin:20px;}</style></head><body>"
+                "<h1>Firmware update successful</h1>"
+                "<p>The device is rebooting. This page will reload in 15 seconds.</p>"
+                "</body></html>"));
+  delay(500);
+  ESP.restart();
+}
+
 void handleNotFound() {
   server.send(404, "text/plain", "Not found");
 }
@@ -2499,6 +2598,8 @@ void setup() {
   server.on("/config/export", HTTP_GET, handleConfigExport);
   server.on("/config/import", HTTP_POST, handleConfigImportDone, handleConfigImportUpload);
   server.on("/config/factory-reset", HTTP_POST, handleFactoryReset);
+  server.on("/firmware/update", HTTP_GET, handleFirmwareUpdatePage);
+  server.on("/firmware/update", HTTP_POST, handleFirmwareUpdateDone, handleFirmwareUpdateUpload);
   server.onNotFound(handleNotFound);
 
   server.begin();
