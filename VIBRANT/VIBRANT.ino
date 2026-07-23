@@ -2422,7 +2422,6 @@ void handleFirmwareUpdatePage() {
 
 void handleFirmwareUpdateUpload() {
   if (!server.authenticate("admin", cfg.apPassword.c_str())) {
-    otaUpdateFailed = true;
     server.requestAuthentication();
     return;
   }
@@ -2432,7 +2431,13 @@ void handleFirmwareUpdateUpload() {
     otaUpdateFailed = false;
     otaUpdateError = "";
     logStatus(String(F("OTA firmware update upload started: ")) + upload.filename);
+    // Reserve flash space for the new sketch; subtract 4 KB (0x1000) as safety margin
+    // and align down to a 4 KB flash sector boundary (0xFFFFF000 mask).
     uint32_t maxSketchSize = (ESP.getFreeSketchSpace() - 0x1000) & 0xFFFFF000;
+    if (cfg.debugSerial) {
+      Serial.print(F("[DEBUG] OTA max sketch size: "));
+      Serial.println(maxSketchSize);
+    }
     if (!Update.begin(maxSketchSize)) {
       otaUpdateFailed = true;
       otaUpdateError = Update.getErrorString();
@@ -2440,6 +2445,12 @@ void handleFirmwareUpdateUpload() {
     }
   } else if (upload.status == UPLOAD_FILE_WRITE) {
     if (!otaUpdateFailed) {
+      if (cfg.debugSerial) {
+        Serial.print(F("[DEBUG] OTA write chunk: "));
+        Serial.print(upload.currentSize);
+        Serial.print(F(" bytes, total so far: "));
+        Serial.println(upload.totalSize);
+      }
       if (Update.write(upload.buf, upload.currentSize) != upload.currentSize) {
         otaUpdateFailed = true;
         otaUpdateError = Update.getErrorString();
@@ -2487,6 +2498,7 @@ void handleFirmwareUpdateDone() {
                 "<h1>Firmware update successful</h1>"
                 "<p>The device is rebooting. This page will reload in 15 seconds.</p>"
                 "</body></html>"));
+  // Allow time for the HTTP response to be fully transmitted before rebooting.
   delay(500);
   ESP.restart();
 }
