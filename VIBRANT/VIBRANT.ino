@@ -1911,7 +1911,14 @@ void handleHome() {
       "</script>"
       "</head><body><h1>VIBRANT Output Control</h1><p>Version: ");
   html += SOFTWARE_VERSION;
-  html += F("</p><p><a href='/settings'>Settings</a></p>");
+  html += F("</p>"
+            "<p>"
+            "<a href='/settings'>Settings</a>"
+            " &nbsp; "
+            "<form method='post' action='/restart' style='display:inline;' onsubmit=\"return confirm('Restart device?');\" aria-label='Restart device'>"
+            "<button type='submit'>Restart</button>"
+            "</form>"
+            "</p>");
   if (usingFactoryPassword()) {
     html += passwordWarningHtml();
   }
@@ -2217,20 +2224,8 @@ void handleSettingsGet() {
 
   html += F("<button type='submit'>Save settings</button></form>");
 
-  html += F(
-      "<h2>Configuration maintenance</h2>"
-      "<p><a href='/config/export'>Download configuration backup</a></p>");
-  html += "<p>Hold the FLASH button during power-on (during the first " + String(FLASH_BOOT_DETECTION_WINDOW_MS) +
-          " milliseconds of boot) to trigger factory reset and restart.</p>"
-          "<form method='post' action='/config/factory-reset' onsubmit=\"return confirm('Factory reset?');\">"
-          "<button type='submit'>Factory reset</button></form>"
-          "<form method='post' action='/config/import' enctype='multipart/form-data'>"
-          "<label>Import backup JSON <input type='file' name='config' accept='application/json' required></label>"
-          "<button type='submit'>Upload and restore</button></form>"
-          "<h2>Firmware update</h2>"
-          "<p>Upload a compiled <code>.bin</code> to update firmware over the network. "
-          "The device reboots automatically after a successful flash.</p>"
-          "<p><a href='/firmware/update'>Open firmware update page</a></p>";
+  html += F("<h2>Firmware &amp; Maintenance</h2>"
+            "<p><a href='/firmware/update'>Open firmware update &amp; maintenance page</a></p>");
 
   html += F("</body></html>");
   server.send(200, "text/html", html);
@@ -2446,7 +2441,7 @@ void handleConfigImportDone() {
   logStatus(F("Configuration import applied successfully."));
   applyWifiSettings();
   refreshOutputsForCurrentBootPhase();
-  server.sendHeader("Location", "/settings");
+  server.sendHeader("Location", "/firmware/update");
   server.send(303);
 }
 
@@ -2460,20 +2455,37 @@ void handleFactoryReset() {
   }
   applyWifiSettings();
   refreshOutputsForCurrentBootPhase();
-  server.sendHeader("Location", "/settings");
+  server.sendHeader("Location", "/firmware/update");
   server.send(303);
+}
+
+void handleRestart() {
+  if (!ensureAuthorized()) return;
+  logStatus(F("Restart requested from web UI."));
+  server.send(200, "text/html",
+              F("<!doctype html><html><head><meta charset='utf-8'>"
+                "<meta http-equiv='refresh' content='10;url=/'>"
+                "<title>Restarting</title>"
+                "<style>body{font-family:Arial,sans-serif;margin:20px;}</style></head><body>"
+                "<h1>Restarting...</h1>"
+                "<p>The device is restarting. This page will reload in 10 seconds.</p>"
+                "</body></html>"));
+  server.client().flush();
+  delay(200);  // Allow time for the HTTP response to reach the client before rebooting.
+  ESP.restart();
 }
 
 void handleFirmwareUpdatePage() {
   if (!ensureAuthorized()) return;
 
   String html = F(
-      "<!doctype html><html><head><meta charset='utf-8'><title>Firmware Update</title>"
+      "<!doctype html><html><head><meta charset='utf-8'><title>Firmware Update &amp; Maintenance</title>"
       "<style>body{font-family:Arial,sans-serif;margin:20px;}fieldset{margin-bottom:16px;}"
       "label{display:block;margin:6px 0;}button{padding:8px 10px;margin-right:8px;}"
       ".warn{color:#b00020;font-weight:bold;}</style></head><body>"
-      "<h1>Firmware Update</h1>"
+      "<h1>Firmware Update &amp; Maintenance</h1>"
       "<p><a href='/settings'>Back to Settings</a></p>"
+      "<h2>Firmware update</h2>"
       "<p>Upload a compiled <code>.bin</code> firmware file to update the device. "
       "The device will reboot automatically after a successful update.</p>"
       "<p class='warn'>Warning: Do not power off the device during an update. "
@@ -2481,7 +2493,16 @@ void handleFirmwareUpdatePage() {
       "<form method='post' action='/firmware/update' enctype='multipart/form-data'>"
       "<label>Firmware file (.bin) <input type='file' name='firmware' accept='.bin' required></label>"
       "<button type='submit'>Upload and flash</button></form>"
-      "</body></html>");
+      "<h2>Configuration maintenance</h2>"
+      "<p><a href='/config/export'>Download configuration backup</a></p>");
+  html += "<p>Hold the FLASH button during power-on (during the first " + String(FLASH_BOOT_DETECTION_WINDOW_MS) +
+          " milliseconds of boot) to trigger factory reset and restart.</p>"
+          "<form method='post' action='/config/factory-reset' onsubmit=\"return confirm('Factory reset?');\">"
+          "<button type='submit'>Factory reset</button></form>"
+          "<form method='post' action='/config/import' enctype='multipart/form-data'>"
+          "<label>Import backup JSON <input type='file' name='config' accept='application/json' required></label>"
+          "<button type='submit'>Upload and restore</button></form>"
+          "</body></html>";
   server.send(200, "text/html", html);
 }
 
@@ -2667,6 +2688,7 @@ void setup() {
 
   logStatus(F("Registering web routes..."));
   server.on("/", HTTP_GET, handleHome);
+  server.on("/restart", HTTP_POST, handleRestart);
   server.on("/toggle", HTTP_POST, handleToggle);
   server.on("/action", HTTP_POST, handleAction);
   server.on("/action/cancel", HTTP_POST, handleCancelAction);
