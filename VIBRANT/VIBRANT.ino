@@ -766,6 +766,7 @@ bool ensureAuthorized() {
 }
 
 bool arduinoOtaActive = false;
+bool arduinoOtaCallbacksConfigured = false;
 
 void applyArduinoOtaSettings() {
   if (!cfg.arduinoOtaEnabled) {
@@ -781,24 +782,37 @@ void applyArduinoOtaSettings() {
   ArduinoOTA.setHostname(cfg.hostname.c_str());
   ArduinoOTA.setPassword(cfg.apPassword.c_str());
 
-  ArduinoOTA.onStart([]() {
-    String mode = (ArduinoOTA.getCommand() == U_FLASH) ? F("firmware") : F("filesystem");
-    logStatus(String(F("ArduinoOTA start (")) + mode + F(")."));
-  });
-  ArduinoOTA.onEnd([]() {
-    logStatus(F("ArduinoOTA completed."));
-  });
-  ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
-    if (cfg.debugSerial) {
-      unsigned int percent = (total == 0U) ? 0U : (progress * 100U) / total;
-      Serial.print(F("[DEBUG] ArduinoOTA progress: "));
-      Serial.print(percent);
-      Serial.println(F("%"));
-    }
-  });
-  ArduinoOTA.onError([](ota_error_t error) {
-    logError(String(F("ArduinoOTA error #")) + String(static_cast<int>(error)));
-  });
+  if (!arduinoOtaCallbacksConfigured) {
+    ArduinoOTA.onStart([]() {
+      String mode = (ArduinoOTA.getCommand() == U_FLASH) ? F("firmware") : F("filesystem");
+      logStatus(String(F("ArduinoOTA start (")) + mode + F(")."));
+      if (cfg.debugSerial) {
+        Serial.print(F("[DEBUG] ArduinoOTA host: "));
+        Serial.println(cfg.hostname);
+      }
+    });
+    ArduinoOTA.onEnd([]() {
+      logStatus(F("ArduinoOTA completed."));
+      if (cfg.debugSerial) {
+        Serial.println(F("[DEBUG] ArduinoOTA transfer finished successfully."));
+      }
+    });
+    ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
+      if (cfg.debugSerial) {
+        unsigned int percent = (total == 0U) ? 0U : (progress * 100U) / total;
+        Serial.print(F("[DEBUG] ArduinoOTA progress: "));
+        Serial.print(percent);
+        Serial.println(F("%"));
+      }
+    });
+    ArduinoOTA.onError([](ota_error_t error) {
+      logError(String(F("ArduinoOTA error #")) + String(static_cast<int>(error)));
+      if (cfg.debugSerial) {
+        Serial.println(F("[DEBUG] ArduinoOTA transfer aborted due to error."));
+      }
+    });
+    arduinoOtaCallbacksConfigured = true;
+  }
 
   ArduinoOTA.begin();
   arduinoOtaActive = true;
