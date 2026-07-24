@@ -33,6 +33,7 @@ Change the password immediately in **Settings** after the first boot.
   - Import backup (`/config/import`)
   - Factory reset to defaults (`/config/factory-reset`)
 - Web-based OTA firmware update (`/firmware/update`): upload a compiled `.bin` directly from the browser; the device reboots automatically after a successful flash
+- Optional ArduinoOTA support (disabled by default): developer/service OTA uploads via Arduino IDE or OTA-capable tooling when explicitly enabled in Settings
 - Serial diagnostics print boot progress, Wi-Fi state, configured outputs, and important error/status messages
 - Output pins are configured/driven only after a 1-second post-boot delay
 - Firmware automatically attempts Wi-Fi reconnect after disconnects
@@ -142,7 +143,10 @@ MQTT username and password are optional (leave blank for anonymous access). The 
 
 ## Firmware update (OTA)
 
-VIBRANT supports web-based over-the-air (OTA) firmware updates. This is the primary supported method for updating the firmware without a USB cable.
+VIBRANT supports two OTA firmware update paths:
+
+- **Web UI OTA upload (primary/recommended)**
+- **ArduinoOTA (secondary developer/service path, disabled by default)**
 
 ### Web UI firmware upload (primary method)
 
@@ -157,15 +161,24 @@ VIBRANT supports web-based over-the-air (OTA) firmware updates. This is the prim
 
 > **Warning:** Do not power off the device during an update. A power loss mid-flash may require USB reflashing to recover.
 
-### ArduinoOTA (not included)
+### ArduinoOTA (secondary method)
 
-ArduinoOTA (IDE-based OTA via Wi-Fi) is **not included** in this firmware. The web UI upload approach is preferred because:
+ArduinoOTA is available for developer/service workflows and is **disabled by default**.
 
-- It matches the existing browser-based admin workflow.
-- It does not require the Arduino IDE or network service discovery (mDNS) to be working.
-- It allows non-developer field updates using only a browser.
+Enable it in **Settings → Diagnostics → Enable ArduinoOTA service**.
 
-If ArduinoOTA is needed for a specific development workflow, it can be added by including `<ArduinoOTA.h>`, calling `ArduinoOTA.begin()` in `setup()`, and `ArduinoOTA.handle()` in `loop()`. It is intentionally excluded from the default build.
+Behavior:
+
+- Uses the configured device hostname (`hostname`) as the ArduinoOTA hostname.
+- Uses the current admin password (same password used for HTTP Basic Auth) as the ArduinoOTA password.
+- Is serviced in the main loop, so background output actions, web UI, and MQTT continue to run.
+
+Typical flow:
+
+1. Enable ArduinoOTA in Settings and save.
+2. Ensure your development machine is on the same network.
+3. Select the device's network OTA target in Arduino IDE/tooling.
+4. Upload firmware over Wi-Fi; the device reboots automatically on success.
 
 ## Arduino libraries
 

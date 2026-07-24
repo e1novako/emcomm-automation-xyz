@@ -2,6 +2,7 @@
 #include <LittleFS.h>
 #include <ESP8266WiFi.h>
 #include <ESP8266WebServer.h>
+#include <ArduinoOTA.h>
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
 #include <Updater.h>
@@ -109,6 +110,7 @@ struct DeviceConfig {
   uint16_t mqttPort;
   String mqttUser;
   String mqttPassword;
+  bool arduinoOtaEnabled;
   // Debug
   bool debugSerial;
 };
@@ -357,6 +359,7 @@ void setFactoryDefaults() {
   cfg.mqttPort = DEFAULT_MQTT_PORT;
   cfg.mqttUser = "";
   cfg.mqttPassword = "";
+  cfg.arduinoOtaEnabled = false;
   cfg.debugSerial = false;
   clearOutputReservations();
 
@@ -377,6 +380,7 @@ bool saveConfig() {
   doc["mqttPort"] = cfg.mqttPort;
   doc["mqttUser"] = cfg.mqttUser;
   doc["mqttPassword"] = cfg.mqttPassword;
+  doc["arduinoOtaEnabled"] = cfg.arduinoOtaEnabled;
   doc["debugSerial"] = cfg.debugSerial;
 
   JsonObject mqtt = doc["mqtt"].to<JsonObject>();
@@ -478,6 +482,7 @@ bool loadConfig() {
   cfg.mqttUser = doc["mqttUser"] | String("");
   cfg.mqttPassword = doc["mqttPassword"] | String("");
   if (cfg.mqttPort == 0) cfg.mqttPort = DEFAULT_MQTT_PORT;
+  cfg.arduinoOtaEnabled = doc["arduinoOtaEnabled"] | false;
   cfg.debugSerial = doc["debugSerial"] | false;
 
   logStatus(F("Configuration loaded successfully."));
@@ -758,6 +763,46 @@ bool ensureAuthorized() {
   if (server.authenticate("admin", cfg.apPassword.c_str())) return true;
   server.requestAuthentication();
   return false;
+}
+
+bool arduinoOtaActive = false;
+
+void applyArduinoOtaSettings() {
+  if (!cfg.arduinoOtaEnabled) {
+    if (arduinoOtaActive) {
+      logStatus(F("ArduinoOTA disabled in settings. OTA request handling is now paused."));
+    } else {
+      logStatus(F("ArduinoOTA is disabled."));
+    }
+    arduinoOtaActive = false;
+    return;
+  }
+
+  ArduinoOTA.setHostname(cfg.hostname.c_str());
+  ArduinoOTA.setPassword(cfg.apPassword.c_str());
+
+  ArduinoOTA.onStart([]() {
+    String mode = (ArduinoOTA.getCommand() == U_FLASH) ? F("firmware") : F("filesystem");
+    logStatus(String(F("ArduinoOTA start (")) + mode + F(")."));
+  });
+  ArduinoOTA.onEnd([]() {
+    logStatus(F("ArduinoOTA completed."));
+  });
+  ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
+    if (cfg.debugSerial) {
+      unsigned int percent = (total == 0U) ? 0U : (progress * 100U) / total;
+      Serial.print(F("[DEBUG] ArduinoOTA progress: "));
+      Serial.print(percent);
+      Serial.println(F("%"));
+    }
+  });
+  ArduinoOTA.onError([](ota_error_t error) {
+    logError(String(F("ArduinoOTA error #")) + String(static_cast<int>(error)));
+  });
+
+  ArduinoOTA.begin();
+  arduinoOtaActive = true;
+  logStatus(String(F("ArduinoOTA enabled on hostname: ")) + cfg.hostname);
 }
 
 // ---------------------------------------------------------------------------
@@ -2148,6 +2193,10 @@ void handleSettingsGet() {
           "</fieldset>";
 
   html += "<fieldset><legend>Diagnostics</legend>"
+          "<label><input type='checkbox' name='arduinoOtaEnabled' value='1'" +
+          String(cfg.arduinoOtaEnabled ? " checked" : "") + "> Enable ArduinoOTA service (developer OTA via IDE/tools; uses admin password for auth)</label>"
+          "<p style='font-size:0.9em;color:#555;'>When enabled, ArduinoOTA uses hostname <code>" + htmlEscape(cfg.hostname) +
+          "</code> and requires the current admin password.</p>"
           "<label><input type='checkbox' name='debugSerial' value='1'" +
           String(cfg.debugSerial ? " checked" : "") + "> Enable verbose serial debug logging (euid parsing, idx resolution, etc.)</label>"
           "</fieldset>";
@@ -2265,6 +2314,7 @@ void handleSettingsPost() {
     }
   }
 
+  cfg.arduinoOtaEnabled = server.hasArg("arduinoOtaEnabled") && server.arg("arduinoOtaEnabled") == "1";
   cfg.debugSerial = server.hasArg("debugSerial") && server.arg("debugSerial") == "1";
 
   logStatus(F("Settings updated from web UI."));
@@ -2275,6 +2325,7 @@ void handleSettingsPost() {
   refreshOutputsForCurrentBootPhase();
   applyMqttSettings();
   mqttEnsureConnected();
+  applyArduinoOtaSettings();
 
   server.sendHeader("Location", "/settings");
   server.send(303);
@@ -2618,12 +2669,16 @@ void setup() {
   server.begin();
   logStatus(F("HTTP server started on port 80."));
   applyMqttSettings();
+  applyArduinoOtaSettings();
   logWifiSummary(defaultSoftApSsidFromMac(cfg.mac));
   logStatus(F("Boot sequence complete."));
 }
 
 void loop() {
   server.handleClient();
+  if (arduinoOtaActive) {
+    ArduinoOTA.handle();
+  }
   if (!outputsActivated && outputActivationDelayElapsed()) {
     applyOutputsWhenSafe();
   }
