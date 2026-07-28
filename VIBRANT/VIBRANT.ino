@@ -871,6 +871,9 @@ void setOutputDirect(uint8_t idx, bool state) {
   }
 }
 
+bool isManagedOutput(uint8_t idx);
+void mqttPublishOutputState(uint8_t outputIdx);
+
 // Drive outputs for the active background action (all managed outputs or just the active one).
 void setOutputsForAction(bool state) {
   if (bgAction.allOutputs) {
