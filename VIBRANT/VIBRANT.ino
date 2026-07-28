@@ -29,7 +29,7 @@ constexpr const char* IMPORT_CONFIG_PATH = "/vibrant_config_upload.json";
 constexpr const char* DEFAULT_STA_SSID = "Z-Wave Automation";
 constexpr const char* DEFAULT_STA_PASSWORD = "Fiber714Cvet";
 constexpr const char* DEFAULT_AP_PASSWORD = "Fiber714Cvet";
-constexpr const char* SOFTWARE_VERSION = "1.1.6";
+constexpr const char* SOFTWARE_VERSION = "1.1.7";
 constexpr uint8_t MAX_DEVICES = 16;
 constexpr uint8_t DEFAULT_NUM_OUTPUTS = 8;
 constexpr float MIN_WIFI_POWER = 5.0f;
@@ -871,23 +871,10 @@ void setOutputDirect(uint8_t idx, bool state) {
   }
 }
 
-bool isManagedOutput(uint8_t idx);
-void mqttPublishOutputState(uint8_t outputIdx);
-
-// Drive outputs for the active background action (all managed outputs or just the active one).
-void setOutputsForAction(bool state) {
-  if (bgAction.allOutputs) {
-    for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
-      if (isManagedOutput(i)) {
-        setOutputDirect(i, state);
-        mqttPublishOutputState(i);
-      }
-    }
-  } else {
-    setOutputDirect(bgAction.deviceIdx, state);
-    mqttPublishOutputState(bgAction.deviceIdx);
-  }
+bool isManagedOutput(uint8_t idx) {
+  return idx < cfg.numOutputs && isValidOutputPin(cfg.devices[idx].pin);
 }
+
 
 // ---------------------------------------------------------------------------
 // MQTT helpers
@@ -905,6 +892,7 @@ String mqttOutputActionTopic(uint8_t idx) {
   return String(F("vibrant/")) + cfg.hostname + "/out/" + String(idx) + "/action";
 
 }
+
 
 void mqttPublishOutputState(uint8_t idx) {
   if (!cfg.mqttEnabled || !mqttClient.connected()) return;
@@ -928,6 +916,22 @@ void mqttPublishAllOutputStates() {
     mqttPublishOutputState(i);
   }
 }
+
+// Drive outputs for the active background action (all managed outputs or just the active one).
+void setOutputsForAction(bool state) {
+  if (bgAction.allOutputs) {
+    for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
+      if (isManagedOutput(i)) {
+        setOutputDirect(i, state);
+        mqttPublishOutputState(i);
+      }
+    }
+  } else {
+    setOutputDirect(bgAction.deviceIdx, state);
+    mqttPublishOutputState(bgAction.deviceIdx);
+  }
+}
+
 
 String stickserverMacToken() {
   String token;
@@ -973,10 +977,6 @@ String stickserverInstanceId() {
 
 String stickserverInstanceTopic() {
   return String(STICKSERVER_ROOT_TOPIC) + '/' + stickserverInstanceId();
-}
-
-bool isManagedOutput(uint8_t idx) {
-  return idx < cfg.numOutputs && isValidOutputPin(cfg.devices[idx].pin);
 }
 
 uint8_t managedOutputCount() {
@@ -2242,7 +2242,7 @@ void handleAllOn() {
   bool first = true;
   for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
     if (!isManagedOutput(i)) continue;
-    if (!first) delay(100);
+    if (!first) delay(50);
     setOutputDirect(i, true);
     mqttPublishOutputState(i);
     first = false;
@@ -2254,10 +2254,13 @@ void handleAllOn() {
 void handleAllOff() {
   if (!ensureAuthorized()) return;
   logStatus(F("Turn OFF all outputs requested."));
+  bool first = true;
   for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
     if (!isManagedOutput(i)) continue;
+    if (!first) delay(50);
     setOutputDirect(i, false);
     mqttPublishOutputState(i);
+    first = false;
   }
   server.sendHeader("Location", "/");
   server.send(303);
