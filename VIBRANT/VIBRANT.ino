@@ -29,7 +29,7 @@ constexpr const char* IMPORT_CONFIG_PATH = "/vibrant_config_upload.json";
 constexpr const char* DEFAULT_STA_SSID = "Z-Wave Automation";
 constexpr const char* DEFAULT_STA_PASSWORD = "Fiber714Cvet";
 constexpr const char* DEFAULT_AP_PASSWORD = "Fiber714Cvet";
-constexpr const char* SOFTWARE_VERSION = "1.1.5";
+constexpr const char* SOFTWARE_VERSION = "1.1.6";
 constexpr uint8_t MAX_DEVICES = 16;
 constexpr uint8_t DEFAULT_NUM_OUTPUTS = 8;
 constexpr float MIN_WIFI_POWER = 5.0f;
@@ -56,18 +56,24 @@ constexpr uint8_t LEAVE_MESH_CYCLES = 5;
 constexpr uint8_t REBOOT_SEQUENCE_CYCLES = 1;
 // Number of D0-D7 entries at the start of OUTPUT_PIN_MAPPINGS used for default assignment
 constexpr uint8_t DEFAULT_D0_D7_COUNT = 8;
+// Generic sequence timing (used by reboot)
 constexpr unsigned long ACTION_CYCLE_OFF_MS = 5000UL;
 constexpr unsigned long ACTION_CYCLE_ON_MS = 1000UL;
 constexpr unsigned long ACTION_FINAL_WAIT_MS = 5000UL;
 constexpr unsigned long ACTION_TRIGGER_OFF_MS = 2000UL;
 constexpr unsigned long ACTION_TRIGGER_ON_MS = 1000UL;
+// Leave-mesh load action timing
+constexpr unsigned long LEAVE_MESH_PREP_ON_MS = 3500UL;
+constexpr unsigned long LEAVE_MESH_CYCLE_OFF_MS = 600UL;
+constexpr unsigned long LEAVE_MESH_CYCLE_ON_MS = 1500UL;
+constexpr unsigned long LEAVE_MESH_FINAL_WAIT_MS = 1500UL;
 // Dedicated factory-reset load action timing
-constexpr uint8_t FACTORY_RESET_CYCLES = 5;
-constexpr unsigned long FACTORY_RESET_PREP_ON_MS = 3500UL;
-constexpr unsigned long FACTORY_RESET_CYCLE_OFF_MS = 600UL;
-constexpr unsigned long FACTORY_RESET_CYCLE_ON_MS = 1500UL;
-constexpr unsigned long FACTORY_RESET_FINAL_WAIT_MS = 2000UL;
-constexpr unsigned long FACTORY_RESET_FINAL_OFF_MS = 600UL;
+constexpr uint8_t FACTORY_RESET_CYCLES = 13;
+constexpr unsigned long FACTORY_RESET_PREP_ON_MS = 5000UL;
+constexpr unsigned long FACTORY_RESET_CYCLE_OFF_MS = 5000UL;
+constexpr unsigned long FACTORY_RESET_CYCLE_ON_MS = 1000UL;
+constexpr unsigned long FACTORY_RESET_FINAL_WAIT_MS = 1500UL;
+constexpr unsigned long FACTORY_RESET_HOLD_ON_MS = 10000UL;
 
 constexpr unsigned long ceilDiv(unsigned long numerator, unsigned long denominator) {
   if (denominator == 0) return 0;
@@ -123,12 +129,17 @@ enum ActionPhase : uint8_t {
   APHASE_FINAL_WAIT,
   APHASE_TRIGGER_OFF,
   APHASE_TRIGGER_ON,
+  // Dedicated leave-mesh phases
+  APHASE_LEAVE_MESH_PREP_ON,
+  APHASE_LEAVE_MESH_CYCLE_OFF,
+  APHASE_LEAVE_MESH_CYCLE_ON,
+  APHASE_LEAVE_MESH_FINAL_WAIT,
   // Dedicated factory-reset phases
   APHASE_FACTORY_RESET_PREP_ON,
   APHASE_FACTORY_RESET_CYCLE_OFF,
   APHASE_FACTORY_RESET_CYCLE_ON,
   APHASE_FACTORY_RESET_FINAL_WAIT,
-  APHASE_FACTORY_RESET_FINAL_OFF
+  APHASE_FACTORY_RESET_HOLD_ON
 };
 
 struct ActiveAction {
@@ -136,6 +147,7 @@ struct ActiveAction {
   uint8_t deviceIdx;
   uint8_t cyclesRemaining;
   unsigned long phaseStartMs;
+  bool allOutputs;  // when true, action applies to all managed outputs simultaneously
 };
 
 struct OutputReservation {
@@ -185,7 +197,7 @@ WiFiClient mqttWifiClient;
 PubSubClient mqttClient(mqttWifiClient);
 unsigned long lastMqttConnectAttemptMs = 0;
 // Background load-action state
-ActiveAction bgAction = {APHASE_NONE, 0, 0, 0UL};
+ActiveAction bgAction = {APHASE_NONE, 0, 0, 0UL, false};
 OutputReservation outputReservations[MAX_DEVICES];
 
 String htmlEscape(const String& value) {
@@ -834,11 +846,15 @@ String actionPhaseName() {
     case APHASE_FINAL_WAIT:  return F("waiting (final)");
     case APHASE_TRIGGER_OFF: return F("triggering off");
     case APHASE_TRIGGER_ON:  return F("triggering on");
+    case APHASE_LEAVE_MESH_PREP_ON:    return F("leave mesh prep on");
+    case APHASE_LEAVE_MESH_CYCLE_OFF:  return F("leave mesh cycling off");
+    case APHASE_LEAVE_MESH_CYCLE_ON:   return F("leave mesh cycling on");
+    case APHASE_LEAVE_MESH_FINAL_WAIT: return F("leave mesh waiting");
     case APHASE_FACTORY_RESET_PREP_ON:    return F("factory reset prep on");
     case APHASE_FACTORY_RESET_CYCLE_OFF:  return F("factory reset cycling off");
     case APHASE_FACTORY_RESET_CYCLE_ON:   return F("factory reset cycling on");
     case APHASE_FACTORY_RESET_FINAL_WAIT: return F("factory reset waiting");
-    case APHASE_FACTORY_RESET_FINAL_OFF:  return F("factory reset final off");
+    case APHASE_FACTORY_RESET_HOLD_ON:    return F("factory reset holding on");
     default:                 return F("idle");
   }
 }
@@ -852,6 +868,21 @@ void setOutputDirect(uint8_t idx, bool state) {
     pinMode(d.pin, OUTPUT);
     // Inverted output logic: logical ON -> LOW, logical OFF -> HIGH (active-low).
     digitalWrite(d.pin, state ? LOW : HIGH);
+  }
+}
+
+// Drive outputs for the active background action (all managed outputs or just the active one).
+void setOutputsForAction(bool state) {
+  if (bgAction.allOutputs) {
+    for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
+      if (isManagedOutput(i)) {
+        setOutputDirect(i, state);
+        mqttPublishOutputState(i);
+      }
+    }
+  } else {
+    setOutputDirect(bgAction.deviceIdx, state);
+    mqttPublishOutputState(bgAction.deviceIdx);
   }
 }
 
@@ -1695,6 +1726,7 @@ void mqttEnsureConnected() {
 
 void startSequenceAction(uint8_t deviceIdx, uint8_t totalCycles) {
   bgAction.deviceIdx = deviceIdx;
+  bgAction.allOutputs = false;
   bgAction.cyclesRemaining = totalCycles;
   bgAction.phaseStartMs = millis();
   bgAction.phase = APHASE_CYCLE_OFF;
@@ -1702,13 +1734,34 @@ void startSequenceAction(uint8_t deviceIdx, uint8_t totalCycles) {
   mqttPublishOutputState(deviceIdx);
 }
 
+void startLeaveMeshAction(uint8_t deviceIdx) {
+  bgAction.deviceIdx = deviceIdx;
+  bgAction.allOutputs = false;
+  bgAction.cyclesRemaining = LEAVE_MESH_CYCLES;
+  bgAction.phaseStartMs = millis();
+  if (!cfg.devices[deviceIdx].state) {
+    // Output was OFF: turn ON and wait before starting cycles
+    logStatus(String(F("leave_mesh: output was OFF, turning ON for prep")));
+    setOutputDirect(deviceIdx, true);
+    mqttPublishOutputState(deviceIdx);
+    bgAction.phase = APHASE_LEAVE_MESH_PREP_ON;
+  } else {
+    // Output was ON: start cycling immediately
+    logStatus(String(F("leave_mesh: output was ON, starting cycles immediately")));
+    setOutputDirect(deviceIdx, false);
+    mqttPublishOutputState(deviceIdx);
+    bgAction.phase = APHASE_LEAVE_MESH_CYCLE_OFF;
+  }
+}
+
 void startFactoryResetAction(uint8_t deviceIdx) {
   bgAction.deviceIdx = deviceIdx;
+  bgAction.allOutputs = false;
   bgAction.cyclesRemaining = FACTORY_RESET_CYCLES;
   bgAction.phaseStartMs = millis();
   if (!cfg.devices[deviceIdx].state) {
     // Output was OFF: turn it ON and wait before starting cycles
-    logStatus(String(F("factory_reset: output was OFF, turning ON for prep")) );
+    logStatus(String(F("factory_reset: output was OFF, turning ON for prep")));
     setOutputDirect(deviceIdx, true);
     mqttPublishOutputState(deviceIdx);
     bgAction.phase = APHASE_FACTORY_RESET_PREP_ON;
@@ -1721,14 +1774,41 @@ void startFactoryResetAction(uint8_t deviceIdx) {
   }
 }
 
+void startFactoryResetAllAction() {
+  bgAction.deviceIdx = 0;
+  bgAction.allOutputs = true;
+  bgAction.cyclesRemaining = FACTORY_RESET_CYCLES;
+  bgAction.phaseStartMs = millis();
+  // Always begin with prep-on so all outputs start from a known ON state
+  logStatus(F("factory_reset_all: turning all outputs ON for prep"));
+  for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
+    if (isManagedOutput(i)) {
+      setOutputDirect(i, true);
+      mqttPublishOutputState(i);
+    }
+  }
+  bgAction.phase = APHASE_FACTORY_RESET_PREP_ON;
+}
+
 void finishAction() {
   uint8_t idx = bgAction.deviceIdx;
+  bool wasAll = bgAction.allOutputs;
   bgAction.phase = APHASE_NONE;
-  // Leave output ON after completing the sequence
-  setOutputDirect(idx, true);
-  mqttPublishOutputState(idx);
-  // Runtime state changes are not persisted to flash by design.
-  logStatus(String(F("Load action complete for output ")) + String(idx + 1));
+  bgAction.allOutputs = false;
+  if (wasAll) {
+    for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
+      if (isManagedOutput(i)) {
+        setOutputDirect(i, true);
+        mqttPublishOutputState(i);
+      }
+    }
+    logStatus(F("Load action complete for all outputs"));
+  } else {
+    // Leave output ON after completing the sequence
+    setOutputDirect(idx, true);
+    mqttPublishOutputState(idx);
+    logStatus(String(F("Load action complete for output ")) + String(idx + 1));
+  }
 }
 
 void maintainBackgroundAction() {
@@ -1781,18 +1861,52 @@ void maintainBackgroundAction() {
         finishAction();
       }
       break;
-    case APHASE_FACTORY_RESET_PREP_ON:
-      if (now - bgAction.phaseStartMs >= FACTORY_RESET_PREP_ON_MS) {
+    case APHASE_LEAVE_MESH_PREP_ON:
+      if (now - bgAction.phaseStartMs >= LEAVE_MESH_PREP_ON_MS) {
         setOutputDirect(idx, false);
         mqttPublishOutputState(idx);
+        bgAction.phase = APHASE_LEAVE_MESH_CYCLE_OFF;
+        bgAction.phaseStartMs = now;
+      }
+      break;
+    case APHASE_LEAVE_MESH_CYCLE_OFF:
+      if (now - bgAction.phaseStartMs >= LEAVE_MESH_CYCLE_OFF_MS) {
+        setOutputDirect(idx, true);
+        mqttPublishOutputState(idx);
+        bgAction.phase = APHASE_LEAVE_MESH_CYCLE_ON;
+        bgAction.phaseStartMs = now;
+      }
+      break;
+    case APHASE_LEAVE_MESH_CYCLE_ON:
+      if (now - bgAction.phaseStartMs >= LEAVE_MESH_CYCLE_ON_MS) {
+        --bgAction.cyclesRemaining;
+        if (bgAction.cyclesRemaining > 0) {
+          setOutputDirect(idx, false);
+          mqttPublishOutputState(idx);
+          bgAction.phase = APHASE_LEAVE_MESH_CYCLE_OFF;
+          bgAction.phaseStartMs = now;
+        } else {
+          // All cycles done; output is ON — enter final wait
+          bgAction.phase = APHASE_LEAVE_MESH_FINAL_WAIT;
+          bgAction.phaseStartMs = now;
+        }
+      }
+      break;
+    case APHASE_LEAVE_MESH_FINAL_WAIT:
+      if (now - bgAction.phaseStartMs >= LEAVE_MESH_FINAL_WAIT_MS) {
+        finishAction();
+      }
+      break;
+    case APHASE_FACTORY_RESET_PREP_ON:
+      if (now - bgAction.phaseStartMs >= FACTORY_RESET_PREP_ON_MS) {
+        setOutputsForAction(false);
         bgAction.phase = APHASE_FACTORY_RESET_CYCLE_OFF;
         bgAction.phaseStartMs = now;
       }
       break;
     case APHASE_FACTORY_RESET_CYCLE_OFF:
       if (now - bgAction.phaseStartMs >= FACTORY_RESET_CYCLE_OFF_MS) {
-        setOutputDirect(idx, true);
-        mqttPublishOutputState(idx);
+        setOutputsForAction(true);
         bgAction.phase = APHASE_FACTORY_RESET_CYCLE_ON;
         bgAction.phaseStartMs = now;
       }
@@ -1801,12 +1915,11 @@ void maintainBackgroundAction() {
       if (now - bgAction.phaseStartMs >= FACTORY_RESET_CYCLE_ON_MS) {
         --bgAction.cyclesRemaining;
         if (bgAction.cyclesRemaining > 0) {
-          setOutputDirect(idx, false);
-          mqttPublishOutputState(idx);
+          setOutputsForAction(false);
           bgAction.phase = APHASE_FACTORY_RESET_CYCLE_OFF;
           bgAction.phaseStartMs = now;
         } else {
-          // All cycles done; enter final wait (output is ON)
+          // All cycles done; output is ON — enter final wait
           bgAction.phase = APHASE_FACTORY_RESET_FINAL_WAIT;
           bgAction.phaseStartMs = now;
         }
@@ -1814,14 +1927,14 @@ void maintainBackgroundAction() {
       break;
     case APHASE_FACTORY_RESET_FINAL_WAIT:
       if (now - bgAction.phaseStartMs >= FACTORY_RESET_FINAL_WAIT_MS) {
-        setOutputDirect(idx, false);
-        mqttPublishOutputState(idx);
-        bgAction.phase = APHASE_FACTORY_RESET_FINAL_OFF;
+        // "Turn it back on" then hold for 10 s
+        setOutputsForAction(true);
+        bgAction.phase = APHASE_FACTORY_RESET_HOLD_ON;
         bgAction.phaseStartMs = now;
       }
       break;
-    case APHASE_FACTORY_RESET_FINAL_OFF:
-      if (now - bgAction.phaseStartMs >= FACTORY_RESET_FINAL_OFF_MS) {
+    case APHASE_FACTORY_RESET_HOLD_ON:
+      if (now - bgAction.phaseStartMs >= FACTORY_RESET_HOLD_ON_MS) {
         finishAction();
       }
       break;
@@ -1840,9 +1953,18 @@ void maintainBackgroundAction() {
 void cancelAction() {
   if (!isActionRunning()) return;
   uint8_t idx = bgAction.deviceIdx;
+  bool wasAll = bgAction.allOutputs;
   bgAction.phase = APHASE_NONE;
-  logStatus(String(F("Action cancelled for output ")) + String(idx + 1));
-  mqttPublishOutputState(idx);
+  bgAction.allOutputs = false;
+  if (wasAll) {
+    for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
+      if (isManagedOutput(i)) mqttPublishOutputState(i);
+    }
+    logStatus(F("Action cancelled for all outputs"));
+  } else {
+    logStatus(String(F("Action cancelled for output ")) + String(idx + 1));
+    mqttPublishOutputState(idx);
+  }
 }
 
 bool handleLoadAction(uint8_t idx, const String& cmd) {
@@ -1865,7 +1987,7 @@ bool handleLoadAction(uint8_t idx, const String& cmd) {
   if (isActionRunning()) return false;
   if (cmd == F("leave_mesh")) {
     logStatus(String(F("Starting leave_mesh action for output ")) + String(idx + 1));
-    startSequenceAction(idx, LEAVE_MESH_CYCLES);
+    startLeaveMeshAction(idx);
     return true;
   }
   if (cmd == F("factory_reset")) {
@@ -1920,16 +2042,34 @@ void handleHome() {
   // visual format but run in different contexts (C++/server vs JS/browser).
   html += "<div id='action-status'>";
   if (actionRunning) {
-    bool inCyclePhase = (bgAction.phase == APHASE_CYCLE_OFF || bgAction.phase == APHASE_CYCLE_ON);
+    bool inCyclePhase = (bgAction.phase == APHASE_CYCLE_OFF || bgAction.phase == APHASE_CYCLE_ON ||
+                         bgAction.phase == APHASE_LEAVE_MESH_CYCLE_OFF || bgAction.phase == APHASE_LEAVE_MESH_CYCLE_ON ||
+                         bgAction.phase == APHASE_FACTORY_RESET_CYCLE_OFF || bgAction.phase == APHASE_FACTORY_RESET_CYCLE_ON);
     String phaseDetail = inCyclePhase
         ? String(F(" (cycles remaining: ")) + String(bgAction.cyclesRemaining) + ")"
         : "";
-    html += "<div class='action-banner'><strong>Action running on output " +
-            String(bgAction.deviceIdx + 1) + ": " + actionPhaseName() + phaseDetail + "</strong>"
+    String target = bgAction.allOutputs
+        ? String(F("all outputs"))
+        : String(F("output ")) + String(bgAction.deviceIdx + 1);
+    html += "<div class='action-banner'><strong>Action running on " +
+            target + ": " + actionPhaseName() + phaseDetail + "</strong>"
             " &nbsp; <form method='post' action='/action/cancel' style='display:inline;'>"
             "<button type='submit'>Cancel</button></form></div>";
   }
   html += "</div>";
+
+  // Global bulk-action buttons
+  const char* bulkDisabled = actionRunning ? " disabled" : "";
+  html += String(F("<div style='margin:10px 0;'>"))
+          + "<form method='post' action='/action/all-on' style='display:inline;margin:0;'>"
+            "<button type='submit'" + bulkDisabled + ">Turn ON all</button></form>"
+          + "<form method='post' action='/action/all-off' style='display:inline;margin:0;'>"
+            "<button type='submit'" + bulkDisabled + ">Turn OFF all</button></form>"
+          + "<form method='post' action='/action/factory-reset-all' style='display:inline;margin:0;'"
+            " onsubmit=\"return confirm('Run factory reset signal on ALL outputs?');\">"
+            "<button type='submit'" + bulkDisabled + ">Factory Reset All</button></form>"
+          + "</div>";
+
   html += F("<table><tr><th>#</th><th>Model</th><th>Name</th><th>Status</th><th>Output</th><th>Actions</th></tr>");
 
   for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
@@ -2081,14 +2221,55 @@ void handleActionStatus() {
   json += running ? "true" : "false";
   if (running) {
     bool inCyclePhase = (bgAction.phase == APHASE_CYCLE_OFF || bgAction.phase == APHASE_CYCLE_ON ||
+                         bgAction.phase == APHASE_LEAVE_MESH_CYCLE_OFF || bgAction.phase == APHASE_LEAVE_MESH_CYCLE_ON ||
                          bgAction.phase == APHASE_FACTORY_RESET_CYCLE_OFF || bgAction.phase == APHASE_FACTORY_RESET_CYCLE_ON);
     json += ",\"idx\":" + String(bgAction.deviceIdx);
+    json += ",\"allOutputs\":" + String(bgAction.allOutputs ? "true" : "false");
     json += ",\"phase\":\"" + actionPhaseName() + "\"";
     json += ",\"cyclesRemaining\":" + String(inCyclePhase ? bgAction.cyclesRemaining : 0);
   }
   json += "}";
   server.sendHeader("Cache-Control", "no-store");
   server.send(200, "application/json", json);
+}
+
+void handleAllOn() {
+  if (!ensureAuthorized()) return;
+  logStatus(F("Turn ON all outputs requested."));
+  bool first = true;
+  for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
+    if (!isManagedOutput(i)) continue;
+    if (!first) delay(100);
+    setOutputDirect(i, true);
+    mqttPublishOutputState(i);
+    first = false;
+  }
+  server.sendHeader("Location", "/");
+  server.send(303);
+}
+
+void handleAllOff() {
+  if (!ensureAuthorized()) return;
+  logStatus(F("Turn OFF all outputs requested."));
+  for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
+    if (!isManagedOutput(i)) continue;
+    setOutputDirect(i, false);
+    mqttPublishOutputState(i);
+  }
+  server.sendHeader("Location", "/");
+  server.send(303);
+}
+
+void handleFactoryResetAll() {
+  if (!ensureAuthorized()) return;
+  if (isActionRunning()) {
+    server.send(409, "text/plain", "Another action is already running");
+    return;
+  }
+  logStatus(F("Factory reset ALL outputs requested."));
+  startFactoryResetAllAction();
+  server.sendHeader("Location", "/");
+  server.send(303);
 }
 
 void handleSettingsGet() {
@@ -2671,6 +2852,9 @@ void setup() {
   server.on("/action", HTTP_POST, handleAction);
   server.on("/action/cancel", HTTP_POST, handleCancelAction);
   server.on("/action/status", HTTP_GET, handleActionStatus);
+  server.on("/action/all-on", HTTP_POST, handleAllOn);
+  server.on("/action/all-off", HTTP_POST, handleAllOff);
+  server.on("/action/factory-reset-all", HTTP_POST, handleFactoryResetAll);
   server.on("/settings", HTTP_GET, handleSettingsGet);
   server.on("/settings", HTTP_POST, handleSettingsPost);
   server.on("/config/export", HTTP_GET, handleConfigExport);
