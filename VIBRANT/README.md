@@ -15,7 +15,7 @@ Change the password immediately in **Settings** after the first boot.
 
 - All configuration is persisted in LittleFS JSON file: `/vibrant_config.json`
 - English-only UI labels and source comments
-- Main page lists configured devices (model, name, status) and provides checkbox toggles and per-output load action buttons
+- Main page lists configured devices (model, name, status) and provides checkbox toggles, per-output load action buttons, and bulk actions (`Leave Mesh All`, `Factory Reset All`)
 - Settings, toggle actions, and config maintenance endpoints are protected with HTTP Basic Auth (`admin` / current Wi-Fi password)
 - Settings page supports:
   - MAC address
@@ -117,6 +117,8 @@ Total sequence duration: ~86 s (13×6 s + 5 s + 3 s)
 ### Non-blocking execution
 
 All GPIO activity (including the timed cycling sequences) runs in the background via a `millis()`-based state machine in the main loop. The web UI and MQTT connection remain fully responsive during any running sequence. The running action is shown in a banner on the main page (auto-refreshes every 3 s) and can be cancelled at any time.
+
+For `Leave Mesh All` and `Factory Reset All`, outputs are processed one-by-one so each managed output receives the full required timing sequence.
 
 ## Default factory values
 
