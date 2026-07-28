@@ -63,17 +63,20 @@ constexpr unsigned long ACTION_FINAL_WAIT_MS = 5000UL;
 constexpr unsigned long ACTION_TRIGGER_OFF_MS = 2000UL;
 constexpr unsigned long ACTION_TRIGGER_ON_MS = 1000UL;
 // Leave-mesh load action timing
-constexpr unsigned long LEAVE_MESH_PREP_ON_MS = 3500UL;
-constexpr unsigned long LEAVE_MESH_CYCLE_OFF_MS = 600UL;
-constexpr unsigned long LEAVE_MESH_CYCLE_ON_MS = 1500UL;
-constexpr unsigned long LEAVE_MESH_FINAL_WAIT_MS = 1500UL;
+constexpr unsigned long LEAVE_MESH_PREP_ON_MS = 4000UL;
+constexpr unsigned long LEAVE_MESH_CYCLE_OFF_MS = 5000UL;
+constexpr unsigned long LEAVE_MESH_CYCLE_ON_MS = 1000UL;
+constexpr unsigned long LEAVE_MESH_FINAL_WAIT_MS = 5000UL;
+constexpr unsigned long LEAVE_MESH_TRIGGER_OFF_MS = 5000UL;
+constexpr unsigned long LEAVE_MESH_TRIGGER_ON_MS = 1000UL;
 // Dedicated factory-reset load action timing
 constexpr uint8_t FACTORY_RESET_CYCLES = 13;
-constexpr unsigned long FACTORY_RESET_PREP_ON_MS = 5000UL;
-constexpr unsigned long FACTORY_RESET_CYCLE_OFF_MS = 5000UL;
+constexpr unsigned long FACTORY_RESET_PREP_ON_MS = 4000UL;
+constexpr unsigned long FACTORY_RESET_CYCLE_OFF_MS = 2000UL;
 constexpr unsigned long FACTORY_RESET_CYCLE_ON_MS = 1000UL;
-constexpr unsigned long FACTORY_RESET_FINAL_WAIT_MS = 1500UL;
-constexpr unsigned long FACTORY_RESET_HOLD_ON_MS = 10000UL;
+constexpr unsigned long FACTORY_RESET_FINAL_WAIT_MS = 5000UL;
+constexpr unsigned long FACTORY_RESET_TRIGGER_OFF_MS = 2000UL;
+constexpr unsigned long FACTORY_RESET_TRIGGER_ON_MS = 1000UL;
 
 constexpr unsigned long ceilDiv(unsigned long numerator, unsigned long denominator) {
   if (denominator == 0) return 0;
@@ -134,12 +137,15 @@ enum ActionPhase : uint8_t {
   APHASE_LEAVE_MESH_CYCLE_OFF,
   APHASE_LEAVE_MESH_CYCLE_ON,
   APHASE_LEAVE_MESH_FINAL_WAIT,
+  APHASE_LEAVE_MESH_TRIGGER_OFF,
+  APHASE_LEAVE_MESH_TRIGGER_ON,
   // Dedicated factory-reset phases
   APHASE_FACTORY_RESET_PREP_ON,
   APHASE_FACTORY_RESET_CYCLE_OFF,
   APHASE_FACTORY_RESET_CYCLE_ON,
   APHASE_FACTORY_RESET_FINAL_WAIT,
-  APHASE_FACTORY_RESET_HOLD_ON
+  APHASE_FACTORY_RESET_TRIGGER_OFF,
+  APHASE_FACTORY_RESET_TRIGGER_ON
 };
 
 struct ActiveAction {
@@ -850,11 +856,14 @@ String actionPhaseName() {
     case APHASE_LEAVE_MESH_CYCLE_OFF:  return F("leave mesh cycling off");
     case APHASE_LEAVE_MESH_CYCLE_ON:   return F("leave mesh cycling on");
     case APHASE_LEAVE_MESH_FINAL_WAIT: return F("leave mesh waiting");
+    case APHASE_LEAVE_MESH_TRIGGER_OFF: return F("leave mesh trigger off");
+    case APHASE_LEAVE_MESH_TRIGGER_ON:  return F("leave mesh trigger on");
     case APHASE_FACTORY_RESET_PREP_ON:    return F("factory reset prep on");
     case APHASE_FACTORY_RESET_CYCLE_OFF:  return F("factory reset cycling off");
     case APHASE_FACTORY_RESET_CYCLE_ON:   return F("factory reset cycling on");
     case APHASE_FACTORY_RESET_FINAL_WAIT: return F("factory reset waiting");
-    case APHASE_FACTORY_RESET_HOLD_ON:    return F("factory reset holding on");
+    case APHASE_FACTORY_RESET_TRIGGER_OFF: return F("factory reset trigger off");
+    case APHASE_FACTORY_RESET_TRIGGER_ON:  return F("factory reset trigger on");
     default:                 return F("idle");
   }
 }
@@ -945,6 +954,24 @@ void setActionOutputState(uint8_t idx, bool state) {
   mqttPublishOutputState(idx);
 }
 
+// Set output state for the current action: writes all managed outputs when
+// bgAction.allOutputs is true (parallel-all mode), otherwise writes only the
+// single output at bgAction.deviceIdx.  Always call this before updating
+// bgAction.phaseStartMs so the timer starts after all writes complete.
+void setPhaseOutputState(bool state) {
+  if (bgAction.allOutputs) {
+    for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
+      if (isManagedOutput(i)) {
+        setOutputDirect(i, state);
+        mqttPublishOutputState(i);
+      }
+    }
+  } else {
+    setOutputDirect(bgAction.deviceIdx, state);
+    mqttPublishOutputState(bgAction.deviceIdx);
+  }
+}
+
 void beginLeaveMeshForOutput(uint8_t idx, bool allOutputsAction) {
   bgAction.deviceIdx = idx;
   bgAction.allOutputs = allOutputsAction;
@@ -1013,25 +1040,6 @@ void beginFactoryResetForOutput(uint8_t idx, bool allOutputsAction) {
   }
 }
 
-bool advanceAllOutputsForCurrentAction(bool factoryResetAction) {
-  int nextIdx = findNextManagedOutputIndex(bgAction.deviceIdx + 1);
-  if (nextIdx < 0) {
-    if (cfg.debugSerial) {
-      Serial.println(F("[DEBUG] all-action sequence complete: no more managed outputs"));
-    }
-    return false;
-  }
-  if (cfg.debugSerial) {
-    Serial.print(F("[DEBUG] all-action advancing to output "));
-    Serial.println(nextIdx + 1);
-  }
-  if (factoryResetAction) {
-    beginFactoryResetForOutput(static_cast<uint8_t>(nextIdx), true);
-  } else {
-    beginLeaveMeshForOutput(static_cast<uint8_t>(nextIdx), true);
-  }
-  return true;
-}
 
 
 String stickserverMacToken() {
@@ -1847,29 +1855,55 @@ void startFactoryResetAction(uint8_t deviceIdx) {
 }
 
 void startFactoryResetAllAction() {
-  int firstIdx = findNextManagedOutputIndex(0);
-  if (firstIdx < 0) {
-    logStatus(F("Factory reset all requested, but no managed outputs are assigned."));
+  bool hasManaged = false;
+  for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
+    if (isManagedOutput(i)) { hasManaged = true; break; }
+  }
+  if (!hasManaged) {
+    logStatus(F("factory_reset_all: no managed outputs"));
     return;
   }
-  if (cfg.debugSerial) {
-    Serial.print(F("[DEBUG] factory_reset_all starting on output "));
-    Serial.println(firstIdx + 1);
+  bgAction.allOutputs = true;
+  bgAction.deviceIdx = 0;
+  bgAction.cyclesRemaining = FACTORY_RESET_CYCLES;
+  logStatus(F("factory_reset_all: turning all managed outputs ON for prep"));
+  for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
+    if (isManagedOutput(i)) {
+      setOutputDirect(i, true);
+      mqttPublishOutputState(i);
+    }
   }
-  beginFactoryResetForOutput(static_cast<uint8_t>(firstIdx), true);
+  bgAction.phaseStartMs = millis();
+  bgAction.phase = APHASE_FACTORY_RESET_PREP_ON;
+  if (cfg.debugSerial) {
+    Serial.println(F("[DEBUG] factory_reset_all: prep ON started for all managed outputs"));
+  }
 }
 
 void startLeaveMeshAllAction() {
-  int firstIdx = findNextManagedOutputIndex(0);
-  if (firstIdx < 0) {
-    logStatus(F("Leave mesh all requested, but no managed outputs are assigned."));
+  bool hasManaged = false;
+  for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
+    if (isManagedOutput(i)) { hasManaged = true; break; }
+  }
+  if (!hasManaged) {
+    logStatus(F("leave_mesh_all: no managed outputs"));
     return;
   }
-  if (cfg.debugSerial) {
-    Serial.print(F("[DEBUG] leave_mesh_all starting on output "));
-    Serial.println(firstIdx + 1);
+  bgAction.allOutputs = true;
+  bgAction.deviceIdx = 0;
+  bgAction.cyclesRemaining = LEAVE_MESH_CYCLES;
+  logStatus(F("leave_mesh_all: turning all managed outputs ON for prep"));
+  for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
+    if (isManagedOutput(i)) {
+      setOutputDirect(i, true);
+      mqttPublishOutputState(i);
+    }
   }
-  beginLeaveMeshForOutput(static_cast<uint8_t>(firstIdx), true);
+  bgAction.phaseStartMs = millis();
+  bgAction.phase = APHASE_LEAVE_MESH_PREP_ON;
+  if (cfg.debugSerial) {
+    Serial.println(F("[DEBUG] leave_mesh_all: prep ON started for all managed outputs"));
+  }
 }
 
 void finishAction() {
@@ -1945,27 +1979,49 @@ void maintainBackgroundAction() {
       break;
     case APHASE_LEAVE_MESH_PREP_ON:
       if (now - bgAction.phaseStartMs >= LEAVE_MESH_PREP_ON_MS) {
-        setActionOutputState(idx, false);
+        if (cfg.debugSerial) {
+          Serial.println(bgAction.allOutputs
+              ? F("[DEBUG] leave_mesh_all: prep done, cycling all outputs OFF (cycle 1)")
+              : F("[DEBUG] leave_mesh: prep done, cycling output OFF (cycle 1)"));
+        }
+        setPhaseOutputState(false);
         bgAction.phase = APHASE_LEAVE_MESH_CYCLE_OFF;
-        bgAction.phaseStartMs = now;
+        bgAction.phaseStartMs = millis();
       }
       break;
     case APHASE_LEAVE_MESH_CYCLE_OFF:
       if (now - bgAction.phaseStartMs >= LEAVE_MESH_CYCLE_OFF_MS) {
-        setActionOutputState(idx, true);
+        if (cfg.debugSerial) {
+          Serial.print(bgAction.allOutputs ? F("[DEBUG] leave_mesh_all") : F("[DEBUG] leave_mesh"));
+          Serial.print(F(": cycle OFF done, turning ON (cycles remaining="));
+          Serial.print(bgAction.cyclesRemaining);
+          Serial.println(F(")"));
+        }
+        setPhaseOutputState(true);
         bgAction.phase = APHASE_LEAVE_MESH_CYCLE_ON;
-        bgAction.phaseStartMs = now;
+        bgAction.phaseStartMs = millis();
       }
       break;
     case APHASE_LEAVE_MESH_CYCLE_ON:
       if (now - bgAction.phaseStartMs >= LEAVE_MESH_CYCLE_ON_MS) {
         --bgAction.cyclesRemaining;
         if (bgAction.cyclesRemaining > 0) {
-          setActionOutputState(idx, false);
+          if (cfg.debugSerial) {
+            Serial.print(bgAction.allOutputs ? F("[DEBUG] leave_mesh_all") : F("[DEBUG] leave_mesh"));
+            Serial.print(F(": cycle ON done, cycling OFF (cycles remaining="));
+            Serial.print(bgAction.cyclesRemaining);
+            Serial.println(F(")"));
+          }
+          setPhaseOutputState(false);
           bgAction.phase = APHASE_LEAVE_MESH_CYCLE_OFF;
-          bgAction.phaseStartMs = now;
+          bgAction.phaseStartMs = millis();
         } else {
-          // All cycles done; output is ON — enter final wait
+          // All cycles done; outputs are ON — enter final wait (green window)
+          if (cfg.debugSerial) {
+            Serial.println(bgAction.allOutputs
+                ? F("[DEBUG] leave_mesh_all: all cycles done, entering final wait (green window)")
+                : F("[DEBUG] leave_mesh: all cycles done, entering final wait (green window)"));
+          }
           bgAction.phase = APHASE_LEAVE_MESH_FINAL_WAIT;
           bgAction.phaseStartMs = now;
         }
@@ -1973,35 +2029,83 @@ void maintainBackgroundAction() {
       break;
     case APHASE_LEAVE_MESH_FINAL_WAIT:
       if (now - bgAction.phaseStartMs >= LEAVE_MESH_FINAL_WAIT_MS) {
-        if (bgAction.allOutputs && advanceAllOutputsForCurrentAction(false)) {
-          break;
+        if (cfg.debugSerial) {
+          Serial.println(bgAction.allOutputs
+              ? F("[DEBUG] leave_mesh_all: final wait done, trigger OFF (while green)")
+              : F("[DEBUG] leave_mesh: final wait done, trigger OFF (while green)"));
+        }
+        setPhaseOutputState(false);
+        bgAction.phase = APHASE_LEAVE_MESH_TRIGGER_OFF;
+        bgAction.phaseStartMs = millis();
+      }
+      break;
+    case APHASE_LEAVE_MESH_TRIGGER_OFF:
+      if (now - bgAction.phaseStartMs >= LEAVE_MESH_TRIGGER_OFF_MS) {
+        if (cfg.debugSerial) {
+          Serial.println(bgAction.allOutputs
+              ? F("[DEBUG] leave_mesh_all: trigger OFF done, trigger ON")
+              : F("[DEBUG] leave_mesh: trigger OFF done, trigger ON"));
+        }
+        setPhaseOutputState(true);
+        bgAction.phase = APHASE_LEAVE_MESH_TRIGGER_ON;
+        bgAction.phaseStartMs = millis();
+      }
+      break;
+    case APHASE_LEAVE_MESH_TRIGGER_ON:
+      if (now - bgAction.phaseStartMs >= LEAVE_MESH_TRIGGER_ON_MS) {
+        if (cfg.debugSerial) {
+          Serial.println(bgAction.allOutputs
+              ? F("[DEBUG] leave_mesh_all: trigger complete, finishing")
+              : F("[DEBUG] leave_mesh: trigger complete, finishing"));
         }
         finishAction();
       }
       break;
     case APHASE_FACTORY_RESET_PREP_ON:
       if (now - bgAction.phaseStartMs >= FACTORY_RESET_PREP_ON_MS) {
-        setActionOutputState(idx, false);
+        if (cfg.debugSerial) {
+          Serial.println(bgAction.allOutputs
+              ? F("[DEBUG] factory_reset_all: prep done, cycling all outputs OFF (cycle 1)")
+              : F("[DEBUG] factory_reset: prep done, cycling output OFF (cycle 1)"));
+        }
+        setPhaseOutputState(false);
         bgAction.phase = APHASE_FACTORY_RESET_CYCLE_OFF;
-        bgAction.phaseStartMs = now;
+        bgAction.phaseStartMs = millis();
       }
       break;
     case APHASE_FACTORY_RESET_CYCLE_OFF:
       if (now - bgAction.phaseStartMs >= FACTORY_RESET_CYCLE_OFF_MS) {
-        setActionOutputState(idx, true);
+        if (cfg.debugSerial) {
+          Serial.print(bgAction.allOutputs ? F("[DEBUG] factory_reset_all") : F("[DEBUG] factory_reset"));
+          Serial.print(F(": cycle OFF done, turning ON (cycles remaining="));
+          Serial.print(bgAction.cyclesRemaining);
+          Serial.println(F(")"));
+        }
+        setPhaseOutputState(true);
         bgAction.phase = APHASE_FACTORY_RESET_CYCLE_ON;
-        bgAction.phaseStartMs = now;
+        bgAction.phaseStartMs = millis();
       }
       break;
     case APHASE_FACTORY_RESET_CYCLE_ON:
       if (now - bgAction.phaseStartMs >= FACTORY_RESET_CYCLE_ON_MS) {
         --bgAction.cyclesRemaining;
         if (bgAction.cyclesRemaining > 0) {
-          setActionOutputState(idx, false);
+          if (cfg.debugSerial) {
+            Serial.print(bgAction.allOutputs ? F("[DEBUG] factory_reset_all") : F("[DEBUG] factory_reset"));
+            Serial.print(F(": cycle ON done, cycling OFF (cycles remaining="));
+            Serial.print(bgAction.cyclesRemaining);
+            Serial.println(F(")"));
+          }
+          setPhaseOutputState(false);
           bgAction.phase = APHASE_FACTORY_RESET_CYCLE_OFF;
-          bgAction.phaseStartMs = now;
+          bgAction.phaseStartMs = millis();
         } else {
-          // All cycles done; output is ON — enter final wait
+          // All cycles done; outputs are ON — enter final wait (blue transition window)
+          if (cfg.debugSerial) {
+            Serial.println(bgAction.allOutputs
+                ? F("[DEBUG] factory_reset_all: all cycles done, entering final wait (blue window)")
+                : F("[DEBUG] factory_reset: all cycles done, entering final wait (blue window)"));
+          }
           bgAction.phase = APHASE_FACTORY_RESET_FINAL_WAIT;
           bgAction.phaseStartMs = now;
         }
@@ -2009,16 +2113,35 @@ void maintainBackgroundAction() {
       break;
     case APHASE_FACTORY_RESET_FINAL_WAIT:
       if (now - bgAction.phaseStartMs >= FACTORY_RESET_FINAL_WAIT_MS) {
-        // "Turn it back on" then hold for 10 s
-        setActionOutputState(idx, true);
-        bgAction.phase = APHASE_FACTORY_RESET_HOLD_ON;
-        bgAction.phaseStartMs = now;
+        // Trigger reset while blue: power cycle (OFF then ON)
+        if (cfg.debugSerial) {
+          Serial.println(bgAction.allOutputs
+              ? F("[DEBUG] factory_reset_all: final wait done, trigger OFF (while blue)")
+              : F("[DEBUG] factory_reset: final wait done, trigger OFF (while blue)"));
+        }
+        setPhaseOutputState(false);
+        bgAction.phase = APHASE_FACTORY_RESET_TRIGGER_OFF;
+        bgAction.phaseStartMs = millis();
       }
       break;
-    case APHASE_FACTORY_RESET_HOLD_ON:
-      if (now - bgAction.phaseStartMs >= FACTORY_RESET_HOLD_ON_MS) {
-        if (bgAction.allOutputs && advanceAllOutputsForCurrentAction(true)) {
-          break;
+    case APHASE_FACTORY_RESET_TRIGGER_OFF:
+      if (now - bgAction.phaseStartMs >= FACTORY_RESET_TRIGGER_OFF_MS) {
+        if (cfg.debugSerial) {
+          Serial.println(bgAction.allOutputs
+              ? F("[DEBUG] factory_reset_all: trigger OFF done, trigger ON")
+              : F("[DEBUG] factory_reset: trigger OFF done, trigger ON"));
+        }
+        setPhaseOutputState(true);
+        bgAction.phase = APHASE_FACTORY_RESET_TRIGGER_ON;
+        bgAction.phaseStartMs = millis();
+      }
+      break;
+    case APHASE_FACTORY_RESET_TRIGGER_ON:
+      if (now - bgAction.phaseStartMs >= FACTORY_RESET_TRIGGER_ON_MS) {
+        if (cfg.debugSerial) {
+          Serial.println(bgAction.allOutputs
+              ? F("[DEBUG] factory_reset_all: trigger complete, finishing")
+              : F("[DEBUG] factory_reset: trigger complete, finishing"));
         }
         finishAction();
       }
