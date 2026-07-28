@@ -64,16 +64,16 @@ constexpr unsigned long ACTION_TRIGGER_OFF_MS = 2000UL;
 constexpr unsigned long ACTION_TRIGGER_ON_MS = 1000UL;
 // Leave-mesh load action timing
 constexpr unsigned long LEAVE_MESH_PREP_ON_MS = 4000UL;
-constexpr unsigned long LEAVE_MESH_CYCLE_OFF_MS = 2000UL;
-constexpr unsigned long LEAVE_MESH_CYCLE_ON_MS = 1000UL;
+constexpr unsigned long LEAVE_MESH_CYCLE_OFF_MS = 3000UL;
+constexpr unsigned long LEAVE_MESH_CYCLE_ON_MS = 1500UL;
 constexpr unsigned long LEAVE_MESH_FINAL_WAIT_MS = 3000UL;
-constexpr unsigned long LEAVE_MESH_TRIGGER_OFF_MS = 2000UL;
-constexpr unsigned long LEAVE_MESH_TRIGGER_ON_MS = 1000UL;
+constexpr unsigned long LEAVE_MESH_TRIGGER_OFF_MS = 1500UL;
+constexpr unsigned long LEAVE_MESH_TRIGGER_ON_MS = 2000UL;
 // Dedicated factory-reset load action timing
 constexpr uint8_t FACTORY_RESET_CYCLES = 13;
 constexpr unsigned long FACTORY_RESET_PREP_ON_MS = 4000UL;
 constexpr unsigned long FACTORY_RESET_CYCLE_OFF_MS = 2000UL;
-constexpr unsigned long FACTORY_RESET_CYCLE_ON_MS = 1000UL;
+constexpr unsigned long FACTORY_RESET_CYCLE_ON_MS = 1500UL;
 constexpr unsigned long FACTORY_RESET_FINAL_WAIT_MS = 5000UL;
 constexpr unsigned long FACTORY_RESET_TRIGGER_OFF_MS = 2000UL;
 constexpr unsigned long FACTORY_RESET_TRIGGER_ON_MS = 1000UL;
