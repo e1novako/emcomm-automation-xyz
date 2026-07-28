@@ -29,7 +29,7 @@ constexpr const char* IMPORT_CONFIG_PATH = "/vibrant_config_upload.json";
 constexpr const char* DEFAULT_STA_SSID = "Z-Wave Automation";
 constexpr const char* DEFAULT_STA_PASSWORD = "Fiber714Cvet";
 constexpr const char* DEFAULT_AP_PASSWORD = "Fiber714Cvet";
-constexpr const char* SOFTWARE_VERSION = "1.1.2";
+constexpr const char* SOFTWARE_VERSION = "1.1.5";
 constexpr uint8_t MAX_DEVICES = 16;
 constexpr uint8_t DEFAULT_NUM_OUTPUTS = 8;
 constexpr float MIN_WIFI_POWER = 5.0f;
@@ -63,11 +63,11 @@ constexpr unsigned long ACTION_TRIGGER_OFF_MS = 2000UL;
 constexpr unsigned long ACTION_TRIGGER_ON_MS = 1000UL;
 // Dedicated factory-reset load action timing
 constexpr uint8_t FACTORY_RESET_CYCLES = 5;
-constexpr unsigned long FACTORY_RESET_PREP_ON_MS = 2000UL;
-constexpr unsigned long FACTORY_RESET_CYCLE_OFF_MS = 500UL;
-constexpr unsigned long FACTORY_RESET_CYCLE_ON_MS = 1200UL;
+constexpr unsigned long FACTORY_RESET_PREP_ON_MS = 3500UL;
+constexpr unsigned long FACTORY_RESET_CYCLE_OFF_MS = 600UL;
+constexpr unsigned long FACTORY_RESET_CYCLE_ON_MS = 1500UL;
 constexpr unsigned long FACTORY_RESET_FINAL_WAIT_MS = 2000UL;
-constexpr unsigned long FACTORY_RESET_FINAL_OFF_MS = 500UL;
+constexpr unsigned long FACTORY_RESET_FINAL_OFF_MS = 600UL;
 
 constexpr unsigned long ceilDiv(unsigned long numerator, unsigned long denominator) {
   if (denominator == 0) return 0;
