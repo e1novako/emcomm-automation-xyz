@@ -29,7 +29,7 @@ constexpr const char* IMPORT_CONFIG_PATH = "/vibrant_config_upload.json";
 constexpr const char* DEFAULT_STA_SSID = "Z-Wave Automation";
 constexpr const char* DEFAULT_STA_PASSWORD = "Fiber714Cvet";
 constexpr const char* DEFAULT_AP_PASSWORD = "Fiber714Cvet";
-constexpr const char* SOFTWARE_VERSION = "1.2.0";
+constexpr const char* SOFTWARE_VERSION = "1.2.1";
 constexpr uint8_t MAX_DEVICES = 16;
 constexpr uint8_t DEFAULT_NUM_OUTPUTS = 8;
 constexpr float MIN_WIFI_POWER = 5.0f;
@@ -65,18 +65,18 @@ constexpr unsigned long ACTION_TRIGGER_ON_MS = 1000UL;
 // Leave-mesh load action timing
 constexpr unsigned long LEAVE_MESH_PREP_ON_MS = 4000UL;
 constexpr unsigned long LEAVE_MESH_CYCLE_OFF_MS = 3000UL;
-constexpr unsigned long LEAVE_MESH_CYCLE_ON_MS = 1500UL;
-constexpr unsigned long LEAVE_MESH_FINAL_WAIT_MS = 3000UL;
-constexpr unsigned long LEAVE_MESH_TRIGGER_OFF_MS = 1500UL;
-constexpr unsigned long LEAVE_MESH_TRIGGER_ON_MS = 2000UL;
+constexpr unsigned long LEAVE_MESH_CYCLE_ON_MS = 1000UL;
+constexpr unsigned long LEAVE_MESH_FINAL_WAIT_MS = 5000UL;
+constexpr unsigned long LEAVE_MESH_TRIGGER_OFF_MS = 3000UL;
+constexpr unsigned long LEAVE_MESH_TRIGGER_ON_MS = 5000UL;
 // Dedicated factory-reset load action timing
 constexpr uint8_t FACTORY_RESET_CYCLES = 13;
-constexpr unsigned long FACTORY_RESET_PREP_ON_MS = 4000UL;
-constexpr unsigned long FACTORY_RESET_CYCLE_OFF_MS = 2000UL;
-constexpr unsigned long FACTORY_RESET_CYCLE_ON_MS = 1500UL;
+constexpr unsigned long FACTORY_RESET_PREP_ON_MS = 5000UL;
+constexpr unsigned long FACTORY_RESET_CYCLE_OFF_MS = 3000UL;
+constexpr unsigned long FACTORY_RESET_CYCLE_ON_MS = 1000UL;
 constexpr unsigned long FACTORY_RESET_FINAL_WAIT_MS = 5000UL;
-constexpr unsigned long FACTORY_RESET_TRIGGER_OFF_MS = 2000UL;
-constexpr unsigned long FACTORY_RESET_TRIGGER_ON_MS = 1000UL;
+constexpr unsigned long FACTORY_RESET_TRIGGER_OFF_MS = 3000UL;
+constexpr unsigned long FACTORY_RESET_TRIGGER_ON_MS = 5000UL;
 
 constexpr unsigned long ceilDiv(unsigned long numerator, unsigned long denominator) {
   if (denominator == 0) return 0;
@@ -2137,14 +2137,14 @@ void maintainBackgroundAction() {
       }
       break;
     case APHASE_FACTORY_RESET_TRIGGER_ON:
-      if (now - bgAction.phaseStartMs >= FACTORY_RESET_TRIGGER_ON_MS) {
-        if (cfg.debugSerial) {
-          Serial.println(bgAction.allOutputs
-              ? F("[DEBUG] factory_reset_all: trigger complete, finishing")
-              : F("[DEBUG] factory_reset: trigger complete, finishing"));
-        }
+      //if (now - bgAction.phaseStartMs >= FACTORY_RESET_TRIGGER_ON_MS) {
+      //  if (cfg.debugSerial) {
+      //    Serial.println(bgAction.allOutputs
+      //        ? F("[DEBUG] factory_reset_all: trigger complete, finishing")
+      //        : F("[DEBUG] factory_reset: trigger complete, finishing"));
+      //  }
         finishAction();
-      }
+      //}
       break;
     default:
       bgAction.phase = APHASE_NONE;
