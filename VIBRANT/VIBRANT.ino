@@ -29,7 +29,7 @@ constexpr const char* IMPORT_CONFIG_PATH = "/vibrant_config_upload.json";
 constexpr const char* DEFAULT_STA_SSID = "Z-Wave Automation";
 constexpr const char* DEFAULT_STA_PASSWORD = "Fiber714Cvet";
 constexpr const char* DEFAULT_AP_PASSWORD = "Fiber714Cvet";
-constexpr const char* SOFTWARE_VERSION = "1.2.2";
+constexpr const char* SOFTWARE_VERSION = "1.2.3";
 constexpr uint8_t MAX_DEVICES = 16;
 constexpr uint8_t DEFAULT_NUM_OUTPUTS = 8;
 constexpr float MIN_WIFI_POWER = 5.0f;
@@ -98,6 +98,7 @@ static_assert(FLASH_BOOT_SAMPLE_COUNT >= FLASH_BOOT_MIN_SAMPLES,
               "FLASH boot detection window must collect the minimum number of samples.");
 
 struct DeviceEntry {
+  String manufacturer;
   String model;
   String name;
   int8_t pin;
@@ -360,6 +361,7 @@ void setFactoryDefaults() {
       sizeof(DEFAULT_OUTPUT_PINS) / sizeof(DEFAULT_OUTPUT_PINS[0]);
 
   for (uint8_t i = 0; i < MAX_DEVICES; ++i) {
+    cfg.devices[i].manufacturer = "";
     cfg.devices[i].model = String(F("Model ")) + String(i + 1);
     cfg.devices[i].name = String(F("Output ")) + String(i + 1);
     // Map first DEFAULT_D0_D7_COUNT outputs to D0-D7 by default; rest unassigned.
@@ -411,6 +413,7 @@ bool saveConfig() {
   JsonArray devices = doc["devices"].to<JsonArray>();
   for (uint8_t i = 0; i < MAX_DEVICES; ++i) {
     JsonObject d = devices.add<JsonObject>();
+    d["manufacturer"] = cfg.devices[i].manufacturer;
     d["model"] = cfg.devices[i].model;
     d["name"] = cfg.devices[i].name;
     d["pin"] = cfg.devices[i].pin;
@@ -476,11 +479,13 @@ bool loadConfig() {
   for (uint8_t i = 0; i < MAX_DEVICES; ++i) {
     if (i < devices.size()) {
       JsonObject d = devices[i];
+      cfg.devices[i].manufacturer = d["manufacturer"] | String("");
       cfg.devices[i].model = d["model"] | String(F("Model ")) + String(i + 1);
       cfg.devices[i].name = d["name"] | String(F("Output ")) + String(i + 1);
       cfg.devices[i].pin = static_cast<int8_t>(d["pin"] | -1);
       cfg.devices[i].state = false;  // Always boot OFF; do not restore runtime ON state
     } else {
+      cfg.devices[i].manufacturer = "";
       cfg.devices[i].model = String(F("Model ")) + String(i + 1);
       cfg.devices[i].name = String(F("Output ")) + String(i + 1);
       cfg.devices[i].pin = -1;
@@ -1121,10 +1126,11 @@ void populateStickserverDevice(JsonObject obj, uint8_t idx) {
   obj["euid"] = stickserverOutputEuid(idx);
   obj["idx"] = idx;
   obj["name"] = cfg.devices[idx].name;
+  obj["manufacturer"] = cfg.devices[idx].manufacturer;
   obj["model"] = cfg.devices[idx].model;
   obj["pin"] = cfg.devices[idx].pin;
   obj["state"] = cfg.devices[idx].state ? "ON" : "OFF";
-  obj["ntype"] = STICKSERVER_OUTPUT_TYPE;
+  obj["ntype"] = cfg.devices[idx].model;
   obj["reserved"] = outputReservations[idx].reserved;
   obj["available"] = isManagedOutput(idx) && !outputReservations[idx].reserved;
   if (outputReservations[idx].reserved && !outputReservations[idx].owner.isEmpty()) {
@@ -1337,12 +1343,18 @@ void handleStickserverMessage(const String& topicStr, const String& payloadStr) 
       publishStickserverFailure(cmd, ver, mid, F("invalid_member"), F("count"), F("count must be >= 1."));
       return;
     }
+    if (cfg.debugSerial) {
+      Serial.print(F("[DEBUG] [MQTT] reserve matching ntype='"));
+      Serial.print(ntype);
+      Serial.println(F("' against configured Model fields."));
+    }
 
     uint8_t reservedIdx[MAX_DEVICES] = {0};
     bool newReservation[MAX_DEVICES] = {false};
     size_t reservedCount = 0;
     for (uint8_t i = 0; i < cfg.numOutputs && reservedCount < static_cast<size_t>(requestedCount); ++i) {
       if (!isManagedOutput(i)) continue;
+      if (cfg.devices[i].model != ntype) continue;
       if (outputReservations[i].reserved && outputReservations[i].owner == owner) {
         reservedIdx[reservedCount] = i;
         newReservation[reservedCount] = false;
@@ -1351,6 +1363,14 @@ void handleStickserverMessage(const String& topicStr, const String& payloadStr) 
     }
     for (uint8_t i = 0; i < cfg.numOutputs && reservedCount < static_cast<size_t>(requestedCount); ++i) {
       if (!isManagedOutput(i) || outputReservations[i].reserved) continue;
+      if (cfg.devices[i].model != ntype) continue;
+      if (cfg.debugSerial) {
+        Serial.print(F("[DEBUG] [MQTT] reserve selecting output "));
+        Serial.print(i);
+        Serial.print(F(" with Model='"));
+        Serial.print(cfg.devices[i].model);
+        Serial.println(F("'."));
+      }
       outputReservations[i].reserved = true;
       outputReservations[i].owner = owner;
       reservedIdx[reservedCount] = i;
@@ -2528,6 +2548,17 @@ void handleSettingsGet() {
           "    if(field)field.value=first.value;\n"
           "  }\n"
           "}\n"
+          "function copyFirstManufacturerToAll(){\n"
+          "  const form=document.forms[0];\n"
+          "  if(!form)return;\n"
+          "  const first=form.elements['manufacturer_0'];\n"
+          "  if(!first)return;\n"
+          "  const count=form.querySelectorAll(\"input[name^='manufacturer_']\").length;\n"
+          "  for(let i=1;i<count;i++){\n"
+          "    const field=form.elements['manufacturer_'+i];\n"
+          "    if(field)field.value=first.value;\n"
+          "  }\n"
+          "}\n"
           "function copyFirstNameToAll(){\n"
           "  const form=document.forms[0];\n"
           "  if(!form)return;\n"
@@ -2547,6 +2578,11 @@ void handleSettingsGet() {
           "  const fields=Array.from(form.querySelectorAll(\"select[name^='pin_']\"));\n"
           "  const values=fields.map((field)=>field.value).reverse();\n"
           "  fields.forEach((field,index)=>{field.value=values[index];});\n"
+          "}\n"
+          "function clearAllFieldsExceptOutput(){\n"
+          "  const form=document.forms[0];\n"
+          "  if(!form)return;\n"
+          "  form.querySelectorAll(\"input[name^='manufacturer_'],input[name^='model_'],input[name^='name_']\").forEach((field)=>{field.value='';});\n"
           "}\n"
           "</script>";
   html += F("</head><body><h1>Settings</h1>"
@@ -2574,13 +2610,16 @@ void handleSettingsGet() {
 
   html += "<fieldset><legend>Devices</legend>"
           "<label>Number of outputs (1 - 16) <input name='numOutputs' type='number' min='1' max='16' step='1' value='" + String(cfg.numOutputs) + "'></label>"
-          "<div class='bulk-actions'><button type='button' onclick='copyFirstModelToAll()'>Use first Model for all</button>"
+          "<div class='bulk-actions'><button type='button' onclick='copyFirstManufacturerToAll()'>Use first Manufacturer for all</button>"
+          "<button type='button' onclick='copyFirstModelToAll()'>Use first Model for all</button>"
           "<button type='button' onclick='copyFirstNameToAll()'>Use first Name for all</button>"
+          "<button type='button' onclick='clearAllFieldsExceptOutput()'>Clear all fields</button>"
           "<button type='button' onclick='reverseGpioAssignments()'>Reverse GPIO assignments</button>"
           "<span>If the first Name contains #5, copy keeps the first row at #5 and fills later rows as #6, #7, and so on.</span></div>"
-          "<table><tr><th>#</th><th>Model</th><th>Name</th><th>Control output</th></tr>";
+          "<table><tr><th>#</th><th>Manufacturer</th><th>Model</th><th>Name</th><th>Control output</th></tr>";
   for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
     html += "<tr><td>" + String(i + 1) + "</td>"
+            "<td><input name='manufacturer_" + String(i) + "' value='" + htmlEscape(cfg.devices[i].manufacturer) + "'></td>"
             "<td><input name='model_" + String(i) + "' value='" + htmlEscape(cfg.devices[i].model) + "'></td>"
             "<td><input name='name_" + String(i) + "' value='" + htmlEscape(cfg.devices[i].name) + "'></td>"
             "<td><select name='pin_" + String(i) + "'>";
@@ -2696,6 +2735,7 @@ void handleSettingsPost() {
   cfg.numOutputs = static_cast<uint8_t>(parsedOutputs);
 
   for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
+    cfg.devices[i].manufacturer = server.arg("manufacturer_" + String(i));
     cfg.devices[i].model = server.arg("model_" + String(i));
     cfg.devices[i].name = server.arg("name_" + String(i));
     int pin = -1;
@@ -2737,6 +2777,16 @@ void handleSettingsPost() {
 
   cfg.arduinoOtaEnabled = server.hasArg("arduinoOtaEnabled") && server.arg("arduinoOtaEnabled") == "1";
   cfg.debugSerial = server.hasArg("debugSerial") && server.arg("debugSerial") == "1";
+  if (cfg.debugSerial) {
+    Serial.println(F("[DEBUG] Settings manufacturer fields updated:"));
+    for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
+      Serial.print(F("[DEBUG] manufacturer_"));
+      Serial.print(i);
+      Serial.print(F("='"));
+      Serial.print(cfg.devices[i].manufacturer);
+      Serial.println(F("'"));
+    }
+  }
 
   logStatus(F("Settings updated from web UI."));
   if (!saveConfig()) {

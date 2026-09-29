@@ -24,9 +24,10 @@ Change the password immediately in **Settings** after the first boot.
   - Password
   - Wi-Fi output power/strength
   - MQTT broker host, port, username, and password (enable/disable toggle)
-  - Bulk-copying the first Model/Name to all visible rows (`#<number>` in the first name continues from the parsed starting number)
+  - Bulk-copying the first Manufacturer/Model/Name to all visible rows (`#<number>` in the first name continues from the parsed starting number)
+  - Clearing all Manufacturer, Model, and Name fields without changing Control output selections
   - Reversing GPIO assignments across the currently configured output rows
-  - Up to 16 device entries (`model`, `name`, output `D0`–`D8`, `RX`, `TX`, or `none`)
+  - Up to 16 device entries (`manufacturer`, `model`, `name`, output `D0`–`D8`, `RX`, `TX`, or `none`)
   - MQTT server/host, port, user, password, and enable toggle
 - Configuration maintenance routes:
   - Export backup (`/config/export`)
@@ -58,6 +59,10 @@ On first boot (or after factory reset), outputs 1–8 are mapped to **D0–D7** 
 Outputs 9–16 default to unassigned (`none`).
 
 ## MQTT
+
+### Stickserver reservations
+
+Stickserver `reserve` requests match the requested `ntype` against each output's configured Model exactly. Device information reports the configured Manufacturer and Model, and the reported `ntype` is the Model value.
 
 ### Configuration
 
