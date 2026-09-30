@@ -11,13 +11,6 @@ extern "C" {
 #include "user_interface.h"
 }
 
-// ---------------------------------------------------------------------------
-// DIAGNOSTICS FLAG — set to 1 to re-enable the custom MAC override, 0 to skip
-// it for testing.  Remove this block (and the #if guards below) once the
-// Wi-Fi connection issue has been diagnosed.
-// ---------------------------------------------------------------------------
-#define WIFI_DIAG_APPLY_CUSTOM_MAC 0
-
 namespace {
 
 // Forward declarations (defined below)
@@ -31,7 +24,7 @@ constexpr const char* DEFAULT_STA_PASSWORD = "Fiber714Cvet";
 constexpr const char* DEFAULT_AP_PASSWORD = "Fiber714Cvet";
 constexpr const char* DEFAULT_DEVICE_MANUFACTURER = "Control4";
 constexpr const char* DEFAULT_DEVICE_MODEL = "Vibrant";
-constexpr const char* SOFTWARE_VERSION = "1.2.5";
+constexpr const char* SOFTWARE_VERSION = "1.2.6";
 constexpr uint8_t MAX_DEVICES = 16;
 constexpr uint8_t DEFAULT_NUM_OUTPUTS = 8;
 constexpr float MIN_WIFI_POWER = 5.0f;
@@ -109,6 +102,7 @@ struct DeviceEntry {
 
 struct DeviceConfig {
   String mac;
+  bool useCustomMac;
   String hostname;
   String staSsid;
   String staPassword;
@@ -127,36 +121,38 @@ struct DeviceConfig {
   bool debugSerial;
 };
 
-// Background load-action state machine
+struct SequenceProfile {
+  const char* name;
+  uint8_t cycles;
+  unsigned long prepOnMs, cycleOffMs, cycleOnMs, finalWaitMs, triggerOffMs, triggerOnMs;
+};
+
+const SequenceProfile PROFILE_REBOOT = {"reboot", REBOOT_SEQUENCE_CYCLES, 0,
+    ACTION_CYCLE_OFF_MS, ACTION_CYCLE_ON_MS, ACTION_FINAL_WAIT_MS, ACTION_TRIGGER_OFF_MS, ACTION_TRIGGER_ON_MS};
+const SequenceProfile PROFILE_LEAVE_MESH = {"leave mesh", LEAVE_MESH_CYCLES, LEAVE_MESH_PREP_ON_MS,
+    LEAVE_MESH_CYCLE_OFF_MS, LEAVE_MESH_CYCLE_ON_MS, LEAVE_MESH_FINAL_WAIT_MS,
+    LEAVE_MESH_TRIGGER_OFF_MS, LEAVE_MESH_TRIGGER_ON_MS};
+const SequenceProfile PROFILE_FACTORY_RESET = {"factory reset", FACTORY_RESET_CYCLES, FACTORY_RESET_PREP_ON_MS,
+    FACTORY_RESET_CYCLE_OFF_MS, FACTORY_RESET_CYCLE_ON_MS, FACTORY_RESET_FINAL_WAIT_MS,
+    FACTORY_RESET_TRIGGER_OFF_MS, FACTORY_RESET_TRIGGER_ON_MS};
+
 enum ActionPhase : uint8_t {
   APHASE_NONE = 0,
+  APHASE_PREP_ON,
   APHASE_CYCLE_OFF,
   APHASE_CYCLE_ON,
   APHASE_FINAL_WAIT,
   APHASE_TRIGGER_OFF,
-  APHASE_TRIGGER_ON,
-  // Dedicated leave-mesh phases
-  APHASE_LEAVE_MESH_PREP_ON,
-  APHASE_LEAVE_MESH_CYCLE_OFF,
-  APHASE_LEAVE_MESH_CYCLE_ON,
-  APHASE_LEAVE_MESH_FINAL_WAIT,
-  APHASE_LEAVE_MESH_TRIGGER_OFF,
-  APHASE_LEAVE_MESH_TRIGGER_ON,
-  // Dedicated factory-reset phases
-  APHASE_FACTORY_RESET_PREP_ON,
-  APHASE_FACTORY_RESET_CYCLE_OFF,
-  APHASE_FACTORY_RESET_CYCLE_ON,
-  APHASE_FACTORY_RESET_FINAL_WAIT,
-  APHASE_FACTORY_RESET_TRIGGER_OFF,
-  APHASE_FACTORY_RESET_TRIGGER_ON
+  APHASE_TRIGGER_ON
 };
 
 struct ActiveAction {
   ActionPhase phase;
+  const SequenceProfile* profile;
   uint8_t deviceIdx;
   uint8_t cyclesRemaining;
   unsigned long phaseStartMs;
-  bool allOutputs;  // when true, action iterates all managed outputs sequentially
+  bool allOutputs;
 };
 
 struct OutputReservation {
@@ -173,14 +169,14 @@ const PinMapping OUTPUT_PIN_MAPPINGS[] = {
     {16, "D0 (GPIO16)"},
     {5, "D1 (GPIO5)"},
     {4, "D2 (GPIO4)"},
-    {0, "D3 (GPIO0)"},
+    {0, "D3 (GPIO0) - boot/FLASH pin"},
     {2, "D4 (GPIO2)"},
     {14, "D5 (GPIO14)"},
     {12, "D6 (GPIO12)"},
     {13, "D7 (GPIO13)"},
-    {15, "D8 (GPIO15)"},
-    {3, "RX (GPIO3)"},
-    {1, "TX (GPIO1)"},
+    {15, "D8 (GPIO15) - must be LOW at boot"},
+    {3, "RX (GPIO3) - disables serial receive"},
+    {1, "TX (GPIO1) - disables serial logging"},
 };
 
 constexpr size_t OUTPUT_PIN_MAPPING_COUNT = sizeof(OUTPUT_PIN_MAPPINGS) / sizeof(OUTPUT_PIN_MAPPINGS[0]);
@@ -188,6 +184,7 @@ static_assert(DEFAULT_D0_D7_COUNT <= OUTPUT_PIN_MAPPING_COUNT,
               "DEFAULT_D0_D7_COUNT exceeds available OUTPUT_PIN_MAPPINGS entries.");
 
 DeviceConfig cfg;
+#define DBG(...) do { if (cfg.debugSerial) { Serial.print(F("[DEBUG] ")); Serial.printf(__VA_ARGS__); Serial.println(); } } while (0)
 ESP8266WebServer server(80);
 File importFile;
 bool importFailed = false;
@@ -206,7 +203,7 @@ WiFiClient mqttWifiClient;
 PubSubClient mqttClient(mqttWifiClient);
 unsigned long lastMqttConnectAttemptMs = 0;
 // Background load-action state
-ActiveAction bgAction = {APHASE_NONE, 0, 0, 0UL, false};
+ActiveAction bgAction = {APHASE_NONE, nullptr, 0, 0, 0UL, false};
 OutputReservation outputReservations[MAX_DEVICES];
 
 String htmlEscape(const String& value) {
@@ -233,14 +230,8 @@ bool deviceModelMatches(const String& modelField, const String& ntype) {
     String token = modelField.substring(tokenStart, tokenEnd);
     token.trim();
     bool tokenMatches = token.equalsIgnoreCase(ntype);
-    if (cfg.debugSerial) {
-      Serial.print(F("[DEBUG] [MQTT] comparing Model token='"));
-      Serial.print(token);
-      Serial.print(F("' against ntype='"));
-      Serial.print(ntype);
-      Serial.print(F("' -> "));
-      Serial.println(tokenMatches ? F("match") : F("no match"));
-    }
+    DBG("[MQTT] comparing Model token='%s' against ntype='%s' -> %s",
+        token.c_str(), ntype.c_str(), tokenMatches ? "match" : "no match");
     if (tokenMatches) {
       matched = true;
       break;
@@ -248,10 +239,7 @@ bool deviceModelMatches(const String& modelField, const String& ntype) {
     if (comma < 0) break;
     tokenStart = comma + 1;
   }
-  if (cfg.debugSerial) {
-    Serial.print(F("[DEBUG] [MQTT] Model match result: "));
-    Serial.println(matched ? F("match") : F("no match"));
-  }
+  DBG("[MQTT] Model match result: %s", matched ? "match" : "no match");
   return matched;
 }
 
@@ -331,7 +319,7 @@ String defaultHostnameFromMac(const String& mac) {
 }
 
 String defaultSoftApSsidFromMac(const String& mac) {
-  return String(F("C4-VIBRANT-")) + macLastThreeOctets(mac);
+  return defaultHostnameFromMac(mac);
 }
 
 void clearOutputReservations() {
@@ -381,17 +369,13 @@ bool applyConfiguredMac() {
 
 void setFactoryDefaults() {
   cfg.mac = WiFi.softAPmacAddress();
+  cfg.useCustomMac = false;
   cfg.hostname = defaultHostnameFromMac(cfg.mac);
   cfg.staSsid = DEFAULT_STA_SSID;
   cfg.staPassword = DEFAULT_STA_PASSWORD;
   cfg.apPassword = DEFAULT_AP_PASSWORD;
   cfg.wifiPower = 20.5f;
   cfg.numOutputs = DEFAULT_NUM_OUTPUTS;
-
-  // Default GPIO pins for D0-D7 in NodeMCU v3 order
-  static const int8_t DEFAULT_OUTPUT_PINS[] = {16, 5, 4, 0, 2, 14, 12, 13};
-  static const uint8_t DEFAULT_OUTPUT_PIN_COUNT =
-      sizeof(DEFAULT_OUTPUT_PINS) / sizeof(DEFAULT_OUTPUT_PINS[0]);
 
   for (uint8_t i = 0; i < MAX_DEVICES; ++i) {
     cfg.devices[i].manufacturer = DEFAULT_DEVICE_MANUFACTURER;
@@ -401,10 +385,6 @@ void setFactoryDefaults() {
     // Compile-time static_assert above guarantees DEFAULT_D0_D7_COUNT <= OUTPUT_PIN_MAPPING_COUNT.
     cfg.devices[i].pin = (i < DEFAULT_D0_D7_COUNT) ? OUTPUT_PIN_MAPPINGS[i].gpio : -1;
     cfg.devices[i].state = false;
-    /*
-    cfg.devices[i].pin = (i < DEFAULT_OUTPUT_PIN_COUNT) ? DEFAULT_OUTPUT_PINS[i] : -1;
-    cfg.devices[i].state = false;
-    */
   }
 
   cfg.mqttEnabled = false;
@@ -422,6 +402,7 @@ void setFactoryDefaults() {
 bool saveConfig() {
   JsonDocument doc;
   doc["mac"] = cfg.mac;
+  doc["useCustomMac"] = cfg.useCustomMac;
   doc["hostname"] = cfg.hostname;
   doc["staSsid"] = cfg.staSsid;
   doc["staPassword"] = cfg.staPassword;
@@ -435,13 +416,6 @@ bool saveConfig() {
   doc["mqttPassword"] = cfg.mqttPassword;
   doc["arduinoOtaEnabled"] = cfg.arduinoOtaEnabled;
   doc["debugSerial"] = cfg.debugSerial;
-
-  JsonObject mqtt = doc["mqtt"].to<JsonObject>();
-  mqtt["enabled"] = cfg.mqttEnabled;
-  mqtt["host"] = cfg.mqttHost;
-  mqtt["port"] = cfg.mqttPort;
-  mqtt["user"] = cfg.mqttUser;
-  mqtt["password"] = cfg.mqttPassword;
 
   JsonArray devices = doc["devices"].to<JsonArray>();
   for (uint8_t i = 0; i < MAX_DEVICES; ++i) {
@@ -495,6 +469,7 @@ bool loadConfig() {
   }
 
   cfg.mac = doc["mac"] | WiFi.softAPmacAddress();
+  cfg.useCustomMac = doc["useCustomMac"] | false;
   cfg.hostname = doc["hostname"] | defaultHostnameFromMac(cfg.mac);
 
   String legacySsid = doc["ssid"] | String(DEFAULT_STA_SSID);
@@ -673,11 +648,6 @@ void performFactoryResetAndRestart(const String& reason) {
   ESP.restart();
 }
 
-// ---------------------------------------------------------------------------
-// DIAGNOSTICS — log the effective loaded Wi-Fi configuration values.
-// Remove this function (and its call in setup()) once the Wi-Fi issue is
-// resolved.
-// ---------------------------------------------------------------------------
 void logLoadedWifiConfig() {
   Serial.print(F("[INFO] [DIAG] Loaded station SSID: "));
   Serial.println(cfg.staSsid);
@@ -724,11 +694,6 @@ void checkFlashFactoryResetOnBoot() {
   performFactoryResetAndRestart(F("FLASH/GPIO0 was held low during the boot-time detection window."));
 }
 
-// ---------------------------------------------------------------------------
-// DIAGNOSTICS — scan for visible Wi-Fi networks and print SSID + RSSI.
-// Remove this function (and its call in setup()) once the Wi-Fi issue is
-// resolved.
-// ---------------------------------------------------------------------------
 void logWifiScan() {
   logStatus(F("[DIAG] Scanning for visible Wi-Fi networks (may take a few seconds)..."));
   int n = WiFi.scanNetworks();
@@ -751,11 +716,7 @@ void logWifiScan() {
 
 void applyWifiSettings() {
   logStatus(F("Applying Wi-Fi settings..."));
-#if WIFI_DIAG_APPLY_CUSTOM_MAC
-  applyConfiguredMac();
-#else
-  logWarning(F("[DIAG] Custom MAC override disabled for diagnostics; using hardware MAC."));
-#endif
+  if (cfg.useCustomMac) applyConfiguredMac();
   cfg.wifiPower = constrain(cfg.wifiPower, MIN_WIFI_POWER, MAX_WIFI_POWER);
 
   const String softApSsid = defaultSoftApSsidFromMac(cfg.mac);
@@ -848,30 +809,21 @@ void applyArduinoOtaSettings() {
     ArduinoOTA.onStart([]() {
       String mode = (ArduinoOTA.getCommand() == U_FLASH) ? F("firmware") : F("filesystem");
       logStatus(String(F("ArduinoOTA start (")) + mode + F(")."));
-      if (cfg.debugSerial) {
-        Serial.print(F("[DEBUG] ArduinoOTA host: "));
-        Serial.println(cfg.hostname);
-      }
+      DBG("ArduinoOTA host: %s", cfg.hostname.c_str());
     });
     ArduinoOTA.onEnd([]() {
       logStatus(F("ArduinoOTA completed."));
-      if (cfg.debugSerial) {
-        Serial.println(F("[DEBUG] ArduinoOTA transfer finished successfully."));
-      }
+      DBG("ArduinoOTA transfer finished successfully.");
     });
     ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
       if (cfg.debugSerial) {
         unsigned int percent = (total == 0U) ? 0U : (progress * 100U) / total;
-        Serial.print(F("[DEBUG] ArduinoOTA progress: "));
-        Serial.print(percent);
-        Serial.println(F("%"));
+        DBG("ArduinoOTA progress: %u%%", percent);
       }
     });
     ArduinoOTA.onError([](ota_error_t error) {
       logError(String(F("ArduinoOTA error #")) + String(static_cast<int>(error)));
-      if (cfg.debugSerial) {
-        Serial.println(F("[DEBUG] ArduinoOTA transfer aborted due to error."));
-      }
+      DBG("ArduinoOTA transfer aborted due to error.");
     });
     arduinoOtaCallbacksConfigured = true;
   }
@@ -889,27 +841,22 @@ bool isActionRunning() {
   return bgAction.phase != APHASE_NONE;
 }
 
+bool isInCyclePhase() {
+  return bgAction.phase == APHASE_CYCLE_OFF || bgAction.phase == APHASE_CYCLE_ON;
+}
+
 String actionPhaseName() {
+  String phase;
   switch (bgAction.phase) {
-    case APHASE_CYCLE_OFF:   return F("cycling off");
-    case APHASE_CYCLE_ON:    return F("cycling on");
-    case APHASE_FINAL_WAIT:  return F("waiting (final)");
-    case APHASE_TRIGGER_OFF: return F("triggering off");
-    case APHASE_TRIGGER_ON:  return F("triggering on");
-    case APHASE_LEAVE_MESH_PREP_ON:    return F("leave mesh prep on");
-    case APHASE_LEAVE_MESH_CYCLE_OFF:  return F("leave mesh cycling off");
-    case APHASE_LEAVE_MESH_CYCLE_ON:   return F("leave mesh cycling on");
-    case APHASE_LEAVE_MESH_FINAL_WAIT: return F("leave mesh waiting");
-    case APHASE_LEAVE_MESH_TRIGGER_OFF: return F("leave mesh trigger off");
-    case APHASE_LEAVE_MESH_TRIGGER_ON:  return F("leave mesh trigger on");
-    case APHASE_FACTORY_RESET_PREP_ON:    return F("factory reset prep on");
-    case APHASE_FACTORY_RESET_CYCLE_OFF:  return F("factory reset cycling off");
-    case APHASE_FACTORY_RESET_CYCLE_ON:   return F("factory reset cycling on");
-    case APHASE_FACTORY_RESET_FINAL_WAIT: return F("factory reset waiting");
-    case APHASE_FACTORY_RESET_TRIGGER_OFF: return F("factory reset trigger off");
-    case APHASE_FACTORY_RESET_TRIGGER_ON:  return F("factory reset trigger on");
-    default:                 return F("idle");
+    case APHASE_PREP_ON:     phase = F("prep on"); break;
+    case APHASE_CYCLE_OFF:   phase = F("cycling off"); break;
+    case APHASE_CYCLE_ON:    phase = F("cycling on"); break;
+    case APHASE_FINAL_WAIT:  phase = F("waiting (final)"); break;
+    case APHASE_TRIGGER_OFF: phase = F("triggering off"); break;
+    case APHASE_TRIGGER_ON:  phase = F("triggering on"); break;
+    default: return F("idle");
   }
+  return String(bgAction.profile->name) + ' ' + phase;
 }
 
 // Drive a single output pin directly (no blocking).
@@ -926,6 +873,10 @@ void setOutputDirect(uint8_t idx, bool state) {
 
 bool isManagedOutput(uint8_t idx) {
   return idx < cfg.numOutputs && isValidOutputPin(cfg.devices[idx].pin);
+}
+
+bool actionOwnsOutput(uint8_t idx) {
+  return isActionRunning() && (bgAction.allOutputs ? isManagedOutput(idx) : bgAction.deviceIdx == idx);
 }
 
 
@@ -954,10 +905,7 @@ void mqttPublishOutputState(uint8_t idx) {
   String topic = mqttOutputStateTopic(idx);
   bool ok = mqttClient.publish(topic.c_str(), statePayload, true);
   if (ok) {
-    Serial.print(F("[INFO] [MQTT] Published state -> topic: "));
-    Serial.print(topic);
-    Serial.print(F(" payload: "));
-    Serial.println(statePayload);
+    DBG("[MQTT] Published state -> topic: %s payload: %s", topic.c_str(), statePayload);
   } else {
     Serial.print(F("[WARN] [MQTT] Failed to publish state -> topic: "));
     Serial.println(topic);
@@ -968,34 +916,6 @@ void mqttPublishAllOutputStates() {
   for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
     mqttPublishOutputState(i);
   }
-}
-
-// Drive outputs for the active background action (all managed outputs or just the active one).
-void setOutputsForAction(bool state) {
-  if (bgAction.allOutputs) {
-    for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
-      if (isManagedOutput(i)) {
-        setOutputDirect(i, state);
-        mqttPublishOutputState(i);
-      }
-    }
-  } else {
-    setOutputDirect(bgAction.deviceIdx, state);
-    mqttPublishOutputState(bgAction.deviceIdx);
-  }
-}
-
-int findNextManagedOutputIndex(uint8_t startIdx) {
-  if (startIdx >= cfg.numOutputs) return -1;
-  for (uint8_t i = startIdx; i < cfg.numOutputs; ++i) {
-    if (isManagedOutput(i)) return static_cast<int>(i);
-  }
-  return -1;
-}
-
-void setActionOutputState(uint8_t idx, bool state) {
-  setOutputDirect(idx, state);
-  mqttPublishOutputState(idx);
 }
 
 // Set output state for the current action: writes all managed outputs when
@@ -1015,76 +935,6 @@ void setPhaseOutputState(bool state) {
     mqttPublishOutputState(bgAction.deviceIdx);
   }
 }
-
-void beginLeaveMeshForOutput(uint8_t idx, bool allOutputsAction) {
-  bgAction.deviceIdx = idx;
-  bgAction.allOutputs = allOutputsAction;
-  bgAction.cyclesRemaining = LEAVE_MESH_CYCLES;
-  bgAction.phaseStartMs = millis();
-  if (!cfg.devices[idx].state) {
-    if (!allOutputsAction) {
-      logStatus(String(F("leave_mesh: output was OFF, turning ON for prep")));
-    }
-    if (cfg.debugSerial) {
-      Serial.print(F("[DEBUG] leave_mesh"));
-      if (allOutputsAction) Serial.print(F("_all"));
-      Serial.print(F(": output "));
-      Serial.print(idx + 1);
-      Serial.println(F(" was OFF, turning ON for prep"));
-    }
-    setActionOutputState(idx, true);
-    bgAction.phase = APHASE_LEAVE_MESH_PREP_ON;
-  } else {
-    if (!allOutputsAction) {
-      logStatus(String(F("leave_mesh: output was ON, starting cycles immediately")));
-    }
-    if (cfg.debugSerial) {
-      Serial.print(F("[DEBUG] leave_mesh"));
-      if (allOutputsAction) Serial.print(F("_all"));
-      Serial.print(F(": output "));
-      Serial.print(idx + 1);
-      Serial.println(F(" was ON, starting cycles immediately"));
-    }
-    setActionOutputState(idx, false);
-    bgAction.phase = APHASE_LEAVE_MESH_CYCLE_OFF;
-  }
-}
-
-void beginFactoryResetForOutput(uint8_t idx, bool allOutputsAction) {
-  bgAction.deviceIdx = idx;
-  bgAction.allOutputs = allOutputsAction;
-  bgAction.cyclesRemaining = FACTORY_RESET_CYCLES;
-  bgAction.phaseStartMs = millis();
-  if (!cfg.devices[idx].state) {
-    if (!allOutputsAction) {
-      logStatus(String(F("factory_reset: output was OFF, turning ON for prep")));
-    }
-    if (cfg.debugSerial) {
-      Serial.print(F("[DEBUG] factory_reset"));
-      if (allOutputsAction) Serial.print(F("_all"));
-      Serial.print(F(": output "));
-      Serial.print(idx + 1);
-      Serial.println(F(" was OFF, turning ON for prep"));
-    }
-    setActionOutputState(idx, true);
-    bgAction.phase = APHASE_FACTORY_RESET_PREP_ON;
-  } else {
-    if (!allOutputsAction) {
-      logStatus(String(F("factory_reset: output was ON, starting cycles immediately")));
-    }
-    if (cfg.debugSerial) {
-      Serial.print(F("[DEBUG] factory_reset"));
-      if (allOutputsAction) Serial.print(F("_all"));
-      Serial.print(F(": output "));
-      Serial.print(idx + 1);
-      Serial.println(F(" was ON, starting cycles immediately"));
-    }
-    setActionOutputState(idx, false);
-    bgAction.phase = APHASE_FACTORY_RESET_CYCLE_OFF;
-  }
-}
-
-
 
 String stickserverMacToken() {
   String token;
@@ -1198,12 +1048,8 @@ bool publishStickserverResponse(JsonDocument& doc) {
   String topic = stickserverInstanceTopic();
   bool ok = mqttClient.publish(topic.c_str(), payload.c_str());
   if (ok) {
-    Serial.print(F("[INFO] [MQTT] Stickserver response -> topic: "));
-    Serial.print(topic);
-    Serial.print(F(" rsp: "));
-    Serial.print(doc["rsp"] | "?");
-    Serial.print(F(" status: "));
-    Serial.println(doc["status"] | "?");
+    DBG("[MQTT] Stickserver response -> topic: %s rsp: %s status: %s", topic.c_str(),
+        doc["rsp"] | "?", doc["status"] | "?");
   } else {
     Serial.print(F("[WARN] [MQTT] Stickserver publish failed -> topic: "));
     Serial.println(topic);
@@ -1252,6 +1098,20 @@ const char* aggregateStickserverStatus(size_t okCount, size_t totalCount) {
   return "partial";
 }
 
+int resolveRequestedEuid(JsonVariantConst value, String& euid) {
+  if (value.is<const char*>()) euid = value.as<const char*>();
+  else if (value.is<int>()) euid = String(value.as<int>());
+  else if (value.is<long>()) euid = String(value.as<long>());
+  else if (value.is<unsigned int>()) euid = String(value.as<unsigned int>());
+  else if (value.is<unsigned long>()) euid = String(value.as<unsigned long>());
+  else if (!value.isNull()) DBG("[MQTT] Unrecognized euid type");
+  DBG("[MQTT] Parsed euid: %s", euid.isEmpty() ? "(none)" : euid.c_str());
+  if (euid.isEmpty()) return -2;
+  int idx = findManagedOutputByEuid(euid);
+  DBG("[MQTT] Resolved idx from euid: %d", idx);
+  return idx;
+}
+
 void handleStickserverMessage(const String& topicStr, const String& payloadStr) {
   JsonDocument request;
   DeserializationError err = deserializeJson(request, payloadStr);
@@ -1277,10 +1137,8 @@ void handleStickserverMessage(const String& topicStr, const String& payloadStr) 
   } else if (request["mid"].is<long>()) {
     mid = String(request["mid"].as<long>());
   }
-  Serial.print(F("[INFO] [MQTT] Stickserver cmd: "));
-  Serial.print(cmd.isEmpty() ? String(F("(none)")) : cmd.c_str());
-  Serial.print(F(" mid: "));
-  Serial.println(mid.isEmpty() ? String(F("(none)")) : mid.c_str());
+  DBG("[MQTT] Stickserver cmd: %s mid: %s",
+      cmd.isEmpty() ? "(none)" : cmd.c_str(), mid.isEmpty() ? "(none)" : mid.c_str());
   if (!request["ver"].is<int>()) {
     publishStickserverFailure(cmd.isEmpty() ? String(F("error")) : cmd,
                               STICKSERVER_PROTOCOL_VERSION,
@@ -1318,20 +1176,6 @@ void handleStickserverMessage(const String& topicStr, const String& payloadStr) 
                               F("Only hello is accepted on the root topic."));
     return;
   }
-
-  // Shared euid parser: accepts string or integer and normalizes to String.
-  // Logs unrecognized types when cfg.debugSerial is enabled.
-  auto parseEuidValue = [&](JsonVariantConst v) -> String {
-    if (v.is<const char*>()) return v.as<const char*>();
-    if (v.is<int>()) return String(v.as<int>());
-    if (v.is<long>()) return String(v.as<long>());
-    if (v.is<unsigned int>()) return String(v.as<unsigned int>());
-    if (v.is<unsigned long>()) return String(v.as<unsigned long>());
-    if (cfg.debugSerial && !v.isNull()) {
-      Serial.println(F("[WARN] [MQTT] parseEuidValue: unrecognized euid type; treating as missing."));
-    }
-    return String("");
-  };
 
   if (cmd == F("hello")) {
     JsonDocument response;
@@ -1382,11 +1226,7 @@ void handleStickserverMessage(const String& topicStr, const String& payloadStr) 
       publishStickserverFailure(cmd, ver, mid, F("invalid_member"), F("count"), F("count must be >= 1."));
       return;
     }
-    if (cfg.debugSerial) {
-      Serial.print(F("[DEBUG] [MQTT] reserve matching ntype='"));
-      Serial.print(ntype);
-      Serial.println(F("' against configured Model fields."));
-    }
+    DBG("[MQTT] reserve matching ntype='%s' against configured Model fields.", ntype.c_str());
 
     uint8_t reservedIdx[MAX_DEVICES] = {0};
     bool newReservation[MAX_DEVICES] = {false};
@@ -1403,13 +1243,8 @@ void handleStickserverMessage(const String& topicStr, const String& payloadStr) 
     for (uint8_t i = 0; i < cfg.numOutputs && reservedCount < static_cast<size_t>(requestedCount); ++i) {
       if (!isManagedOutput(i) || outputReservations[i].reserved) continue;
       if (!deviceModelMatches(cfg.devices[i].model, ntype)) continue;
-      if (cfg.debugSerial) {
-        Serial.print(F("[DEBUG] [MQTT] reserve selecting output "));
-        Serial.print(i);
-        Serial.print(F(" with Model='"));
-        Serial.print(cfg.devices[i].model);
-        Serial.println(F("'."));
-      }
+      DBG("[MQTT] reserve selecting output %u with Model='%s'.",
+          static_cast<unsigned>(i), cfg.devices[i].model.c_str());
       outputReservations[i].reserved = true;
       outputReservations[i].owner = owner;
       reservedIdx[reservedCount] = i;
@@ -1546,19 +1381,11 @@ void handleStickserverMessage(const String& topicStr, const String& payloadStr) 
   }
 
   if (cmd == F("join") || cmd == F("reboot")) {
-    String euid = parseEuidValue(request["euid"]);
-    if (cfg.debugSerial) {
-      Serial.print(F("[INFO] [MQTT] Parsed euid: "));
-      Serial.println(euid.isEmpty() ? String(F("(none)")) : euid);
-    }
-    if (euid.isEmpty()) {
+    String euid;
+    int idx = resolveRequestedEuid(request["euid"], euid);
+    if (idx == -2) {
       publishStickserverFailure(cmd, ver, mid, F("invalid_member"), F("euid"), F("Missing euid."));
       return;
-    }
-    int idx = findManagedOutputByEuid(euid);
-    if (cfg.debugSerial) {
-      Serial.print(F("[INFO] [MQTT] Resolved idx from euid: "));
-      Serial.println(idx);
     }
     if (idx < 0) {
       publishStickserverFailure(cmd, ver, mid, F("invalid_member"), F("euid"), F("Unknown euid."));
@@ -1584,19 +1411,11 @@ void handleStickserverMessage(const String& topicStr, const String& payloadStr) 
 
   // Commands routed by euid: power_on, power_off, factory_reset
   if (cmd == F("power_on") || cmd == F("power_off") || cmd == F("factory_reset")) {
-    String euid = parseEuidValue(request["euid"]);
-    if (cfg.debugSerial) {
-      Serial.print(F("[INFO] [MQTT] Parsed euid: "));
-      Serial.println(euid.isEmpty() ? String(F("(none)")) : euid);
-    }
-    if (euid.isEmpty()) {
+    String euid;
+    int idx = resolveRequestedEuid(request["euid"], euid);
+    if (idx == -2) {
       publishStickserverFailure(cmd, ver, mid, F("invalid_member"), F("euid"), F("Missing euid."));
       return;
-    }
-    int idx = findManagedOutputByEuid(euid);
-    if (cfg.debugSerial) {
-      Serial.print(F("[INFO] [MQTT] Resolved idx from euid: "));
-      Serial.println(idx);
     }
     if (idx < 0) {
       publishStickserverFailure(cmd, ver, mid, F("invalid_member"), F("euid"), F("Unknown euid."));
@@ -1625,21 +1444,13 @@ void handleStickserverMessage(const String& topicStr, const String& payloadStr) 
     size_t totalRequested = 0;
 
     if (!request["euid"].isNull()) {
-      String euid = parseEuidValue(request["euid"]);
-      if (cfg.debugSerial) {
-        Serial.print(F("[INFO] [MQTT] Parsed euid: "));
-        Serial.println(euid.isEmpty() ? String(F("(none)")) : euid);
-      }
-      if (euid.isEmpty()) {
+      String euid;
+      int idx = resolveRequestedEuid(request["euid"], euid);
+      if (idx == -2) {
         publishStickserverFailure(cmd, ver, mid, F("invalid_member"), F("euid"), F("Missing euid."));
         return;
       }
       totalRequested = 1;
-      int idx = findManagedOutputByEuid(euid);
-      if (cfg.debugSerial) {
-        Serial.print(F("[INFO] [MQTT] Resolved idx from euid: "));
-        Serial.println(idx);
-      }
       JsonObject device = devices.add<JsonObject>();
       if (idx < 0) {
         device["euid"] = euid;
@@ -1663,10 +1474,7 @@ void handleStickserverMessage(const String& topicStr, const String& payloadStr) 
       totalRequested = euidCount;
       for (size_t i = 0; i < euidCount; ++i) {
         int idx = findManagedOutputByEuid(euids[i]);
-        if (cfg.debugSerial) {
-          Serial.print(F("[INFO] [MQTT] Resolved idx from euid: "));
-          Serial.println(idx);
-        }
+        DBG("[MQTT] Resolved idx from euid: %d", idx);
         JsonObject device = devices.add<JsonObject>();
         if (idx < 0) {
           device["euid"] = euids[i];
@@ -1724,46 +1532,31 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
     return;
   }
 
-  // Log every incoming message for debugging
-  Serial.print(F("[INFO] [MQTT] Received -> topic: "));
-  Serial.print(topicStr);
-  Serial.print(F(" payload["));
-  Serial.print(length);
-  Serial.print(F("]: "));
-  // Truncate long payloads in the log to avoid flooding serial
-  if (payloadStr.length() <= MQTT_PAYLOAD_LOG_MAX_LEN) {
-    Serial.println(payloadStr);
-  } else {
-    Serial.print(payloadStr.substring(0, MQTT_PAYLOAD_LOG_MAX_LEN));
-    Serial.println(F("...(truncated)"));
+  if (cfg.debugSerial) {
+    DBG("[MQTT] Received -> topic: %s payload[%u]: %s%s", topicStr.c_str(), length,
+        payloadStr.substring(0, MQTT_PAYLOAD_LOG_MAX_LEN).c_str(),
+        payloadStr.length() > MQTT_PAYLOAD_LOG_MAX_LEN ? "...(truncated)" : "");
   }
 
   for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
     if (topicStr == mqttOutputSetTopic(i)) {
       bool newState = (payloadStr == "ON" || payloadStr == "1" || payloadStr == "true");
-      Serial.print(F("[INFO] [MQTT] Set command -> output "));
-      Serial.print(i + 1);
-      Serial.print(F(" state: "));
-      Serial.println(newState ? F("ON") : F("OFF"));
-      if (isActionRunning() && bgAction.deviceIdx == i) cancelAction();
+      DBG("[MQTT] Set command -> output %u state: %s", static_cast<unsigned>(i + 1), newState ? "ON" : "OFF");
+      if (actionOwnsOutput(i)) cancelAction();
       setOutputDirect(i, newState);
       mqttPublishOutputState(i);
       // Runtime state changes are not persisted to flash by design.
       return;
     }
     if (topicStr == mqttOutputActionTopic(i)) {
-      Serial.print(F("[INFO] [MQTT] Action command -> output "));
-      Serial.print(i + 1);
-      Serial.print(F(" action: "));
-      Serial.println(payloadStr);
+      DBG("[MQTT] Action command -> output %u action: %s", static_cast<unsigned>(i + 1), payloadStr.c_str());
       handleLoadAction(i, payloadStr);
 
       return;
     }
   }
   if (topicStr == STICKSERVER_ROOT_TOPIC || topicStr == stickserverInstanceTopic()) {
-    Serial.print(F("[INFO] [MQTT] Stickserver message -> topic: "));
-    Serial.println(topicStr);
+    DBG("[MQTT] Stickserver message -> topic: %s", topicStr.c_str());
     handleStickserverMessage(topicStr, payloadStr);
     return;
   }
@@ -1819,22 +1612,18 @@ bool mqttDoConnect() {
     return false;
   }
   // Subscribe to stickserver root and instance topics
-  Serial.print(F("[INFO] [MQTT] Subscribing -> "));
-  Serial.println(STICKSERVER_ROOT_TOPIC);
+  DBG("[MQTT] Subscribing -> %s", STICKSERVER_ROOT_TOPIC);
   mqttClient.subscribe(STICKSERVER_ROOT_TOPIC);
   String instanceTopic = stickserverInstanceTopic();
-  Serial.print(F("[INFO] [MQTT] Subscribing -> "));
-  Serial.println(instanceTopic);
+  DBG("[MQTT] Subscribing -> %s", instanceTopic.c_str());
   mqttClient.subscribe(instanceTopic.c_str());
   // Subscribe to per-output set and action topics
   for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
     String setTopic = mqttOutputSetTopic(i);
     String actionTopic = mqttOutputActionTopic(i);
-    Serial.print(F("[INFO] [MQTT] Subscribing -> "));
-    Serial.println(setTopic);
+    DBG("[MQTT] Subscribing -> %s", setTopic.c_str());
     mqttClient.subscribe(setTopic.c_str());
-    Serial.print(F("[INFO] [MQTT] Subscribing -> "));
-    Serial.println(actionTopic);
+    DBG("[MQTT] Subscribing -> %s", actionTopic.c_str());
     mqttClient.subscribe(actionTopic.c_str());
   }
   mqttPublishAllOutputStates();
@@ -1891,77 +1680,36 @@ void mqttEnsureConnected() {
   maintainMqtt();
 }
 
+void applyRuntimeSettings() {
+  applyWifiSettings();
+  refreshOutputsForCurrentBootPhase();
+  applyMqttSettings();
+  mqttEnsureConnected();
+  applyArduinoOtaSettings();
+}
+
 // ---------------------------------------------------------------------------
 // Background load-action state machine
 // ---------------------------------------------------------------------------
 
-void startSequenceAction(uint8_t deviceIdx, uint8_t totalCycles) {
-  bgAction.deviceIdx = deviceIdx;
-  bgAction.allOutputs = false;
-  bgAction.cyclesRemaining = totalCycles;
+void enterPhase(ActionPhase phase, bool outputState) {
+  setPhaseOutputState(outputState);
+  bgAction.phase = phase;
   bgAction.phaseStartMs = millis();
-  bgAction.phase = APHASE_CYCLE_OFF;
-  setOutputDirect(deviceIdx, false);
-  mqttPublishOutputState(deviceIdx);
+  DBG("%s%s: %s, cycles remaining=%u", bgAction.profile->name,
+      bgAction.allOutputs ? " all" : "", actionPhaseName().c_str(),
+      static_cast<unsigned>(bgAction.cyclesRemaining));
 }
 
-void startLeaveMeshAction(uint8_t deviceIdx) {
-  beginLeaveMeshForOutput(deviceIdx, false);
-}
-
-void startFactoryResetAction(uint8_t deviceIdx) {
-  beginFactoryResetForOutput(deviceIdx, false);
-}
-
-void startFactoryResetAllAction() {
-  bool hasManaged = false;
-  for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
-    if (isManagedOutput(i)) { hasManaged = true; break; }
-  }
-  if (!hasManaged) {
-    logStatus(F("factory_reset_all: no managed outputs"));
-    return;
-  }
-  bgAction.allOutputs = true;
-  bgAction.deviceIdx = 0;
-  bgAction.cyclesRemaining = FACTORY_RESET_CYCLES;
-  logStatus(F("factory_reset_all: turning all managed outputs ON for prep"));
-  for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
-    if (isManagedOutput(i)) {
-      setOutputDirect(i, true);
-      mqttPublishOutputState(i);
-    }
-  }
-  bgAction.phaseStartMs = millis();
-  bgAction.phase = APHASE_FACTORY_RESET_PREP_ON;
-  if (cfg.debugSerial) {
-    Serial.println(F("[DEBUG] factory_reset_all: prep ON started for all managed outputs"));
-  }
-}
-
-void startLeaveMeshAllAction() {
-  bool hasManaged = false;
-  for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
-    if (isManagedOutput(i)) { hasManaged = true; break; }
-  }
-  if (!hasManaged) {
-    logStatus(F("leave_mesh_all: no managed outputs"));
-    return;
-  }
-  bgAction.allOutputs = true;
-  bgAction.deviceIdx = 0;
-  bgAction.cyclesRemaining = LEAVE_MESH_CYCLES;
-  logStatus(F("leave_mesh_all: turning all managed outputs ON for prep"));
-  for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
-    if (isManagedOutput(i)) {
-      setOutputDirect(i, true);
-      mqttPublishOutputState(i);
-    }
-  }
-  bgAction.phaseStartMs = millis();
-  bgAction.phase = APHASE_LEAVE_MESH_PREP_ON;
-  if (cfg.debugSerial) {
-    Serial.println(F("[DEBUG] leave_mesh_all: prep ON started for all managed outputs"));
+void startSequence(const SequenceProfile& profile, uint8_t idx, bool allOutputs) {
+  bgAction.profile = &profile;
+  bgAction.deviceIdx = idx;
+  bgAction.allOutputs = allOutputs;
+  bgAction.cyclesRemaining = profile.cycles;
+  if (profile.prepOnMs && (allOutputs || !cfg.devices[idx].state)) {
+    enterPhase(APHASE_PREP_ON, true);
+  } else {
+    enterPhase(APHASE_CYCLE_OFF, false);
   }
 }
 
@@ -1969,6 +1717,7 @@ void finishAction() {
   uint8_t idx = bgAction.deviceIdx;
   bool wasAll = bgAction.allOutputs;
   bgAction.phase = APHASE_NONE;
+  bgAction.profile = nullptr;
   bgAction.allOutputs = false;
   if (wasAll) {
     for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
@@ -1987,226 +1736,39 @@ void finishAction() {
 }
 
 void maintainBackgroundAction() {
-  if (bgAction.phase == APHASE_NONE) return;
-  unsigned long now = millis();
-  uint8_t idx = bgAction.deviceIdx;
-
+  if (!isActionRunning()) return;
+  const SequenceProfile& profile = *bgAction.profile;
+  unsigned long elapsed = millis() - bgAction.phaseStartMs;
   switch (bgAction.phase) {
+    case APHASE_PREP_ON:
+      if (elapsed >= profile.prepOnMs) enterPhase(APHASE_CYCLE_OFF, false);
+      break;
     case APHASE_CYCLE_OFF:
-      if (now - bgAction.phaseStartMs >= ACTION_CYCLE_OFF_MS) {
-        setOutputDirect(idx, true);
-        mqttPublishOutputState(idx);
-        bgAction.phase = APHASE_CYCLE_ON;
-        bgAction.phaseStartMs = now;
-      }
+      if (elapsed >= profile.cycleOffMs) enterPhase(APHASE_CYCLE_ON, true);
       break;
     case APHASE_CYCLE_ON:
-      if (now - bgAction.phaseStartMs >= ACTION_CYCLE_ON_MS) {
-        --bgAction.cyclesRemaining;
-        if (bgAction.cyclesRemaining > 0) {
-          setOutputDirect(idx, false);
-          mqttPublishOutputState(idx);
-          bgAction.phase = APHASE_CYCLE_OFF;
-          bgAction.phaseStartMs = now;
+      if (elapsed >= profile.cycleOnMs) {
+        if (--bgAction.cyclesRemaining > 0) {
+          enterPhase(APHASE_CYCLE_OFF, false);
         } else {
-          // All cycles done; output is ON — enter final wait
           bgAction.phase = APHASE_FINAL_WAIT;
-          bgAction.phaseStartMs = now;
+          bgAction.phaseStartMs = millis();
+          DBG("%s", actionPhaseName().c_str());
         }
       }
       break;
     case APHASE_FINAL_WAIT:
-      if (now - bgAction.phaseStartMs >= ACTION_FINAL_WAIT_MS) {
-        setOutputDirect(idx, false);
-        mqttPublishOutputState(idx);
-        bgAction.phase = APHASE_TRIGGER_OFF;
-        bgAction.phaseStartMs = now;
-      }
+      if (elapsed >= profile.finalWaitMs) enterPhase(APHASE_TRIGGER_OFF, false);
       break;
     case APHASE_TRIGGER_OFF:
-      if (now - bgAction.phaseStartMs >= ACTION_TRIGGER_OFF_MS) {
-        setOutputDirect(idx, true);
-        mqttPublishOutputState(idx);
-        bgAction.phase = APHASE_TRIGGER_ON;
-        bgAction.phaseStartMs = now;
-      }
+      if (elapsed >= profile.triggerOffMs) enterPhase(APHASE_TRIGGER_ON, true);
       break;
     case APHASE_TRIGGER_ON:
-      if (now - bgAction.phaseStartMs >= ACTION_TRIGGER_ON_MS) {
-        finishAction();
-      }
-      break;
-    case APHASE_LEAVE_MESH_PREP_ON:
-      if (now - bgAction.phaseStartMs >= LEAVE_MESH_PREP_ON_MS) {
-        if (cfg.debugSerial) {
-          Serial.println(bgAction.allOutputs
-              ? F("[DEBUG] leave_mesh_all: prep done, cycling all outputs OFF (cycle 1)")
-              : F("[DEBUG] leave_mesh: prep done, cycling output OFF (cycle 1)"));
-        }
-        setPhaseOutputState(false);
-        bgAction.phase = APHASE_LEAVE_MESH_CYCLE_OFF;
-        bgAction.phaseStartMs = millis();
-      }
-      break;
-    case APHASE_LEAVE_MESH_CYCLE_OFF:
-      if (now - bgAction.phaseStartMs >= LEAVE_MESH_CYCLE_OFF_MS) {
-        if (cfg.debugSerial) {
-          Serial.print(bgAction.allOutputs ? F("[DEBUG] leave_mesh_all") : F("[DEBUG] leave_mesh"));
-          Serial.print(F(": cycle OFF done, turning ON (cycles remaining="));
-          Serial.print(bgAction.cyclesRemaining);
-          Serial.println(F(")"));
-        }
-        setPhaseOutputState(true);
-        bgAction.phase = APHASE_LEAVE_MESH_CYCLE_ON;
-        bgAction.phaseStartMs = millis();
-      }
-      break;
-    case APHASE_LEAVE_MESH_CYCLE_ON:
-      if (now - bgAction.phaseStartMs >= LEAVE_MESH_CYCLE_ON_MS) {
-        --bgAction.cyclesRemaining;
-        if (bgAction.cyclesRemaining > 0) {
-          if (cfg.debugSerial) {
-            Serial.print(bgAction.allOutputs ? F("[DEBUG] leave_mesh_all") : F("[DEBUG] leave_mesh"));
-            Serial.print(F(": cycle ON done, cycling OFF (cycles remaining="));
-            Serial.print(bgAction.cyclesRemaining);
-            Serial.println(F(")"));
-          }
-          setPhaseOutputState(false);
-          bgAction.phase = APHASE_LEAVE_MESH_CYCLE_OFF;
-          bgAction.phaseStartMs = millis();
-        } else {
-          // All cycles done; outputs are ON — enter final wait (green window)
-          if (cfg.debugSerial) {
-            Serial.println(bgAction.allOutputs
-                ? F("[DEBUG] leave_mesh_all: all cycles done, entering final wait (green window)")
-                : F("[DEBUG] leave_mesh: all cycles done, entering final wait (green window)"));
-          }
-          bgAction.phase = APHASE_LEAVE_MESH_FINAL_WAIT;
-          bgAction.phaseStartMs = now;
-        }
-      }
-      break;
-    case APHASE_LEAVE_MESH_FINAL_WAIT:
-      if (now - bgAction.phaseStartMs >= LEAVE_MESH_FINAL_WAIT_MS) {
-        if (cfg.debugSerial) {
-          Serial.println(bgAction.allOutputs
-              ? F("[DEBUG] leave_mesh_all: final wait done, trigger OFF (while green)")
-              : F("[DEBUG] leave_mesh: final wait done, trigger OFF (while green)"));
-        }
-        setPhaseOutputState(false);
-        bgAction.phase = APHASE_LEAVE_MESH_TRIGGER_OFF;
-        bgAction.phaseStartMs = millis();
-      }
-      break;
-    case APHASE_LEAVE_MESH_TRIGGER_OFF:
-      if (now - bgAction.phaseStartMs >= LEAVE_MESH_TRIGGER_OFF_MS) {
-        if (cfg.debugSerial) {
-          Serial.println(bgAction.allOutputs
-              ? F("[DEBUG] leave_mesh_all: trigger OFF done, trigger ON")
-              : F("[DEBUG] leave_mesh: trigger OFF done, trigger ON"));
-        }
-        setPhaseOutputState(true);
-        bgAction.phase = APHASE_LEAVE_MESH_TRIGGER_ON;
-        bgAction.phaseStartMs = millis();
-      }
-      break;
-    case APHASE_LEAVE_MESH_TRIGGER_ON:
-      if (now - bgAction.phaseStartMs >= LEAVE_MESH_TRIGGER_ON_MS) {
-        if (cfg.debugSerial) {
-          Serial.println(bgAction.allOutputs
-              ? F("[DEBUG] leave_mesh_all: trigger complete, finishing")
-              : F("[DEBUG] leave_mesh: trigger complete, finishing"));
-        }
-        finishAction();
-      }
-      break;
-    case APHASE_FACTORY_RESET_PREP_ON:
-      if (now - bgAction.phaseStartMs >= FACTORY_RESET_PREP_ON_MS) {
-        if (cfg.debugSerial) {
-          Serial.println(bgAction.allOutputs
-              ? F("[DEBUG] factory_reset_all: prep done, cycling all outputs OFF (cycle 1)")
-              : F("[DEBUG] factory_reset: prep done, cycling output OFF (cycle 1)"));
-        }
-        setPhaseOutputState(false);
-        bgAction.phase = APHASE_FACTORY_RESET_CYCLE_OFF;
-        bgAction.phaseStartMs = millis();
-      }
-      break;
-    case APHASE_FACTORY_RESET_CYCLE_OFF:
-      if (now - bgAction.phaseStartMs >= FACTORY_RESET_CYCLE_OFF_MS) {
-        if (cfg.debugSerial) {
-          Serial.print(bgAction.allOutputs ? F("[DEBUG] factory_reset_all") : F("[DEBUG] factory_reset"));
-          Serial.print(F(": cycle OFF done, turning ON (cycles remaining="));
-          Serial.print(bgAction.cyclesRemaining);
-          Serial.println(F(")"));
-        }
-        setPhaseOutputState(true);
-        bgAction.phase = APHASE_FACTORY_RESET_CYCLE_ON;
-        bgAction.phaseStartMs = millis();
-      }
-      break;
-    case APHASE_FACTORY_RESET_CYCLE_ON:
-      if (now - bgAction.phaseStartMs >= FACTORY_RESET_CYCLE_ON_MS) {
-        --bgAction.cyclesRemaining;
-        if (bgAction.cyclesRemaining > 0) {
-          if (cfg.debugSerial) {
-            Serial.print(bgAction.allOutputs ? F("[DEBUG] factory_reset_all") : F("[DEBUG] factory_reset"));
-            Serial.print(F(": cycle ON done, cycling OFF (cycles remaining="));
-            Serial.print(bgAction.cyclesRemaining);
-            Serial.println(F(")"));
-          }
-          setPhaseOutputState(false);
-          bgAction.phase = APHASE_FACTORY_RESET_CYCLE_OFF;
-          bgAction.phaseStartMs = millis();
-        } else {
-          // All cycles done; outputs are ON — enter final wait (blue transition window)
-          if (cfg.debugSerial) {
-            Serial.println(bgAction.allOutputs
-                ? F("[DEBUG] factory_reset_all: all cycles done, entering final wait (blue window)")
-                : F("[DEBUG] factory_reset: all cycles done, entering final wait (blue window)"));
-          }
-          bgAction.phase = APHASE_FACTORY_RESET_FINAL_WAIT;
-          bgAction.phaseStartMs = now;
-        }
-      }
-      break;
-    case APHASE_FACTORY_RESET_FINAL_WAIT:
-      if (now - bgAction.phaseStartMs >= FACTORY_RESET_FINAL_WAIT_MS) {
-        // Trigger reset while blue: power cycle (OFF then ON)
-        if (cfg.debugSerial) {
-          Serial.println(bgAction.allOutputs
-              ? F("[DEBUG] factory_reset_all: final wait done, trigger OFF (while blue)")
-              : F("[DEBUG] factory_reset: final wait done, trigger OFF (while blue)"));
-        }
-        setPhaseOutputState(false);
-        bgAction.phase = APHASE_FACTORY_RESET_TRIGGER_OFF;
-        bgAction.phaseStartMs = millis();
-      }
-      break;
-    case APHASE_FACTORY_RESET_TRIGGER_OFF:
-      if (now - bgAction.phaseStartMs >= FACTORY_RESET_TRIGGER_OFF_MS) {
-        if (cfg.debugSerial) {
-          Serial.println(bgAction.allOutputs
-              ? F("[DEBUG] factory_reset_all: trigger OFF done, trigger ON")
-              : F("[DEBUG] factory_reset: trigger OFF done, trigger ON"));
-        }
-        setPhaseOutputState(true);
-        bgAction.phase = APHASE_FACTORY_RESET_TRIGGER_ON;
-        bgAction.phaseStartMs = millis();
-      }
-      break;
-    case APHASE_FACTORY_RESET_TRIGGER_ON:
-      //if (now - bgAction.phaseStartMs >= FACTORY_RESET_TRIGGER_ON_MS) {
-      //  if (cfg.debugSerial) {
-      //    Serial.println(bgAction.allOutputs
-      //        ? F("[DEBUG] factory_reset_all: trigger complete, finishing")
-      //        : F("[DEBUG] factory_reset: trigger complete, finishing"));
-      //  }
-        finishAction();
-      //}
+      if (elapsed >= profile.triggerOnMs) finishAction();
       break;
     default:
       bgAction.phase = APHASE_NONE;
+      bgAction.profile = nullptr;
       break;
   }
 }
@@ -2222,6 +1784,7 @@ void cancelAction() {
   uint8_t idx = bgAction.deviceIdx;
   bool wasAll = bgAction.allOutputs;
   bgAction.phase = APHASE_NONE;
+  bgAction.profile = nullptr;
   bgAction.allOutputs = false;
   if (wasAll) {
     for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
@@ -2237,14 +1800,14 @@ void cancelAction() {
 bool handleLoadAction(uint8_t idx, const String& cmd) {
   if (idx >= cfg.numOutputs) return false;
   if (cmd == F("power_on")) {
-    if (isActionRunning() && bgAction.deviceIdx == idx) cancelAction();
+    if (actionOwnsOutput(idx)) cancelAction();
     setOutputDirect(idx, true);
     mqttPublishOutputState(idx);
     // Runtime state changes are not persisted to flash by design.
     return true;
   }
   if (cmd == F("power_off")) {
-    if (isActionRunning() && bgAction.deviceIdx == idx) cancelAction();
+    if (actionOwnsOutput(idx)) cancelAction();
     setOutputDirect(idx, false);
     mqttPublishOutputState(idx);
     // Runtime state changes are not persisted to flash by design.
@@ -2254,17 +1817,17 @@ bool handleLoadAction(uint8_t idx, const String& cmd) {
   if (isActionRunning()) return false;
   if (cmd == F("leave_mesh")) {
     logStatus(String(F("Starting leave_mesh action for output ")) + String(idx + 1));
-    startLeaveMeshAction(idx);
+    startSequence(PROFILE_LEAVE_MESH, idx, false);
     return true;
   }
   if (cmd == F("factory_reset")) {
     logStatus(String(F("Starting factory_reset action for output ")) + String(idx + 1));
-    startFactoryResetAction(idx);
+    startSequence(PROFILE_FACTORY_RESET, idx, false);
     return true;
   }
   if (cmd == F("reboot")) {
     logStatus(String(F("Starting reboot action for output ")) + String(idx + 1));
-    startSequenceAction(idx, REBOOT_SEQUENCE_CYCLES);
+    startSequence(PROFILE_REBOOT, idx, false);
     return true;
   }
   return false;
@@ -2287,7 +1850,7 @@ void handleHome() {
       "    var div=document.getElementById('action-status');\n"
       "    if(d.running){\n"
       "      var detail=d.cyclesRemaining>0?' (cycles remaining: '+d.cyclesRemaining+')':'';\n"
-      "      div.innerHTML='<div class=\"action-banner\"><strong>Action running on output '+(d.idx+1)+': '+d.phase+detail+'</strong>'"
+      "      div.innerHTML='<div class=\"action-banner\"><strong>Action running on '+(d.allOutputs?'all outputs':'output '+(d.idx+1))+': '+d.phase+detail+'</strong>'"
       "      +' &nbsp; <form method=\"post\" action=\"/action/cancel\" style=\"display:inline;\"><button type=\"submit\">Cancel</button></form></div>';\n"
       "    } else {\n"
       "      div.innerHTML='';\n"
@@ -2309,10 +1872,7 @@ void handleHome() {
   // visual format but run in different contexts (C++/server vs JS/browser).
   html += "<div id='action-status'>";
   if (actionRunning) {
-    bool inCyclePhase = (bgAction.phase == APHASE_CYCLE_OFF || bgAction.phase == APHASE_CYCLE_ON ||
-                         bgAction.phase == APHASE_LEAVE_MESH_CYCLE_OFF || bgAction.phase == APHASE_LEAVE_MESH_CYCLE_ON ||
-                         bgAction.phase == APHASE_FACTORY_RESET_CYCLE_OFF || bgAction.phase == APHASE_FACTORY_RESET_CYCLE_ON);
-    String phaseDetail = inCyclePhase
+    String phaseDetail = isInCyclePhase()
         ? String(F(" (cycles remaining: ")) + String(bgAction.cyclesRemaining) + ")"
         : "";
     String target = bgAction.allOutputs
@@ -2346,8 +1906,8 @@ void handleHome() {
     const DeviceEntry& d = cfg.devices[i];
     bool mapped = isValidOutputPin(d.pin);
     String status = mapped ? (d.state ? String(F("ON")) : String(F("OFF"))) : String(F("Unassigned"));
-    bool thisActionRunning = actionRunning && bgAction.deviceIdx == i;
-    bool otherActionRunning = actionRunning && bgAction.deviceIdx != i;
+    bool thisActionRunning = actionOwnsOutput(i);
+    bool otherActionRunning = actionRunning && !thisActionRunning;
 
     html += "<tr><td>" + String(i + 1) + "</td><td>" + htmlEscape(d.model) + "</td><td>" +
             htmlEscape(d.name) + "</td><td>" + status + "</td><td>";
@@ -2407,7 +1967,7 @@ void handleToggle() {
   }
 
   int idx = -1;
-  if (!parseIndexValue(server.arg("idx"), idx) || idx < 0 || idx >= MAX_DEVICES) {
+  if (!parseIndexValue(server.arg("idx"), idx) || idx < 0 || idx >= cfg.numOutputs) {
     logError(F("Toggle request contained invalid device index."));
     server.send(400, "text/plain", "Invalid device index");
     return;
@@ -2427,26 +1987,18 @@ void handleToggle() {
   }
 
   // Abort any running sequence action on this output
-  if (isActionRunning() && bgAction.deviceIdx == static_cast<uint8_t>(idx)) {
+  if (actionOwnsOutput(static_cast<uint8_t>(idx))) {
     cancelAction();
   }
 
-  d.state = server.arg("state") == "1";
-  if (outputsActivated) {
-    pinMode(d.pin, OUTPUT);
-    // Inverted output logic: logical ON -> LOW, logical OFF -> HIGH (active-low).
-    digitalWrite(d.pin, d.state ? LOW : HIGH);
-  } else {
-    applyOutputsWhenSafe();
-  }
+  setOutputDirect(static_cast<uint8_t>(idx), server.arg("state") == "1");
+  if (!outputsActivated) applyOutputsWhenSafe();
   mqttPublishOutputState(static_cast<uint8_t>(idx));
   Serial.print(F("[INFO] Output toggled: "));
   Serial.print(d.name);
   Serial.print(F(" -> "));
   Serial.println(d.state ? F("ON") : F("OFF"));
   // Runtime state changes are not persisted to flash by design.
-  mqttPublishOutputState(static_cast<uint8_t>(idx));
-
   server.sendHeader("Location", "/");
   server.send(303);
 }
@@ -2458,7 +2010,7 @@ void handleAction() {
     return;
   }
   int idx = -1;
-  if (!parseIndexValue(server.arg("idx"), idx) || idx < 0 || idx >= MAX_DEVICES) {
+  if (!parseIndexValue(server.arg("idx"), idx) || idx < 0 || idx >= cfg.numOutputs) {
     server.send(400, "text/plain", "Invalid device index");
     return;
   }
@@ -2490,13 +2042,10 @@ void handleActionStatus() {
   String json = "{\"running\":";
   json += running ? "true" : "false";
   if (running) {
-    bool inCyclePhase = (bgAction.phase == APHASE_CYCLE_OFF || bgAction.phase == APHASE_CYCLE_ON ||
-                         bgAction.phase == APHASE_LEAVE_MESH_CYCLE_OFF || bgAction.phase == APHASE_LEAVE_MESH_CYCLE_ON ||
-                         bgAction.phase == APHASE_FACTORY_RESET_CYCLE_OFF || bgAction.phase == APHASE_FACTORY_RESET_CYCLE_ON);
     json += ",\"idx\":" + String(bgAction.deviceIdx);
     json += ",\"allOutputs\":" + String(bgAction.allOutputs ? "true" : "false");
     json += ",\"phase\":\"" + actionPhaseName() + "\"";
-    json += ",\"cyclesRemaining\":" + String(inCyclePhase ? bgAction.cyclesRemaining : 0);
+    json += ",\"cyclesRemaining\":" + String(isInCyclePhase() ? bgAction.cyclesRemaining : 0);
   }
   json += "}";
   server.sendHeader("Cache-Control", "no-store");
@@ -2505,6 +2054,10 @@ void handleActionStatus() {
 
 void handleAllOn() {
   if (!ensureAuthorized()) return;
+  if (isActionRunning()) {
+    server.send(409, "text/plain", "Another action is already running");
+    return;
+  }
   logStatus(F("Turn ON all outputs requested."));
   bool first = true;
   for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
@@ -2520,6 +2073,10 @@ void handleAllOn() {
 
 void handleAllOff() {
   if (!ensureAuthorized()) return;
+  if (isActionRunning()) {
+    server.send(409, "text/plain", "Another action is already running");
+    return;
+  }
   logStatus(F("Turn OFF all outputs requested."));
   bool first = true;
   for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
@@ -2540,7 +2097,7 @@ void handleFactoryResetAll() {
     return;
   }
   logStatus(F("Factory reset ALL outputs requested."));
-  startFactoryResetAllAction();
+  if (managedOutputCount()) startSequence(PROFILE_FACTORY_RESET, 0, true);
   server.sendHeader("Location", "/");
   server.send(303);
 }
@@ -2552,7 +2109,7 @@ void handleLeaveMeshAll() {
     return;
   }
   logStatus(F("Leave mesh ALL outputs requested."));
-  startLeaveMeshAllAction();
+  if (managedOutputCount()) startSequence(PROFILE_LEAVE_MESH, 0, true);
   server.sendHeader("Location", "/");
   server.send(303);
 }
@@ -2642,13 +2199,16 @@ void handleSettingsGet() {
 
   html += "<fieldset><legend>Network device settings</legend>"
           "<label>MAC address <input name='mac' value='" + htmlEscape(cfg.mac) + "' maxlength='17'></label>"
-          "<label>Hostname for DHCP <input name='hostname' value='" + htmlEscape(cfg.hostname) + "'></label>"
-
+          "<label><input type='checkbox' name='useCustomMac' value='1'" +
+          String(cfg.useCustomMac ? " checked" : "") + "> Use custom MAC address</label>"
+          "<label>Hostname for DHCP <input name='hostname' value='" + htmlEscape(cfg.hostname) +
+          "' maxlength='32' pattern='[A-Za-z0-9-]*'></label>"
           "<label>Wi-Fi power (5.0 - 20.5 dBm) <input name='wifiPower' type='number' min='5' max='20.5' step='0.1' value='" + String(cfg.wifiPower, 1) + "'></label>"
           "</fieldset>";
 
   html += "<fieldset><legend>Devices</legend>"
           "<label>Number of outputs (1 - 16) <input name='numOutputs' type='number' min='1' max='16' step='1' value='" + String(cfg.numOutputs) + "'></label>"
+          "<p>Each active output must use a different GPIO. TX/RX disable serial communication; GPIO0 (FLASH) and GPIO15 affect boot.</p>"
           "<div class='bulk-actions'><button type='button' onclick='copyFirstManufacturerToAll()'>Use first Manufacturer for all</button>"
           "<button type='button' onclick='copyFirstModelToAll()'>Use first Model for all</button>"
           "<button type='button' onclick='copyFirstNameToAll()'>Use first Name for all</button>"
@@ -2733,6 +2293,40 @@ void handleSettingsPost() {
     return;
   }
 
+  String hostname = server.arg("hostname");
+  if (hostname.length() > 32) {
+    server.send(400, "text/plain", "Hostname must be at most 32 characters (letters, digits, hyphens only)");
+    return;
+  }
+  for (size_t i = 0; i < hostname.length(); ++i) {
+    char c = hostname[i];
+    if (!((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+          (c >= '0' && c <= '9') || c == '-')) {
+      server.send(400, "text/plain", "Hostname must contain only letters, digits, and hyphens");
+      return;
+    }
+  }
+
+  int parsedOutputs = -1;
+  if (!parseIndexValue(server.arg("numOutputs"), parsedOutputs) ||
+      parsedOutputs < 1 || parsedOutputs > MAX_DEVICES) {
+    logError(F("Settings save rejected: number of outputs must be between 1 and 16."));
+    server.send(400, "text/plain", "Number of outputs must be 1-16");
+    return;
+  }
+  bool usedPins[17] = {false};
+  for (int i = 0; i < parsedOutputs; ++i) {
+    int pin = -1;
+    String pinArgName = "pin_" + String(i);
+    if (server.hasArg(pinArgName) && parsePinValue(server.arg(pinArgName), pin) && pin >= 0) {
+      if (usedPins[pin]) {
+        server.send(400, "text/plain", "Duplicate GPIO assignment among active outputs");
+        return;
+      }
+      usedPins[pin] = true;
+    }
+  }
+
   float parsedPower = 0.0f;
   if (!parseFloatValue(server.arg("wifiPower"), parsedPower)) {
     logError(F("Settings save rejected due to invalid Wi-Fi power value."));
@@ -2741,7 +2335,8 @@ void handleSettingsPost() {
   }
 
   cfg.mac = macValue;
-  cfg.hostname = server.arg("hostname");
+  cfg.useCustomMac = server.hasArg("useCustomMac") && server.arg("useCustomMac") == "1";
+  cfg.hostname = hostname;
   cfg.staSsid = server.arg("staSsid");
 
   String newStaPassword = server.arg("staPassword");
@@ -2755,14 +2350,6 @@ void handleSettingsPost() {
   }
 
   cfg.wifiPower = constrain(parsedPower, MIN_WIFI_POWER, MAX_WIFI_POWER);
-
-  int parsedOutputs = -1;
-  if (!parseIndexValue(server.arg("numOutputs"), parsedOutputs) ||
-      parsedOutputs < 1 || parsedOutputs > MAX_DEVICES) {
-    logError(F("Settings save rejected: number of outputs must be between 1 and 16."));
-    server.send(400, "text/plain", "Number of outputs must be 1-16");
-    return;
-  }
 
   if (cfg.staSsid.isEmpty() || cfg.staPassword.isEmpty() || cfg.apPassword.isEmpty()) {
     logError(F("Settings save rejected because station SSID or passwords were empty."));
@@ -2837,11 +2424,7 @@ void handleSettingsPost() {
   if (!saveConfig()) {
     restartDevice(F("Failed to persist updated settings."));
   }
-  applyWifiSettings();
-  refreshOutputsForCurrentBootPhase();
-  applyMqttSettings();
-  mqttEnsureConnected();
-  applyArduinoOtaSettings();
+  applyRuntimeSettings();
 
   server.sendHeader("Location", "/settings");
   server.send(303);
@@ -2946,8 +2529,7 @@ void handleConfigImportDone() {
     restartDevice(F("Failed to normalize and save imported configuration."));
   }
   logStatus(F("Configuration import applied successfully."));
-  applyWifiSettings();
-  refreshOutputsForCurrentBootPhase();
+  applyRuntimeSettings();
   server.sendHeader("Location", "/settings");
   server.send(303);
 }
@@ -2960,8 +2542,7 @@ void handleFactoryReset() {
   if (!saveConfig()) {
     restartDevice(F("Failed to persist factory reset configuration."));
   }
-  applyWifiSettings();
-  refreshOutputsForCurrentBootPhase();
+  applyRuntimeSettings();
   server.sendHeader("Location", "/settings");
   server.send(303);
 }
@@ -3161,9 +2742,9 @@ void setup() {
   }
 
   checkFlashFactoryResetOnBoot();
-  logLoadedWifiConfig();   // [DIAG] log cfg.staSsid and cfg.wifiPower
+  if (cfg.debugSerial) logLoadedWifiConfig();
   applyWifiSettings();
-  logWifiScan();           // [DIAG] log visible SSIDs with RSSI
+  if (cfg.debugSerial) logWifiScan();
   prepareOutputsForBootPhase();
   mqttEnsureConnected();
 

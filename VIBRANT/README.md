@@ -18,8 +18,8 @@ Change the password immediately in **Settings** after the first boot.
 - Main page lists configured devices (model, name, status) and provides checkbox toggles, per-output load action buttons, and bulk actions (`Leave Mesh All`, `Factory Reset All`)
 - Settings, toggle actions, and config maintenance endpoints are protected with HTTP Basic Auth (`admin` / current Wi-Fi password)
 - Settings page supports:
-  - MAC address
-  - DHCP hostname
+  - MAC address with an opt-in **Use custom MAC address** checkbox (off by default, including older saved configurations)
+  - DHCP hostname (up to 32 letters, digits or hyphens; empty uses the MAC-based default)
   - SSID
   - Password
   - Wi-Fi output power/strength
@@ -28,6 +28,7 @@ Change the password immediately in **Settings** after the first boot.
   - Clearing all Manufacturer, Model, and Name fields without changing Control output selections
   - Reversing GPIO assignments across the currently configured output rows
   - Up to 16 device entries (`manufacturer`, `model`, `name`, output `D0`–`D8`, `RX`, `TX`, or `none`)
+  - Duplicate GPIO assignments among active outputs are rejected. TX/RX disable serial communication; GPIO0 (FLASH) and GPIO15 can affect boot, and remain selectable with warnings.
   - Unspecified device identity fields default to manufacturer `Control4` and model `Vibrant`
   - MQTT server/host, port, user, password, and enable toggle
 - Configuration maintenance routes:
@@ -37,6 +38,7 @@ Change the password immediately in **Settings** after the first boot.
 - Web-based OTA firmware update (`/firmware/update`): upload a compiled `.bin` directly from the browser; the device reboots automatically after a successful flash
 - ArduinoOTA support (enabled by default): developer/service OTA uploads via Arduino IDE or OTA-capable tooling; it can be disabled in Settings
 - Serial diagnostics print boot progress, Wi-Fi state, configured outputs, and important error/status messages
+- Verbose `[DEBUG]` MQTT, Stickserver and ArduinoOTA logs can be disabled in **Settings → Diagnostics** (off by default); boot Wi-Fi scan and detailed loaded Wi-Fi logging run only when debug is enabled
 - Output pins are configured/driven only after a 1-second post-boot delay
 - Firmware automatically attempts Wi-Fi reconnect after disconnects
 - Firmware performs a controlled restart for unrecoverable conditions after logging the reason to serial
@@ -105,26 +107,28 @@ The main page exposes per-output action buttons. The same commands are accepted 
 ### Leave mesh sequence
 
 Starting with the bulb powered on:
-1. Cycle power **5 times**: 5 s OFF → 1 s ON per cycle
-2. Wait 5 s (bulb turns green)
-3. Trigger: 2 s OFF → 1 s ON (cycles power while bulb is green)
+1. If initially OFF, turn ON for 8 s of preparation.
+2. Cycle power **5 times**: 1 s OFF → 1.5 s ON per cycle.
+3. Wait 8 s (bulb turns green).
+4. Trigger: 1 s OFF → 10 s ON (cycles power while bulb is green).
 
-Total sequence duration: ~38 s (5×6 s + 5 s + 3 s)
+Total sequence duration: ~31.5 s if initially ON, ~39.5 s if initially OFF.
 
 ### Factory reset sequence (connected bulb)
 
 Starting with the bulb powered on:
-1. Cycle power **13 times**: 5 s OFF → 1 s ON per cycle
-2. Wait 5 s (bulb transitions from 1800 K/red to blue)
-3. Trigger: 2 s OFF → 1 s ON (cycles power while bulb is blue)
+1. If initially OFF, turn ON for 8 s of preparation.
+2. Cycle power **13 times**: 1 s OFF → 1.5 s ON per cycle.
+3. Wait 8 s (bulb transitions from 1800 K/red to blue).
+4. Trigger: 1 s OFF → 10 s ON (cycles power while bulb is blue).
 
-Total sequence duration: ~86 s (13×6 s + 5 s + 3 s)
+Total sequence duration: ~51.5 s if initially ON, ~59.5 s if initially OFF.
 
 ### Non-blocking execution
 
 All GPIO activity (including the timed cycling sequences) runs in the background via a `millis()`-based state machine in the main loop. The web UI and MQTT connection remain fully responsive during any running sequence. The running action is shown in a banner on the main page (auto-refreshes every 3 s) and can be cancelled at any time.
 
-For `Leave Mesh All` and `Factory Reset All`, outputs are processed one-by-one so each managed output receives the full required timing sequence.
+For `Leave Mesh All` and `Factory Reset All`, all managed outputs prepare and cycle in parallel. Direct ON/OFF commands cancel the sequence when they target an owned output; bulk ON/OFF requests are rejected while an action runs.
 
 ## Default factory values
 
@@ -141,6 +145,13 @@ Security note: factory credentials are public and meant only for first setup.
 Additional security note: HTTP Basic Auth is not encrypted on plain HTTP. Use this firmware only on trusted local networks/AP access.
 
 ## Release notes
+
+### 1.2.6
+
+- Added opt-in custom MAC application, hostname/GPIO validation and pin warnings.
+- Unified load-action timing profiles, fixed all-output ownership and factory-reset trigger wait.
+- Applied Wi-Fi, output, MQTT and ArduinoOTA changes after settings updates, config imports and factory resets.
+- Made verbose debug output and boot Wi-Fi scanning conditional on the Diagnostics switch.
 
 ### 1.2.5
 
@@ -223,7 +234,7 @@ After boot, join the configured AP and open the device IP in a browser.
 ## Current networking behavior
 
 - The configured `SSID`/`Password` are used for both SoftAP and Station connect attempts.
-- Edited MAC address is applied to both SoftAP and Station interfaces.
+- When **Use custom MAC address** is enabled, the edited MAC address is applied to both SoftAP and Station interfaces.
 - Wi-Fi power is clamped to a minimum of `5.0 dBm`.
 - If station connectivity drops, the firmware periodically attempts reconnect.
 - If storage or runtime recovery fails irrecoverably, the device logs the reason and restarts.
