@@ -1,0 +1,27 @@
+#pragma once
+#include "Config.h"
+#include <ESP8266WebServer.h>
+namespace vibrant {
+extern ESP8266WebServer server;
+void registerWebRoutes();
+String htmlEscape(const String &);
+String pinOption(int, const PinMapping &);
+bool parsePinValue(const String &, int &);
+bool parseIndexValue(const String &, int &);
+bool parseFloatValue(const String &, float &);
+bool usingFactoryPassword();
+String passwordWarningHtml();
+bool ensureAuthorized();
+void handleHome();
+void handleToggle();
+void handleAction();
+void handleCancelAction();
+void handleActionStatus();
+void handleAllOn();
+void handleAllOff();
+void handleFactoryResetAll();
+void handleLeaveMeshAll();
+void handleSettingsGet();
+void handleSettingsPost();
+void handleNotFound();
+} // namespace vibrant
