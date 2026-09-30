@@ -29,7 +29,7 @@ constexpr const char* IMPORT_CONFIG_PATH = "/vibrant_config_upload.json";
 constexpr const char* DEFAULT_STA_SSID = "Z-Wave Automation";
 constexpr const char* DEFAULT_STA_PASSWORD = "Fiber714Cvet";
 constexpr const char* DEFAULT_AP_PASSWORD = "Fiber714Cvet";
-constexpr const char* SOFTWARE_VERSION = "1.2.3";
+constexpr const char* SOFTWARE_VERSION = "1.2.4";
 constexpr uint8_t MAX_DEVICES = 16;
 constexpr uint8_t DEFAULT_NUM_OUTPUTS = 8;
 constexpr float MIN_WIFI_POWER = 5.0f;
@@ -222,6 +222,37 @@ String htmlEscape(const String& value) {
   return out;
 }
 
+bool deviceModelMatches(const String& modelField, const String& ntype) {
+  int tokenStart = 0;
+  bool matched = false;
+  while (tokenStart <= static_cast<int>(modelField.length())) {
+    int comma = modelField.indexOf(',', tokenStart);
+    int tokenEnd = comma >= 0 ? comma : modelField.length();
+    String token = modelField.substring(tokenStart, tokenEnd);
+    token.trim();
+    bool tokenMatches = token.equalsIgnoreCase(ntype);
+    if (cfg.debugSerial) {
+      Serial.print(F("[DEBUG] [MQTT] comparing Model token='"));
+      Serial.print(token);
+      Serial.print(F("' against ntype='"));
+      Serial.print(ntype);
+      Serial.print(F("' -> "));
+      Serial.println(tokenMatches ? F("match") : F("no match"));
+    }
+    if (tokenMatches) {
+      matched = true;
+      break;
+    }
+    if (comma < 0) break;
+    tokenStart = comma + 1;
+  }
+  if (cfg.debugSerial) {
+    Serial.print(F("[DEBUG] [MQTT] Model match result: "));
+    Serial.println(matched ? F("match") : F("no match"));
+  }
+  return matched;
+}
+
 const PinMapping* findPinMapping(int pin) {
   for (size_t i = 0; i < OUTPUT_PIN_MAPPING_COUNT; ++i) {
     if (OUTPUT_PIN_MAPPINGS[i].gpio == pin) {
@@ -379,7 +410,7 @@ void setFactoryDefaults() {
   cfg.mqttPort = DEFAULT_MQTT_PORT;
   cfg.mqttUser = "";
   cfg.mqttPassword = "";
-  cfg.arduinoOtaEnabled = false;
+  cfg.arduinoOtaEnabled = true;
   cfg.debugSerial = false;
   clearOutputReservations();
 
@@ -505,7 +536,7 @@ bool loadConfig() {
   cfg.mqttUser = doc["mqttUser"] | String("");
   cfg.mqttPassword = doc["mqttPassword"] | String("");
   if (cfg.mqttPort == 0) cfg.mqttPort = DEFAULT_MQTT_PORT;
-  cfg.arduinoOtaEnabled = doc["arduinoOtaEnabled"] | false;
+  cfg.arduinoOtaEnabled = doc["arduinoOtaEnabled"] | true;
   cfg.debugSerial = doc["debugSerial"] | false;
 
   logStatus(F("Configuration loaded successfully."));
@@ -1354,7 +1385,7 @@ void handleStickserverMessage(const String& topicStr, const String& payloadStr) 
     size_t reservedCount = 0;
     for (uint8_t i = 0; i < cfg.numOutputs && reservedCount < static_cast<size_t>(requestedCount); ++i) {
       if (!isManagedOutput(i)) continue;
-      if (cfg.devices[i].model != ntype) continue;
+      if (!deviceModelMatches(cfg.devices[i].model, ntype)) continue;
       if (outputReservations[i].reserved && outputReservations[i].owner == owner) {
         reservedIdx[reservedCount] = i;
         newReservation[reservedCount] = false;
@@ -1363,7 +1394,7 @@ void handleStickserverMessage(const String& topicStr, const String& payloadStr) 
     }
     for (uint8_t i = 0; i < cfg.numOutputs && reservedCount < static_cast<size_t>(requestedCount); ++i) {
       if (!isManagedOutput(i) || outputReservations[i].reserved) continue;
-      if (cfg.devices[i].model != ntype) continue;
+      if (!deviceModelMatches(cfg.devices[i].model, ntype)) continue;
       if (cfg.debugSerial) {
         Serial.print(F("[DEBUG] [MQTT] reserve selecting output "));
         Serial.print(i);
