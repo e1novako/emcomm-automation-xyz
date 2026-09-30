@@ -28,6 +28,7 @@ Change the password immediately in **Settings** after the first boot.
   - Clearing all Manufacturer, Model, and Name fields without changing Control output selections
   - Reversing GPIO assignments across the currently configured output rows
   - Up to 16 device entries (`manufacturer`, `model`, `name`, output `D0`–`D8`, `RX`, `TX`, or `none`)
+  - Unspecified device identity fields default to manufacturer `Control4` and model `Vibrant`
   - MQTT server/host, port, user, password, and enable toggle
 - Configuration maintenance routes:
   - Export backup (`/config/export`)
@@ -140,6 +141,10 @@ Security note: factory credentials are public and meant only for first setup.
 Additional security note: HTTP Basic Auth is not encrypted on plain HTTP. Use this firmware only on trusted local networks/AP access.
 
 ## Release notes
+
+### 1.2.5
+
+- Defaulted unspecified device manufacturers to `Control4` and models to `Vibrant`.
 
 ### 1.2.4
 

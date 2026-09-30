@@ -29,7 +29,9 @@ constexpr const char* IMPORT_CONFIG_PATH = "/vibrant_config_upload.json";
 constexpr const char* DEFAULT_STA_SSID = "Z-Wave Automation";
 constexpr const char* DEFAULT_STA_PASSWORD = "Fiber714Cvet";
 constexpr const char* DEFAULT_AP_PASSWORD = "Fiber714Cvet";
-constexpr const char* SOFTWARE_VERSION = "1.2.4";
+constexpr const char* DEFAULT_DEVICE_MANUFACTURER = "Control4";
+constexpr const char* DEFAULT_DEVICE_MODEL = "Vibrant";
+constexpr const char* SOFTWARE_VERSION = "1.2.5";
 constexpr uint8_t MAX_DEVICES = 16;
 constexpr uint8_t DEFAULT_NUM_OUTPUTS = 8;
 constexpr float MIN_WIFI_POWER = 5.0f;
@@ -392,8 +394,8 @@ void setFactoryDefaults() {
       sizeof(DEFAULT_OUTPUT_PINS) / sizeof(DEFAULT_OUTPUT_PINS[0]);
 
   for (uint8_t i = 0; i < MAX_DEVICES; ++i) {
-    cfg.devices[i].manufacturer = "";
-    cfg.devices[i].model = String(F("Model ")) + String(i + 1);
+    cfg.devices[i].manufacturer = DEFAULT_DEVICE_MANUFACTURER;
+    cfg.devices[i].model = DEFAULT_DEVICE_MODEL;
     cfg.devices[i].name = String(F("Output ")) + String(i + 1);
     // Map first DEFAULT_D0_D7_COUNT outputs to D0-D7 by default; rest unassigned.
     // Compile-time static_assert above guarantees DEFAULT_D0_D7_COUNT <= OUTPUT_PIN_MAPPING_COUNT.
@@ -510,14 +512,20 @@ bool loadConfig() {
   for (uint8_t i = 0; i < MAX_DEVICES; ++i) {
     if (i < devices.size()) {
       JsonObject d = devices[i];
-      cfg.devices[i].manufacturer = d["manufacturer"] | String("");
-      cfg.devices[i].model = d["model"] | String(F("Model ")) + String(i + 1);
+      cfg.devices[i].manufacturer = d["manufacturer"] | String(DEFAULT_DEVICE_MANUFACTURER);
+      cfg.devices[i].model = d["model"] | String(DEFAULT_DEVICE_MODEL);
+      String manufacturer = cfg.devices[i].manufacturer;
+      String model = cfg.devices[i].model;
+      manufacturer.trim();
+      model.trim();
+      if (manufacturer.isEmpty()) cfg.devices[i].manufacturer = DEFAULT_DEVICE_MANUFACTURER;
+      if (model.isEmpty()) cfg.devices[i].model = DEFAULT_DEVICE_MODEL;
       cfg.devices[i].name = d["name"] | String(F("Output ")) + String(i + 1);
       cfg.devices[i].pin = static_cast<int8_t>(d["pin"] | -1);
       cfg.devices[i].state = false;  // Always boot OFF; do not restore runtime ON state
     } else {
-      cfg.devices[i].manufacturer = "";
-      cfg.devices[i].model = String(F("Model ")) + String(i + 1);
+      cfg.devices[i].manufacturer = DEFAULT_DEVICE_MANUFACTURER;
+      cfg.devices[i].model = DEFAULT_DEVICE_MODEL;
       cfg.devices[i].name = String(F("Output ")) + String(i + 1);
       cfg.devices[i].pin = -1;
       cfg.devices[i].state = false;
@@ -2768,6 +2776,12 @@ void handleSettingsPost() {
   for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
     cfg.devices[i].manufacturer = server.arg("manufacturer_" + String(i));
     cfg.devices[i].model = server.arg("model_" + String(i));
+    String manufacturer = cfg.devices[i].manufacturer;
+    String model = cfg.devices[i].model;
+    manufacturer.trim();
+    model.trim();
+    if (manufacturer.isEmpty()) cfg.devices[i].manufacturer = DEFAULT_DEVICE_MANUFACTURER;
+    if (model.isEmpty()) cfg.devices[i].model = DEFAULT_DEVICE_MODEL;
     cfg.devices[i].name = server.arg("name_" + String(i));
     int pin = -1;
     String pinArgName = "pin_" + String(i);
