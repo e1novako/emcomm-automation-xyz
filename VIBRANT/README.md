@@ -28,13 +28,14 @@ Change the password immediately in **Settings** after the first boot.
   - Clearing all Manufacturer, Model, and Name fields without changing Control output selections
   - Reversing GPIO assignments across the currently configured output rows
   - Up to 16 device entries (`manufacturer`, `model`, `name`, output `D0`–`D8`, `RX`, `TX`, or `none`)
+  - Unspecified device identity fields default to manufacturer `Control4` and model `Vibrant`
   - MQTT server/host, port, user, password, and enable toggle
 - Configuration maintenance routes:
   - Export backup (`/config/export`)
   - Import backup (`/config/import`)
   - Factory reset to defaults (`/config/factory-reset`)
 - Web-based OTA firmware update (`/firmware/update`): upload a compiled `.bin` directly from the browser; the device reboots automatically after a successful flash
-- Optional ArduinoOTA support (disabled by default): developer/service OTA uploads via Arduino IDE or OTA-capable tooling when explicitly enabled in Settings
+- ArduinoOTA support (enabled by default): developer/service OTA uploads via Arduino IDE or OTA-capable tooling; it can be disabled in Settings
 - Serial diagnostics print boot progress, Wi-Fi state, configured outputs, and important error/status messages
 - Output pins are configured/driven only after a 1-second post-boot delay
 - Firmware automatically attempts Wi-Fi reconnect after disconnects
@@ -62,7 +63,7 @@ Outputs 9–16 default to unassigned (`none`).
 
 ### Stickserver reservations
 
-Stickserver `reserve` requests match the requested `ntype` against each output's configured Model exactly. Device information reports the configured Manufacturer and Model, and the reported `ntype` is the Model value.
+Stickserver `reserve` requests match the requested `ntype` case-insensitively against each comma-separated entry in the output's configured Model field. Whitespace around each entry is ignored, so a value such as `ABC123, XYZ-9, foo_bar` supports all three model names. Device information reports the configured Manufacturer and raw Model value, and the reported `ntype` is the Model value.
 
 ### Configuration
 
@@ -133,10 +134,22 @@ For `Leave Mesh All` and `Factory Reset All`, outputs are processed one-by-one s
 - Wi-Fi power range: `5.0 - 20.5 dBm`
 - MQTT: disabled by default
 - Default GPIO assignments: outputs 1–8 mapped to D0–D7 (GPIO16, GPIO5, GPIO4, GPIO0, GPIO2, GPIO14, GPIO12, GPIO13)
+- ArduinoOTA: enabled by default; disable it from **Settings → Diagnostics** when not needed
 
 Security note: factory credentials are public and meant only for first setup.
 
 Additional security note: HTTP Basic Auth is not encrypted on plain HTTP. Use this firmware only on trusted local networks/AP access.
+
+## Release notes
+
+### 1.2.5
+
+- Defaulted unspecified device manufacturers to `Control4` and models to `Vibrant`.
+
+### 1.2.4
+
+- Added case-insensitive matching for comma-separated Model lists in Stickserver reservations.
+- Enabled ArduinoOTA by default; it remains configurable from the Settings page.
 
 ## MQTT
 
@@ -153,7 +166,7 @@ MQTT username and password are optional (leave blank for anonymous access). The 
 VIBRANT supports two OTA firmware update paths:
 
 - **Web UI OTA upload (primary/recommended)**
-- **ArduinoOTA (secondary developer/service path, disabled by default)**
+- **ArduinoOTA (secondary developer/service path, enabled by default)**
 
 ### Web UI firmware upload (primary method)
 
@@ -170,9 +183,9 @@ VIBRANT supports two OTA firmware update paths:
 
 ### ArduinoOTA (secondary method)
 
-ArduinoOTA is available for developer/service workflows and is **disabled by default**.
+ArduinoOTA is available for developer/service workflows and is **enabled by default**.
 
-Enable it in **Settings → Diagnostics → Enable ArduinoOTA service**.
+It can be disabled or re-enabled in **Settings → Diagnostics → Enable ArduinoOTA service**.
 
 Behavior:
 
@@ -182,7 +195,7 @@ Behavior:
 
 Typical flow:
 
-1. Enable ArduinoOTA in Settings and save.
+1. Confirm ArduinoOTA is enabled in Settings (it is enabled by default) and save if needed.
 2. Ensure your development machine is on the same network.
 3. Select the device's network OTA target in Arduino IDE/tooling.
 4. Upload firmware over Wi-Fi; the device reboots automatically on success.
