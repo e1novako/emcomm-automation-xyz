@@ -155,6 +155,10 @@ Additional security note: HTTP Basic Auth is not encrypted on plain HTTP. Use th
 - Use the shared strict MAC-address parser and debug-output gate from `libraries/EmcommCommon`.
 - Keep verbose logging controlled by the persisted Settings → Diagnostics checkbox.
 
+### 1.3.2
+
+- Reject invalid settings before applying them; retain the shared MAC parser behavior.
+
 ### 1.2.6
 
 - Added opt-in custom MAC application, hostname/GPIO validation and pin warnings.

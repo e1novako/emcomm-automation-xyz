@@ -10,7 +10,7 @@
 #include "esp_camera.h"
 #include "../libraries/EmcommCommon/src/EmcommCommon/Diagnostics.h"
 
-#define FIRMWARE_VERSION "1.0.1"
+#define FIRMWARE_VERSION "1.0.2"
 
 // AI-Thinker ESP32-CAM / TY-OV2 (OV2640) pin map.
 #define PWDN_GPIO_NUM 32

@@ -519,6 +519,15 @@ void start_network_services() {
   server.on("/apply_config", HTTP_GET, [](AsyncWebServerRequest *request) {
     if (!require_auth(request)) return;
     String  new_param;
+    uint8_t parsedMAC[6];
+    bool hasMacParam = request->hasParam(PARAM_MAC);
+    if (hasMacParam) {
+      String candidate = request->getParam(PARAM_MAC)->value();
+      if (!emcomm::parseMacAddress(candidate.c_str(), parsedMAC)) {
+        request->send(400, "text/plain", "Invalid MAC address format");
+        return;
+      }
+    }
 
     serprln("HTTP: Apply Config");
 
@@ -553,13 +562,6 @@ void start_network_services() {
     }
 
     if (request->hasParam(PARAM_MAC)) {
-      uint8_t parsedMAC[6];
-      new_param = request->getParam(PARAM_MAC)->value();
-      if (!emcomm::parseMacAddress(new_param.c_str(), parsedMAC)) {
-        request->send(400, "text/plain", "Invalid MAC address format");
-        return;
-      }
-
       if (parsedMAC[0] != MAC[0] || parsedMAC[1] != MAC[1] || parsedMAC[2] != MAC[2] || parsedMAC[3] != MAC[3] || parsedMAC[4] != MAC[4] || parsedMAC[5] != MAC[5]) {
         for (int ii=0; ii<6; ii++)
           MAC[ii]=parsedMAC[ii];

@@ -45,5 +45,6 @@ Camera framesize, JPEG quality, brightness, contrast, saturation, flips, flash, 
 
 ## Changelog
 
+* 1.0.2 - Retain GUI-controlled debug output and shared diagnostic gating.
 * 1.0.1 - Use the shared GUI-controlled debug-output gate; preserve the persisted web setting.
 * 1.0.0 - Initial ESP32-CAM camera, SD, web, persistence, debug, and OTA example.

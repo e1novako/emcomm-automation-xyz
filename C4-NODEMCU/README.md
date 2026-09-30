@@ -14,5 +14,6 @@ messages remain available.
 ## Version history
 
 - 3.2.2 — Adopt shared MAC parsing and the GUI-controlled debug gate.
+- 3.2.3 — Validate submitted MAC addresses before applying any configuration.
 - 3.2.1 — Security and stability fixes; see the version notes in
   `C4-NODEMCU.ino`.
