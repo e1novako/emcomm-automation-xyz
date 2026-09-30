@@ -146,6 +146,10 @@ Additional security note: HTTP Basic Auth is not encrypted on plain HTTP. Use th
 
 ## Release notes
 
+### 1.3.0
+
+- Split the firmware into focused source modules while preserving runtime behavior.
+
 ### 1.2.6
 
 - Added opt-in custom MAC application, hostname/GPIO validation and pin warnings.
@@ -218,9 +222,20 @@ Typical flow:
 - `ArduinoJson` 7.x
 - `PubSubClient` 2.x (for MQTT)
 
-## File layout
+## Source layout
 
-- `VIBRANT.ino` — complete firmware sketch
+- `VIBRANT.ino` — Arduino `setup()` and `loop()` entry points
+- `Config` — device configuration, defaults, persistence, and MAC handling
+- `Debug` — status, warning, error, and diagnostic logging
+- `Outputs` and `Actions` — GPIO management and load-action sequences
+- `WifiManager` and `MqttClient` — network connections and MQTT messaging
+- `Reservations` and `Stickserver` — output reservations and the Stickserver protocol
+- `WebServer` and `WebAssets` — HTTP routes, handlers, and embedded page assets
+- `WebUpdate` and `BackupRestore` — browser firmware updates and configuration maintenance
+- `OtaService` — ArduinoOTA setup and servicing
+- `BootDiagnostics` — boot-time FLASH-button reset detection
+- `Runtime` — applies updated settings across the runtime services
+- `Version.h` — firmware version
 
 ## Build notes
 
