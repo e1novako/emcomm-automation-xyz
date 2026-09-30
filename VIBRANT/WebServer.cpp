@@ -13,6 +13,7 @@
 #include "WebAssets.h"
 #include "WebUpdate.h"
 #include "WifiManager.h"
+#include "../libraries/EmcommCommon/src/EmcommCommon/Web.h"
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include <ESP8266WebServer.h>
@@ -44,27 +45,6 @@ void registerWebRoutes() {
   server.onNotFound(handleNotFound);
   server.begin();
   logStatus(F("HTTP server started on port 80."));
-}
-
-String htmlEscape(const String &value) {
-  String out;
-  out.reserve(value.length() + 16);
-  for (size_t i = 0; i < value.length(); ++i) {
-    char c = value[i];
-    if (c == '&')
-      out += F("&amp;");
-    else if (c == '<')
-      out += F("&lt;");
-    else if (c == '>')
-      out += F("&gt;");
-    else if (c == '"')
-      out += F("&quot;");
-    else if (c == '\'')
-      out += F("&#39;");
-    else
-      out += c;
-  }
-  return out;
 }
 
 String pinOption(int selectedPin, const PinMapping &mapping) {

@@ -4,6 +4,7 @@
  *
  * \copyright   Copyright 2023 Snap One, LLC. All Rights Reserved.
  *
+ * \par v3.2.4 - Share OTA upload lifecycle and HTML escaping helpers.
  * \par v3.2.3 - Validate MAC settings before applying configuration changes.
  * \par v3.2.2 - Shared common helpers
  *  - Validate configured MAC addresses with the shared parser.

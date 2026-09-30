@@ -3,6 +3,7 @@
 #include "C4-NodeMCU.h"
 #include "C4-NodeMCU-WWW.h"
 #include "../libraries/EmcommCommon/src/EmcommCommon/MacAddress.h"
+#include "../libraries/EmcommCommon/src/EmcommCommon/Web.h"
 
 String add_checkbox(String name, boolean checked) {
   return "<input type='checkbox' name='" + name + "' " + (checked ? "checked" : "") + ">";
@@ -45,7 +46,7 @@ String processor(const String &var){
     if(var == "NUM_OUTPUTS") {
         buttons += NUM_OUTPUTS;
     } else if (var == "HOSTNAME") {
-        buttons += newHostname;
+        buttons += emcomm::htmlEscape(newHostname);
     } else if (var == "SW_VERSION") {
         buttons += SW_VERSION;
     } else if (var == "MACADDR") {
@@ -56,9 +57,9 @@ String processor(const String &var){
         free(tme);
         buttons += "<script>var uptime=" + String(millis()/1000) + "</script>";
     } else if (var == "WIFI_OPTIONS") {
-        buttons += "SSID:&nbsp;&nbsp;<input type='text' name='" + String(PARAM_SSID) + "' size='32' value='" + String(ssid) + "'><BR>\n";
-        buttons += "PASS:&nbsp;<input type='password' name='" + String(PARAM_PASS) + "' size='32' value='" + String(password) + "'><BR>\n";
-        buttons += "RF Power:&nbsp;<input type='number' min='0' max='20' name='" + String(PARAM_RFPOWER) + "' size='2' value='" + String(rf_power) + "'><BR>\n";        
+        buttons += "SSID:&nbsp;&nbsp;<input type='text' name='" + String(PARAM_SSID) + "' size='32' value='" + emcomm::htmlEscape(String(ssid)) + "'><BR>\n";
+        buttons += "PASS:&nbsp;<input type='password' name='" + String(PARAM_PASS) + "' size='32' value='" + emcomm::htmlEscape(String(password)) + "'><BR>\n";
+        buttons += "RF Power:&nbsp;<input type='number' min='0' max='20' name='" + String(PARAM_RFPOWER) + "' size='2' value='" + emcomm::htmlEscape(String(rf_power)) + "'><BR>\n";
     } else if (var =="TITLE") {
         IPAddress ipA = WiFi.localIP();
         buttons += "  <title>C4-NodeMCU - " + String(ipA[2]) + "." + String(ipA[3]) + "</title>\n";
@@ -130,7 +131,7 @@ String processor(const String &var){
 
         buttons += "GPIO outputs: <input name='outputs' type='text' size='2' min='1' max='";
         buttons += MAX_GPIOS;
-        buttons += "' value='" + config_gpio_used_number + "'>\n";
+        buttons += "' value='" + emcomm::htmlEscape(config_gpio_used_number) + "'>\n";
 
         buttons += "<BR><BR>\n";
         buttons += "Debug output: \n<select name='";
@@ -150,22 +151,22 @@ String processor(const String &var){
   
           buttons += "Minimum angle:<BR>\n";
           for (int i=0; i<config_gpio_used_number.toInt() && i<MAX_GPIOS; i++) {
-            buttons += "<input type='text' size='2' min='0' max='" + max_angle[i] + "' name='";
+            buttons += "<input type='text' size='2' min='0' max='" + emcomm::htmlEscape(max_angle[i]) + "' name='";
             buttons += PARAM_INPUT_MIN_ANGLE;
             buttons += i;
             buttons += "' value='";
-            buttons += min_angle[i];
+            buttons += emcomm::htmlEscape(min_angle[i]);
             buttons += "'>\n";
           }
 
           buttons += "<BR><BR>\n";
           buttons += "Maximum angle:<BR>\n";
           for (int i=0; i<config_gpio_used_number.toInt() && i<MAX_GPIOS; i++) {
-            buttons += "<input type='text' size='2' min='" + min_angle[i] + "' max='90' name='";
+            buttons += "<input type='text' size='2' min='" + emcomm::htmlEscape(min_angle[i]) + "' max='90' name='";
             buttons += PARAM_INPUT_MAX_ANGLE;
             buttons += i;
             buttons += "' value='";
-            buttons += max_angle[i];
+            buttons += emcomm::htmlEscape(max_angle[i]);
             buttons += "'>\n";
           }
         }
@@ -206,21 +207,21 @@ String processor(const String &var){
           buttons += PARAM_INPUT_MANUFACTURER;
           buttons += i;
           buttons += "' value='";
-          buttons += config_manufacturer[i];
+          buttons += emcomm::htmlEscape(config_manufacturer[i]);
           buttons += "'></TD>\n";
 
           buttons += "<TD><input type='text' size='12' name='";
           buttons += PARAM_INPUT_DESCRIPTION;
           buttons += i;
           buttons += "' value='";
-          buttons += config_description[i];
+          buttons += emcomm::htmlEscape(config_description[i]);
           buttons += "'></TD>\n";
 
           buttons += "<TD><input type='text' size='2' min='0' max='15' name='";
           buttons += PARAM_INPUT_GPIO;
           buttons += i;
           buttons += "' value='";
-          buttons += config_gpio[i];
+          buttons += emcomm::htmlEscape(config_gpio[i]);
           buttons += "'></TD>\n";
 
           for (int j=0; j<GPIO_CAPABILITY_MANUFACTURER && j<MAX_CONFIG_BITS; j++) {
@@ -256,10 +257,10 @@ String processor(const String &var){
             buttons += "    <td>\n";
             if (config_show_description == "0") {
               buttons += "     <h4>Relay #" + String(i) + "<br>";
-              buttons += "GPIO " + config_gpio[i-1];
+              buttons += "GPIO " + emcomm::htmlEscape(config_gpio[i-1]);
             } else {
-              buttons += "     <h4>" + config_manufacturer[i-1] + "<br>";
-              buttons += config_description[i-1];
+              buttons += "     <h4>" + emcomm::htmlEscape(config_manufacturer[i-1]) + "<br>";
+              buttons += emcomm::htmlEscape(config_description[i-1]);
             }
             if (GPIO_CAPABILITY(i-1, GPIO_CAPABILITY_WRITE)) {
               buttons +="</h4>\n     <label class=\"switch\"><input type=\"checkbox\" onchange=\"sRly(this)\" id=\"port_" + String(i-1) + "\" "+ relayStateValue +"><span class=\"slider\"></span></label>";
@@ -292,15 +293,15 @@ String processor(const String &var){
            if (config_show_description == "0") {
              buttons +="<td>\n  ";
              //buttons += "<h4>Actuator #" + String(i) + "<br>";
-             buttons +="GPIO " + config_gpio[i-1];
+             buttons +="GPIO " + emcomm::htmlEscape(config_gpio[i-1]);
              buttons += "<BR>";
            } else {
-             buttons += "<td>\n  <h4>" + config_manufacturer[i-1] + "<br>";
-             buttons += config_description[i-1];
+             buttons += "<td>\n  <h4>" + emcomm::htmlEscape(config_manufacturer[i-1]) + "<br>";
+             buttons += emcomm::htmlEscape(config_description[i-1]);
            }
            buttons +="\n     <BR></h4><input type=\"button\" onclick=\"mtr(this, '" + String(COMMAND_FIBARO_ADD) +"')\" id=\"" + String(i-1) + "\" value=\"Fibaro Add #" + String(i) + "\"><BR>";
            buttons +="\n     <BR></h4><input type=\"button\" onclick=\"mtr(this, '" + String(COMMAND_TOGGLE) + "')\" id=\"" + String(i-1) + "\" value=\"Toggle #" + String(i) + "\"><BR>";
-           buttons +="\n     <BR><input type=\"text\" onmouseleave=\"aAngl(this)\" id=\"" + String(100+i-1) + "\" value=\"" + String(oapos[i-1]) + "\" min=\"10\" max=\"" + max_angle[i-1] + "\" size=\"2\">";
+           buttons +="\n     <BR><input type=\"text\" onmouseleave=\"aAngl(this)\" id=\"" + String(100+i-1) + "\" value=\"" + String(oapos[i-1]) + "\" min=\"10\" max=\"" + emcomm::htmlEscape(max_angle[i-1]) + "\" size=\"2\">";
            buttons +="\n</td>\n";
         }
       }

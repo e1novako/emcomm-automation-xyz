@@ -1,11 +1,30 @@
 #define C4NODEMCU_OTA
 #include "C4-NodeMCU.h"
+#include "../libraries/EmcommCommon/src/EmcommCommon/OtaUpload.h"
 
 // Required for the OTA
 #include <Updater.h>
 #include <ESP8266mDNS.h>
 #define U_PART U_FS
-size_t content_len;
+namespace {
+struct FirmwareUpdateBackend {
+  size_t contentLength = 0;
+  int command = U_FLASH;
+
+  bool begin() {
+    Update.runAsync(true);
+    return Update.begin(contentLength, command);
+  }
+  size_t write(const uint8_t *data, size_t length) {
+    return Update.write(data, length);
+  }
+  bool finish() { return Update.end(true); }
+  void abort() { Update.end(false); }
+};
+
+FirmwareUpdateBackend firmwareUpdateBackend;
+emcomm::OtaUpload<FirmwareUpdateBackend> firmwareUpdate;
+}
 
 const char page_restart_device[] PROGMEM = R"rawliteral(
   <head></head>
@@ -20,7 +39,7 @@ const char page_restart_device[] PROGMEM = R"rawliteral(
 
 // Print the OTA progress on serial port
 void printProgress(int prog, int len) {
-  if (progress != (prog*100)/len)
+  if (len > 0 && progress != (prog*100)/len)
     serprf("Progress: %d%%\n", progress = (prog*100)/len);
 }
 
@@ -40,32 +59,35 @@ void handleDoUpdate(AsyncWebServerRequest *request, const String &filename, size
     // Stop filesystem before the update
     //LittleFS.end();
 
-    content_len = request->contentLength();
-    // if filename includes spiffs, update the spiffs partition
-    int cmd = (filename.indexOf("spiffs") > -1) ? U_PART : U_FLASH;
-    Update.runAsync(true);
-    if (!Update.begin(content_len, cmd)) {
+    firmwareUpdateBackend.contentLength = request->contentLength();
+    firmwareUpdateBackend.command =
+        (filename.indexOf("spiffs") > -1) ? U_PART : U_FLASH;
+    if (firmwareUpdate.begin(firmwareUpdateBackend) !=
+        emcomm::OtaUploadState::Receiving) {
       Update.printError(Serial);
     }
   }
 
-  if (Update.write(data, len) != len) {
-    Update.printError(Serial);
-  } else {
+  if (firmwareUpdate.state() == emcomm::OtaUploadState::Receiving &&
+      firmwareUpdate.write(firmwareUpdateBackend, data, len) ==
+          emcomm::OtaUploadState::Receiving) {
     printProgress(Update.progress(), Update.size());
+  } else if (firmwareUpdate.state() == emcomm::OtaUploadState::WriteFailed) {
+    Update.printError(Serial);
   }
 
-  if (final) {
-    factory_default = true;
-    http_redirect(request, "/", "20", page_restart_device);
-
-    if (!Update.end(true)) {
+  if (final && firmwareUpdate.state() == emcomm::OtaUploadState::Receiving) {
+    if (firmwareUpdate.finish(firmwareUpdateBackend) !=
+        emcomm::OtaUploadState::Complete) {
       Update.printError(Serial);
-      //LittleFS.begin();
+      request->send(500, "text/plain", "OTA update failed");
     } else {
+      factory_default = true;
+      http_redirect(request, "/", "20", page_restart_device);
       serprln("Update complete");
       esp_restart=true;
     }
+  } else if (final && firmwareUpdate.state() != emcomm::OtaUploadState::Complete) {
+    request->send(500, "text/plain", "OTA update failed");
   }
 }
-

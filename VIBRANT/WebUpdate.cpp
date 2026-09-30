@@ -2,6 +2,7 @@
 #include "Config.h"
 #include "Debug.h"
 #include "WebServer.h"
+#include "../libraries/EmcommCommon/src/EmcommCommon/OtaUpload.h"
 #include <ESP8266WebServer.h>
 #include <Updater.h>
 
@@ -9,6 +10,26 @@ namespace vibrant {
 
 bool otaUpdateFailed = false;
 String otaUpdateError;
+namespace {
+struct FirmwareUpdateBackend {
+  bool begin() {
+    uint32_t maxSketchSize = (ESP.getFreeSketchSpace() - 0x1000) & 0xFFFFF000;
+    if (cfg.debugSerial) {
+      Serial.print(F("[DEBUG] OTA max sketch size: "));
+      Serial.println(maxSketchSize);
+    }
+    return Update.begin(maxSketchSize);
+  }
+  size_t write(const uint8_t *data, size_t length) {
+    return Update.write(data, length);
+  }
+  bool finish() { return Update.end(true); }
+  void abort() { Update.end(false); }
+};
+
+FirmwareUpdateBackend firmwareUpdateBackend;
+emcomm::OtaUpload<FirmwareUpdateBackend> firmwareUpdate;
+}
 
 void handleFirmwareUpdatePage() {
   if (!ensureAuthorized())
@@ -50,14 +71,8 @@ void handleFirmwareUpdateUpload() {
     otaUpdateError = "";
     logStatus(String(F("OTA firmware update upload started: ")) +
               upload.filename);
-    // Reserve flash space for the new sketch; subtract 4 KB (0x1000) as safety
-    // margin and align down to a 4 KB flash sector boundary (0xFFFFF000 mask).
-    uint32_t maxSketchSize = (ESP.getFreeSketchSpace() - 0x1000) & 0xFFFFF000;
-    if (cfg.debugSerial) {
-      Serial.print(F("[DEBUG] OTA max sketch size: "));
-      Serial.println(maxSketchSize);
-    }
-    if (!Update.begin(maxSketchSize)) {
+    if (firmwareUpdate.begin(firmwareUpdateBackend) !=
+        emcomm::OtaUploadState::Receiving) {
       otaUpdateFailed = true;
       otaUpdateError = Update.getErrorString();
       logError(String(F("OTA Update.begin failed: ")) + otaUpdateError);
@@ -70,7 +85,9 @@ void handleFirmwareUpdateUpload() {
         Serial.print(F(" bytes, total so far: "));
         Serial.println(upload.totalSize);
       }
-      if (Update.write(upload.buf, upload.currentSize) != upload.currentSize) {
+      if (firmwareUpdate.write(firmwareUpdateBackend, upload.buf,
+                               upload.currentSize) !=
+          emcomm::OtaUploadState::Receiving) {
         otaUpdateFailed = true;
         otaUpdateError = Update.getErrorString();
         logError(String(F("OTA Update.write failed: ")) + otaUpdateError);
@@ -78,7 +95,8 @@ void handleFirmwareUpdateUpload() {
     }
   } else if (upload.status == UPLOAD_FILE_END) {
     if (!otaUpdateFailed) {
-      if (!Update.end(true)) {
+      if (firmwareUpdate.finish(firmwareUpdateBackend) !=
+          emcomm::OtaUploadState::Complete) {
         otaUpdateFailed = true;
         otaUpdateError = Update.getErrorString();
         logError(String(F("OTA Update.end failed: ")) + otaUpdateError);
@@ -90,7 +108,7 @@ void handleFirmwareUpdateUpload() {
   } else if (upload.status == UPLOAD_FILE_ABORTED) {
     otaUpdateFailed = true;
     otaUpdateError = F("Upload aborted by client.");
-    Update.end(false);
+    firmwareUpdate.abort(firmwareUpdateBackend);
     logError(F("OTA firmware update upload was aborted."));
   }
 }

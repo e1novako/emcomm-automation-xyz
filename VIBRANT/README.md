@@ -159,6 +159,11 @@ Additional security note: HTTP Basic Auth is not encrypted on plain HTTP. Use th
 
 - Reject invalid settings before applying them; retain the shared MAC parser behavior.
 
+### 1.3.3
+
+- Share OTA upload lifecycle, ArduinoOTA configuration/callback registration, and HTML escaping through `EmcommCommon`.
+- Keep authentication, HTTP routes/responses, update policy, and GUI-controlled debug output in VIBRANT.
+
 ### 1.2.6
 
 - Added opt-in custom MAC application, hostname/GPIO validation and pin warnings.
@@ -245,6 +250,7 @@ Typical flow:
 - `BootDiagnostics` — boot-time FLASH-button reset detection
 - `Runtime` — applies updated settings across the runtime services
 - `Version.h` — firmware version
+- `libraries/EmcommCommon` — shared strict MAC parsing, debug gating, OTA upload lifecycle, ArduinoOTA setup, and HTML escaping
 
 The repository-managed `libraries/EmcommCommon` helpers are included directly by
 the project modules. MAC parsing is strict and leaves the output unchanged on

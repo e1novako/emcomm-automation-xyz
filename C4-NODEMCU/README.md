@@ -5,15 +5,18 @@ Settings page controls the persisted verbose serial-debug setting.
 
 ## Shared helpers
 
-This project uses `../libraries/EmcommCommon` for strict MAC-address parsing
-and the debug-output gate. Invalid saved MAC values are ignored in favor of
-the hardware MAC; invalid web values are rejected without changing settings.
-The GUI toggle still controls verbose logs, while direct status and error
-messages remain available.
+This project uses `../libraries/EmcommCommon` for strict MAC-address parsing,
+the debug-output gate, OTA upload sequencing, and HTML escaping. Invalid saved
+MAC values are ignored in favor of the hardware MAC; invalid web values are
+rejected without changing settings. The GUI toggle still controls verbose
+logs, while direct status and error messages remain available. Async web-server
+authentication, update target selection, routes, and HTTP responses remain
+project-specific.
 
 ## Version history
 
-- 3.2.2 — Adopt shared MAC parsing and the GUI-controlled debug gate.
+- 3.2.4 — Share OTA upload lifecycle and HTML escaping helpers.
 - 3.2.3 — Validate submitted MAC addresses before applying any configuration.
+- 3.2.2 — Adopt shared MAC parsing and the GUI-controlled debug gate.
 - 3.2.1 — Security and stability fixes; see the version notes in
   `C4-NODEMCU.ino`.

@@ -45,6 +45,11 @@ Camera framesize, JPEG quality, brightness, contrast, saturation, flips, flash, 
 
 ## Changelog
 
+* 1.0.3 - Use shared ArduinoOTA setup and HTTP OTA upload sequencing.
 * 1.0.2 - Retain GUI-controlled debug output and shared diagnostic gating.
 * 1.0.1 - Use the shared GUI-controlled debug-output gate; preserve the persisted web setting.
 * 1.0.0 - Initial ESP32-CAM camera, SD, web, persistence, debug, and OTA example.
+
+The repository-managed `libraries/EmcommCommon` library provides the OTA upload
+state machine and ArduinoOTA setup helper. Camera routes, HTTP response handling,
+and the ESP32 `Update` backend remain local to this sketch.

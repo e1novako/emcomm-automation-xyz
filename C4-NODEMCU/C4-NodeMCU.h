@@ -19,7 +19,7 @@
 #include <PCF8575.h>
 
 // Software version
-#define SW_VERSION            "v3.2.3"
+#define SW_VERSION            "v3.2.4"
 
 // Debugging to serial port... toggleable at runtime from the web UI Settings page (debug_enabled), disabled by default via DEBUG_DEFAULT if desired.
 #define DEBUG true

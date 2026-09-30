@@ -8,9 +8,12 @@
 #include <FS.h>
 #include <SD_MMC.h>
 #include "esp_camera.h"
+#include "../libraries/EmcommCommon/src/EmcommCommon/ArduinoOta.h"
 #include "../libraries/EmcommCommon/src/EmcommCommon/Diagnostics.h"
+#include "../libraries/EmcommCommon/src/EmcommCommon/OtaUpload.h"
+#include "../libraries/EmcommCommon/src/EmcommCommon/Web.h"
 
-#define FIRMWARE_VERSION "1.0.2"
+#define FIRMWARE_VERSION "1.0.3"
 
 // AI-Thinker ESP32-CAM / TY-OV2 (OV2640) pin map.
 #define PWDN_GPIO_NUM 32
@@ -45,12 +48,26 @@ struct Config {
 
 bool sdReady = false;
 bool otaUpdating = false;
+bool otaUploadFailed = false;
+emcomm::OtaUploadState otaUploadState = emcomm::OtaUploadState::Idle;
 unsigned long bootMillis;
 unsigned long lastLed = 0;
 bool ledState = false;
 
 #define DBG(tag, format, ...) do { emcomm::debugIfEnabled(config.debug, [&]() { Serial.printf("[DEBUG][" tag "] " format "\n", ##__VA_ARGS__); }); } while (0)
 #define INFO(format, ...) Serial.printf("[INFO] " format "\n", ##__VA_ARGS__)
+
+struct FirmwareUpdateBackend {
+  bool begin() { return Update.begin(UPDATE_SIZE_UNKNOWN); }
+  size_t write(const uint8_t *data, size_t length) {
+    return Update.write(data, length);
+  }
+  bool finish() { return Update.end(true); }
+  void abort() { Update.end(false); }
+};
+
+FirmwareUpdateBackend firmwareUpdateBackend;
+emcomm::OtaUpload<FirmwareUpdateBackend> firmwareUpdate;
 
 void setStatus(bool on) { digitalWrite(STATUS_LED, on ? LOW : HIGH); }
 void saveConfig() {
@@ -203,15 +220,50 @@ void setupWeb() {
   server.on("/api/config", HTTP_POST, handleConfig); server.on("/api/snapshot", HTTP_POST, [](){ server.send(200, "text/plain", saveSnapshot() ? "saved" : "SD unavailable"); });
   server.on("/files", HTTP_GET, [](){ server.send(200, "application/json", fileList()); });
   server.on("/api/config", HTTP_GET, [](){ JsonDocument d; d["ssid"] = config.ssid; d["hostname"] = config.hostname; d["debug"] = config.debug; String o; serializeJson(d,o); server.send(200,"application/json",o); });
-  server.on("/firmware", HTTP_POST, [](){ server.send(200, "text/plain", Update.hasError() ? "update failed" : "update complete; rebooting"); delay(300); ESP.restart(); },
-    [](){ HTTPUpload &u = server.upload(); if (u.status == UPLOAD_FILE_START) Update.begin(UPDATE_SIZE_UNKNOWN); else if (u.status == UPLOAD_FILE_WRITE) Update.write(u.buf, u.currentSize); else if (u.status == UPLOAD_FILE_END) Update.end(true); });
+  server.on("/firmware", HTTP_POST, [](){
+      if (otaUploadFailed || !firmwareUpdate.succeeded()) {
+        server.send(500, "text/plain", "update failed");
+        return;
+      }
+      server.send(200, "text/plain", "update complete; rebooting");
+      delay(300);
+      ESP.restart();
+    },
+    [](){
+      HTTPUpload &u = server.upload();
+      if (u.status == UPLOAD_FILE_START) {
+        otaUploadFailed = false;
+        otaUploadState = firmwareUpdate.begin(firmwareUpdateBackend);
+      } else if (u.status == UPLOAD_FILE_WRITE) {
+        otaUploadState = firmwareUpdate.write(firmwareUpdateBackend, u.buf, u.currentSize);
+      } else if (u.status == UPLOAD_FILE_END) {
+        otaUploadState = firmwareUpdate.finish(firmwareUpdateBackend);
+        otaUploadFailed = otaUploadState != emcomm::OtaUploadState::Complete;
+      } else if (u.status == UPLOAD_FILE_ABORTED) {
+        otaUploadState = firmwareUpdate.abort(firmwareUpdateBackend);
+        otaUploadFailed = true;
+      }
+      if (otaUploadState == emcomm::OtaUploadState::BeginFailed ||
+          otaUploadState == emcomm::OtaUploadState::WriteFailed ||
+          otaUploadState == emcomm::OtaUploadState::FinishFailed ||
+          otaUploadState == emcomm::OtaUploadState::Aborted) {
+        otaUploadFailed = true;
+        INFO("HTTP OTA upload failed (state=%u)", static_cast<unsigned>(otaUploadState));
+      }
+    });
   server.begin(); streamServer.on("/stream", HTTP_GET, stream); streamServer.begin(); INFO("web server ready");
 }
 void setupOta() {
-  ArduinoOTA.setHostname(config.hostname.c_str()); if (config.otaPassword.length()) ArduinoOTA.setPassword(config.otaPassword.c_str());
-  ArduinoOTA.onStart([](){ otaUpdating = true; DBG("OTA", "update started"); }).onEnd([](){ setStatus(false); })
-    .onProgress([](unsigned int p, unsigned int t){ if (config.debug) Serial.printf("[DEBUG][OTA] %u%%\n", p * 100 / t); })
-    .onError([](ota_error_t e){ otaUpdating = false; INFO("OTA error %u", e); }); ArduinoOTA.begin();
+  emcomm::setArduinoOtaCallbacks(
+      ArduinoOTA,
+      [](){ otaUpdating = true; DBG("OTA", "update started"); },
+      [](){ setStatus(false); },
+      [](unsigned int p, unsigned int t){
+        if (config.debug) Serial.printf("[DEBUG][OTA] %u%%\n", t ? p * 100 / t : 0);
+      },
+      [](ota_error_t e){ otaUpdating = false; INFO("OTA error %u", e); });
+  emcomm::startArduinoOta(ArduinoOTA, config.hostname.c_str(),
+                          config.otaPassword.c_str());
 }
 void setupWifi() {
   WiFi.mode(WIFI_STA); WiFi.setHostname(config.hostname.c_str());

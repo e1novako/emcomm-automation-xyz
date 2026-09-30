@@ -1,10 +1,11 @@
 #pragma once
 #include "Config.h"
 #include <ESP8266WebServer.h>
+#include "../libraries/EmcommCommon/src/EmcommCommon/Web.h"
 namespace vibrant {
+using emcomm::htmlEscape;
 extern ESP8266WebServer server;
 void registerWebRoutes();
-String htmlEscape(const String &);
 String pinOption(int, const PinMapping &);
 bool parsePinValue(const String &, int &);
 bool parseIndexValue(const String &, int &);
