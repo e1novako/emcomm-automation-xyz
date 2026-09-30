@@ -78,22 +78,15 @@ void read_config() {
 
   if (file_read(PARAM_MAC) != "") {
     String sMAC = file_read(PARAM_MAC);
-
-    char *newMAC;
-    newMAC = (char*)malloc(20);
     uint8_t parsedMAC[6];
-
-    sMAC.toCharArray(newMAC, 20);
-    newMAC[19]=0;
-
-    sscanf(newMAC, "%2hhx:%2hhx:%2hhx:%2hhx:%2hhx:%2hhx", &parsedMAC[0], &parsedMAC[1], &parsedMAC[2], &parsedMAC[3], &parsedMAC[4], &parsedMAC[5]);
-
-    for (int ii=0; ii<6; ii++)
-      MAC[ii]=parsedMAC[ii];
-
-    free(newMAC);
-
-    serprln("MAC:  " + macToString(MAC) + "\n");
+    if (emcomm::parseMacAddress(sMAC.c_str(), parsedMAC)) {
+      for (int ii=0; ii<6; ii++)
+        MAC[ii]=parsedMAC[ii];
+      serprln("MAC:  " + macToString(MAC) + "\n");
+    } else {
+      serprln("Invalid saved MAC; keeping the hardware MAC.\n");
+      config_save = true;
+    }
   } else {
     serprln("Saving default MAC to default parameters...\n");
     config_save=true;

@@ -1,4 +1,5 @@
 #include "C4-NodeMCU-commands.h"
+#include "../libraries/EmcommCommon/src/EmcommCommon/Diagnostics.h"
 
 // ESP8266
 #include <ESP8266WiFi.h>
@@ -18,14 +19,14 @@
 #include <PCF8575.h>
 
 // Software version
-#define SW_VERSION            "v3.2.1"
+#define SW_VERSION            "v3.2.2"
 
 // Debugging to serial port... toggleable at runtime from the web UI Settings page (debug_enabled), disabled by default via DEBUG_DEFAULT if desired.
 #define DEBUG true
 
-#define serpr(a...) if (DEBUG && debug_enabled) Serial.print(a)
-#define serprf(a...) if (DEBUG && debug_enabled) Serial.printf(a)
-#define serprln(a...) if (DEBUG && debug_enabled) Serial.println(a)
+#define serpr(a...) emcomm::debugIfEnabled(DEBUG && debug_enabled, [&]() { Serial.print(a); })
+#define serprf(a...) emcomm::debugIfEnabled(DEBUG && debug_enabled, [&]() { Serial.printf(a); })
+#define serprln(a...) emcomm::debugIfEnabled(DEBUG && debug_enabled, [&]() { Serial.println(a); })
 
 // Most of our automation devices have boards with 8 relays
 #define MAX_GPIOS             16

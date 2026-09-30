@@ -8,8 +8,9 @@
 #include <FS.h>
 #include <SD_MMC.h>
 #include "esp_camera.h"
+#include "../libraries/EmcommCommon/src/EmcommCommon/Diagnostics.h"
 
-#define FIRMWARE_VERSION "1.0.0"
+#define FIRMWARE_VERSION "1.0.1"
 
 // AI-Thinker ESP32-CAM / TY-OV2 (OV2640) pin map.
 #define PWDN_GPIO_NUM 32
@@ -48,7 +49,7 @@ unsigned long bootMillis;
 unsigned long lastLed = 0;
 bool ledState = false;
 
-#define DBG(tag, format, ...) do { if (config.debug) Serial.printf("[DEBUG][" tag "] " format "\n", ##__VA_ARGS__); } while (0)
+#define DBG(tag, format, ...) do { emcomm::debugIfEnabled(config.debug, [&]() { Serial.printf("[DEBUG][" tag "] " format "\n", ##__VA_ARGS__); }); } while (0)
 #define INFO(format, ...) Serial.printf("[INFO] " format "\n", ##__VA_ARGS__)
 
 void setStatus(bool on) { digitalWrite(STATUS_LED, on ? LOW : HIGH); }

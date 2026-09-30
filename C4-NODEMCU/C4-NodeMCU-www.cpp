@@ -2,6 +2,7 @@
 
 #include "C4-NodeMCU.h"
 #include "C4-NodeMCU-WWW.h"
+#include "../libraries/EmcommCommon/src/EmcommCommon/MacAddress.h"
 
 String add_checkbox(String name, boolean checked) {
   return "<input type='checkbox' name='" + name + "' " + (checked ? "checked" : "") + ">";
@@ -552,15 +553,12 @@ void start_network_services() {
     }
 
     if (request->hasParam(PARAM_MAC)) {
-      char *newMAC;
-      newMAC = (char*)malloc(20);
       uint8_t parsedMAC[6];
-
       new_param = request->getParam(PARAM_MAC)->value();
-      new_param.toCharArray(newMAC, 20);
-      newMAC[19]=0;
-
-      sscanf(newMAC, "%2hhx:%2hhx:%2hhx:%2hhx:%2hhx:%2hhx", &parsedMAC[0], &parsedMAC[1], &parsedMAC[2], &parsedMAC[3], &parsedMAC[4], &parsedMAC[5]);
+      if (!emcomm::parseMacAddress(new_param.c_str(), parsedMAC)) {
+        request->send(400, "text/plain", "Invalid MAC address format");
+        return;
+      }
 
       if (parsedMAC[0] != MAC[0] || parsedMAC[1] != MAC[1] || parsedMAC[2] != MAC[2] || parsedMAC[3] != MAC[3] || parsedMAC[4] != MAC[4] || parsedMAC[5] != MAC[5]) {
         for (int ii=0; ii<6; ii++)
@@ -569,7 +567,6 @@ void start_network_services() {
         esp_restart = true;
         serprln("New - MAC: " + macToString(MAC));
       }
-      free(newMAC);
     }
 
     if (request->hasParam(PARAM_INPUT_DEVICE_TYPE)) {

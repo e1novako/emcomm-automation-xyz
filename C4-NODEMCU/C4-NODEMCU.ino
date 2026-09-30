@@ -4,6 +4,9 @@
  *
  * \copyright   Copyright 2023 Snap One, LLC. All Rights Reserved.
  *
+ * \par v3.2.2 - Shared common helpers
+ *  - Validate configured MAC addresses with the shared parser.
+ *  - Route verbose serial output through the shared GUI-controlled debug gate.
  * \par v3.2.1 - Security/stability fixes
  *  - Added HTTP Basic Auth (admin / current Wi-Fi password) to /apply_config, /restart_device,
  *    /device_defaults, and /doUpdate (OTA firmware upload).

@@ -1,6 +1,7 @@
 #include <ArduinoJson.h>
 #include <ESP8266WiFi.h>
 #include <LittleFS.h>
+#include "../libraries/EmcommCommon/src/EmcommCommon/MacAddress.h"
 extern "C" {
 #include "user_interface.h"
 }
@@ -50,29 +51,7 @@ const uint8_t MAX_WIFI_RECOVERY_ATTEMPTS = 12;
 const unsigned long MQTT_RECONNECT_INTERVAL_MS = 10000UL;
 const uint16_t MQTT_PACKET_BUFFER_SIZE = 2048, MQTT_PAYLOAD_LOG_MAX_LEN = 120;
 bool parseMac(const String &mac, uint8_t out[6]) {
-  if (mac.length() != 17)
-    return false;
-  for (uint8_t i = 0; i < 6; ++i) {
-    char hi = mac[i * 3];
-    char lo = mac[i * 3 + 1];
-    if (i < 5 && mac[i * 3 + 2] != ':')
-      return false;
-    auto hex = [](char c) -> int {
-      if (c >= '0' && c <= '9')
-        return c - '0';
-      if (c >= 'A' && c <= 'F')
-        return c - 'A' + 10;
-      if (c >= 'a' && c <= 'f')
-        return c - 'a' + 10;
-      return -1;
-    };
-    int h = hex(hi);
-    int l = hex(lo);
-    if (h < 0 || l < 0)
-      return false;
-    out[i] = static_cast<uint8_t>((h << 4) | l);
-  }
-  return true;
+  return emcomm::parseMacAddress(mac.c_str(), out);
 }
 
 bool applyConfiguredMac() {

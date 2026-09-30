@@ -150,6 +150,11 @@ Additional security note: HTTP Basic Auth is not encrypted on plain HTTP. Use th
 
 - Split the firmware into focused source modules while preserving runtime behavior.
 
+### 1.3.1
+
+- Use the shared strict MAC-address parser and debug-output gate from `libraries/EmcommCommon`.
+- Keep verbose logging controlled by the persisted Settings → Diagnostics checkbox.
+
 ### 1.2.6
 
 - Added opt-in custom MAC application, hostname/GPIO validation and pin warnings.
@@ -236,6 +241,11 @@ Typical flow:
 - `BootDiagnostics` — boot-time FLASH-button reset detection
 - `Runtime` — applies updated settings across the runtime services
 - `Version.h` — firmware version
+
+The repository-managed `libraries/EmcommCommon` helpers are included directly by
+the project modules. MAC parsing is strict and leaves the output unchanged on
+invalid input. OTA upload handling remains project-specific because the
+ESP8266/ESP32 update backends and web-server callbacks differ.
 
 ## Build notes
 

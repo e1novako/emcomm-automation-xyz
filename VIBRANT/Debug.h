@@ -1,14 +1,15 @@
 #pragma once
 #include "Config.h"
 #include <Arduino.h>
+#include "../libraries/EmcommCommon/src/EmcommCommon/Diagnostics.h"
 namespace vibrant {
 #define DBG(...)                                                               \
   do {                                                                         \
-    if (cfg.debugSerial) {                                                     \
+    emcomm::debugIfEnabled(cfg.debugSerial, [&]() {                           \
       Serial.print(F("[DEBUG] "));                                             \
       Serial.printf(__VA_ARGS__);                                              \
       Serial.println();                                                        \
-    }                                                                          \
+    });                                                                        \
   } while (0)
 void logStatus(const String &);
 void logWarning(const String &);
