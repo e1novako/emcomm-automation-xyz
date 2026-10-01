@@ -145,6 +145,10 @@ Additional security note: HTTP Basic Auth is not encrypted on plain HTTP. Use th
 
 ## Release notes
 
+### 1.4.18
+
+- The 1.4.17 mitigation (longer write timeout, `TCP_NODELAY`, fewer chunk writes) reduced but did not eliminate the chunked-encoding corruption on busy pages: testing still showed an occasional short write silently truncating a chunk's actual byte count below its already-declared size. Chunked table/page responses no longer use `ESP8266WebServer::sendContent()` for the body at all; each chunk (size header, payload, and trailer) is now written directly to the client through a small retry loop that keeps writing until every byte is confirmed sent (or the socket is truly disconnected/stalled), so a declared chunk size can never again mismatch what was actually delivered.
+
 ### 1.4.17
 
 - Fixed the real root cause of the intermittent blank/missing cells on the All Outputs page: `ESP8266WebServer::sendContent()` has only a 1-second default write timeout and does not retry on a short write, so under momentary WiFi/TCP congestion it could write fewer bytes than the already-declared HTTP chunk size, desyncing the chunked-transfer framing (symptoms: well-formed but randomly truncated/merged table rows, worse on a busy network). The chunked response helpers now raise the client's write timeout to 8s and enable `TCP_NODELAY` before streaming a page, and each table row/piece is sent as a single `sendContent()` call instead of being needlessly re-split into 256-byte sub-writes (which only multiplied the number of at-risk operations).

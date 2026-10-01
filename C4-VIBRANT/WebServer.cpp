@@ -94,15 +94,44 @@ namespace {
 bool gChunkedActive = false;
 String gChunkedFallback;
 
+// Writes exactly `len` bytes to `client`, retrying (with a short delay) as
+// long as the socket is connected and progress is still possible. This is
+// stronger than relying on ESP8266WebServer::sendContent(), which declares
+// an HTTP chunk-size header up front and then simply logs (without
+// resynchronizing or retrying) if the underlying write falls short under
+// momentary WiFi/TCP congestion -- that mismatch between the declared and
+// actually-sent byte count is what corrupted the chunked-transfer framing
+// and produced the randomly missing/merged "All Outputs" table cells.
+void writeFully(WiFiClient &client, const uint8_t *data, size_t len) {
+  size_t written = 0;
+  unsigned long lastProgressMs = millis();
+  while (written < len && client.connected()) {
+    size_t w = client.write(data + written, len - written);
+    if (w > 0) {
+      written += w;
+      lastProgressMs = millis();
+    } else if (millis() - lastProgressMs > 15000) {
+      break; // genuinely stuck/disconnected; give up rather than hang forever
+    } else {
+      delay(1);
+    }
+  }
+}
+
 void writeRaw(const char *data, size_t len) {
-  // Send the whole piece as a single underlying sendContent() call (one HTTP
-  // chunk). Splitting further here only multiplies the number of internal
-  // writes, each with its own write-timeout window; under momentary WiFi/TCP
-  // congestion a short write desyncs the chunk framing (declared chunk size
-  // no longer matches bytes actually sent), which showed up as randomly
-  // missing table data. Fewer, larger writes reduce that risk; the
-  // generous client write timeout set in beginChunkedHtml() covers the rest.
-  server.sendContent(data, len);
+  if (len == 0) {
+    return;
+  }
+  // Build the HTTP chunk ourselves (size header + CRLF + body + CRLF) and
+  // write every part with writeFully(), so the declared chunk size always
+  // matches what was actually delivered -- no partial/short writes can
+  // desync the chunked-encoding stream the way sendContent() could.
+  WiFiClient &client = server.client();
+  char header[16];
+  int headerLen = snprintf(header, sizeof(header), "%zx\r\n", len);
+  writeFully(client, reinterpret_cast<const uint8_t *>(header), headerLen);
+  writeFully(client, reinterpret_cast<const uint8_t *>(data), len);
+  writeFully(client, reinterpret_cast<const uint8_t *>("\r\n"), 2);
 }
 } // namespace
 
