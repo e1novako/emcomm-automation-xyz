@@ -93,13 +93,16 @@ namespace {
 // is safe.
 bool gChunkedActive = false;
 String gChunkedFallback;
-const size_t kChunkSize = 256;
 
 void writeRaw(const char *data, size_t len) {
-  for (size_t pos = 0; pos < len; pos += kChunkSize) {
-    size_t count = min(kChunkSize, len - pos);
-    server.sendContent(data + pos, count);
-  }
+  // Send the whole piece as a single underlying sendContent() call (one HTTP
+  // chunk). Splitting further here only multiplies the number of internal
+  // writes, each with its own write-timeout window; under momentary WiFi/TCP
+  // congestion a short write desyncs the chunk framing (declared chunk size
+  // no longer matches bytes actually sent), which showed up as randomly
+  // missing table data. Fewer, larger writes reduce that risk; the
+  // generous client write timeout set in beginChunkedHtml() covers the rest.
+  server.sendContent(data, len);
 }
 } // namespace
 
@@ -107,13 +110,19 @@ void writeRaw(const char *data, size_t len) {
 // writeChunk() followed by endChunkedHtml().
 void beginChunkedHtml(int code) {
   gChunkedFallback = "";
+  // ESP8266WebServer's default 1s write timeout is too tight for a busy page
+  // with many sequential chunk writes (e.g. the "All Outputs" table); under
+  // momentary congestion a write can time out short without retrying,
+  // corrupting the chunked-encoding framing. Give writes more time, and
+  // disable Nagle to reduce the chance of buffer backlog in the first place.
+  server.client().setTimeout(8000);
+  server.client().setNoDelay(true);
   gChunkedActive = server.chunkedResponseModeStart(code, "text/html");
 }
 
-// Sends one piece of HTML immediately as its own independent chunk (split
-// further into kChunkSize-sized writes). If the client only supports
-// HTTP/1.0 (chunked mode unavailable), the piece is buffered instead and
-// sent as a single plain response by endChunkedHtml().
+// Sends one piece of HTML immediately as its own independent chunk. If the
+// client only supports HTTP/1.0 (chunked mode unavailable), the piece is
+// buffered instead and sent as a single plain response by endChunkedHtml().
 void writeChunk(const String &piece) {
   if (gChunkedActive) {
     writeRaw(piece.c_str(), piece.length());
@@ -132,10 +141,10 @@ void endChunkedHtml() {
   }
 }
 
-// Sends an already-fully-built HTML string as a chunked response, split into
-// kChunkSize-sized, independently-sent pieces. Prefer beginChunkedHtml() /
-// writeChunk() / endChunkedHtml() for pages built incrementally (e.g. table
-// rows), so the whole page never needs to exist in RAM at once.
+// Sends an already-fully-built HTML string as a single chunked response.
+// Prefer beginChunkedHtml() / writeChunk() / endChunkedHtml() for pages
+// built incrementally (e.g. table rows), so the whole page never needs to
+// exist in RAM at once.
 void sendChunkedHtml(int code, const String &html) {
   beginChunkedHtml(code);
   writeChunk(html);

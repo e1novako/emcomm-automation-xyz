@@ -145,6 +145,10 @@ Additional security note: HTTP Basic Auth is not encrypted on plain HTTP. Use th
 
 ## Release notes
 
+### 1.4.17
+
+- Fixed the real root cause of the intermittent blank/missing cells on the All Outputs page: `ESP8266WebServer::sendContent()` has only a 1-second default write timeout and does not retry on a short write, so under momentary WiFi/TCP congestion it could write fewer bytes than the already-declared HTTP chunk size, desyncing the chunked-transfer framing (symptoms: well-formed but randomly truncated/merged table rows, worse on a busy network). The chunked response helpers now raise the client's write timeout to 8s and enable `TCP_NODELAY` before streaming a page, and each table row/piece is sent as a single `sendContent()` call instead of being needlessly re-split into 256-byte sub-writes (which only multiplied the number of at-risk operations).
+
 ### 1.4.16
 
 - Fixed a bug where the All Outputs page intermittently rendered blank `<td>` cells for outputs that had previously been discovered. The discovery output table is now merged by `euid` instead of being wholesale overwritten on each `hello`/`list` response, so a short/partial reply from one stickserver instance no longer erases already-known outputs for that column. Outputs are only fully cleared when their parent server entry goes stale (no `hello`/`list` activity for ~90s) and is pruned.
