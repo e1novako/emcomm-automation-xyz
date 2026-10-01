@@ -145,6 +145,10 @@ Additional security note: HTTP Basic Auth is not encrypted on plain HTTP. Use th
 
 ## Release notes
 
+### 1.4.19
+
+- Found the actual source of the still-reported "missing/corrupted data" on the All Outputs page: it wasn't corruption at all. The page streams as many HTTP chunks, and with `table-layout:fixed` a browser can render the table progressively as each chunk arrives; on a slow or weak WiFi link, a user looking at the page mid-load would see rows/cells that simply hadn't arrived yet -- which looked exactly like randomly missing data, varying with network speed and timing. The table is now built hidden behind a "Loading discovered outputs…" message and only revealed (by a trailing inline script) once the entire table has been fully received, so the page can never be viewed in a partially-loaded state.
+
 ### 1.4.18
 
 - The 1.4.17 mitigation (longer write timeout, `TCP_NODELAY`, fewer chunk writes) reduced but did not eliminate the chunked-encoding corruption on busy pages: testing still showed an occasional short write silently truncating a chunk's actual byte count below its already-declared size. Chunked table/page responses no longer use `ESP8266WebServer::sendContent()` for the body at all; each chunk (size header, payload, and trailer) is now written directly to the client through a small retry loop that keeps writing until every byte is confirmed sent (or the socket is truly disconnected/stalled), so a declared chunk size can never again mismatch what was actually delivered.

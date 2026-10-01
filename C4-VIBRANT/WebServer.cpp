@@ -1099,7 +1099,17 @@ void handleStickserverFleetGet() {
     return;
   }
 
-  piece += F("<table><tr><th>Output #</th>");
+  // This page is streamed as many small HTTP chunks; on a slow/weak WiFi
+  // link the browser can render a table with table-layout:fixed
+  // progressively as chunks arrive, so a user looking at it mid-load would
+  // see rows/cells that simply haven't arrived yet -- which looks exactly
+  // like missing/corrupted data but is actually just an incomplete page
+  // load. Keep the table hidden behind a loading message until the whole
+  // thing has arrived, then reveal it with a trailing inline script so the
+  // user only ever sees the complete table.
+  piece += F("<p id='fleet-loading'>Loading discovered outputs&hellip;</p>"
+             "<table id='fleet-table' style='display:none'>"
+             "<tr><th>Output #</th>");
   for (uint8_t c = 0; c < activeCount; ++c) {
     const DiscoveredServer &s = discoveredServers[activeIdx[c]];
     String label = s.hostname.isEmpty() ? s.instanceTopic : s.hostname;
@@ -1141,7 +1151,12 @@ void handleStickserverFleetGet() {
     writeChunk(piece);
   }
 
-  writeChunk(F("</table></body></html>"));
+  writeChunk(F(
+      "</table>"
+      "<script>"
+      "document.getElementById('fleet-loading').style.display='none';"
+      "document.getElementById('fleet-table').style.display='';"
+      "</script></body></html>"));
   endChunkedHtml();
 }
 
