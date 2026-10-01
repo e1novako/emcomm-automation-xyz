@@ -22,6 +22,11 @@ void handleAllOff();
 void handleFactoryResetAll();
 void handleLeaveMeshAll();
 void handleSettingsGet();
-void handleSettingsPost();
+void handleNetworkSettingsGet();
+void handleNetworkSettingsPost();
+void handleDeviceSettingsGet();
+void handleDeviceSettingsPost();
+void handleDiagnosticsGet();
+void handleDiagnosticsPost();
 void handleNotFound();
 } // namespace vibrant

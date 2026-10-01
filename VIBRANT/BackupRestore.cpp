@@ -116,7 +116,7 @@ void handleConfigImportDone() {
   }
   logStatus(F("Configuration import applied successfully."));
   applyRuntimeSettings();
-  server.sendHeader("Location", "/settings");
+  server.sendHeader("Location", "/settings/diagnostics");
   server.send(303);
 }
 
@@ -130,7 +130,7 @@ void handleFactoryReset() {
     restartDevice(F("Failed to persist factory reset configuration."));
   }
   applyRuntimeSettings();
-  server.sendHeader("Location", "/settings");
+  server.sendHeader("Location", "/settings/diagnostics");
   server.send(303);
 }
 
