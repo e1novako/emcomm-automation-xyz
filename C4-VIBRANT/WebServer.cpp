@@ -40,6 +40,7 @@ void registerWebRoutes() {
   server.on("/settings/diagnostics", HTTP_GET, handleDiagnosticsGet);
   server.on("/settings/diagnostics", HTTP_POST, handleDiagnosticsPost);
   server.on("/device/reboot", HTTP_POST, handleRebootDevice);
+  server.on("/reservation/release", HTTP_POST, handleReleaseReservation);
   server.on("/fleet", HTTP_GET, handleStickserverFleetGet);
   server.on("/config/export", HTTP_GET, handleConfigExport);
   server.on("/config/import", HTTP_POST, handleConfigImportDone,
@@ -81,6 +82,24 @@ String formatUptimeHHMMSS(unsigned long totalSeconds) {
   char buf[16];
   snprintf(buf, sizeof(buf), "%02lu:%02lu:%02lu", hours, minutes, seconds);
   return String(buf);
+}
+
+// Sends an HTML response using HTTP chunked transfer-encoding (rather than
+// building the whole response with a Content-Length header) so large pages
+// are streamed to the client instead of requiring a single large send.
+void sendChunkedHtml(int code, const String &html) {
+  if (!server.chunkedResponseModeStart(code, "text/html")) {
+    // HTTP/1.0 client: chunked mode unsupported, fall back to a plain send.
+    server.send(code, "text/html", html);
+    return;
+  }
+  const size_t kChunkSize = 1024;
+  size_t len = html.length();
+  for (size_t pos = 0; pos < len; pos += kChunkSize) {
+    size_t count = min(kChunkSize, len - pos);
+    server.sendContent(html.c_str() + pos, count);
+  }
+  server.chunkedResponseFinalize();
 }
 
 String pinOption(int selectedPin, const PinMapping &mapping) {
@@ -254,12 +273,15 @@ void handleHome() {
       String reservationLabel =
           reserved ? (outputReservations[i].owner.isEmpty()
                           ? String(F("Reserved"))
-                          : String(F("Reserved by ")) +
-                                htmlEscape(outputReservations[i].owner))
+                          : htmlEscape(outputReservations[i].owner))
                    : String(F("Not reserved"));
-      html += "<button type='button' disabled class='output-toggle " +
-              String(reserved ? "output-on" : "output-off") + "'>" +
-              reservationLabel + "</button>";
+      const char *releaseDisabledAttr = reserved ? "" : " disabled";
+      html += "<form method='post' action='/reservation/release' "
+              "style='margin:0;'><input type='hidden' name='idx' value='" +
+              String(i) + "'><button type='submit' class='output-toggle " +
+              String(reserved ? "output-on" : "output-off") + "'" +
+              releaseDisabledAttr + ">" + reservationLabel +
+              "</button></form>";
     } else {
       html += F("(none)");
     }
@@ -296,7 +318,7 @@ void handleHome() {
   }
 
   html += F("</table></body></html>");
-  server.send(200, "text/html", html);
+  sendChunkedHtml(200, html);
 }
 
 void handleToggle() {
@@ -526,7 +548,7 @@ void handleSettingsGet() {
             "MQTT</a></li><li><a href='/settings/devices'>Devices &amp; "
             "outputs</a></li><li><a href='/settings/diagnostics'>Diagnostics "
             "&amp; OTA</a></li></ul></body></html>");
-  server.send(200, "text/html", html);
+  sendChunkedHtml(200, html);
 }
 
 void handleNetworkSettingsGet() {
@@ -602,7 +624,7 @@ void handleNetworkSettingsGet() {
       "factory_reset / reboot).</p></fieldset>"
       "<button type='submit'>Save network settings</button></form>"
       "</body></html>";
-  server.send(200, "text/html", html);
+  sendChunkedHtml(200, html);
 }
 
 void handleNetworkSettingsPost() {
@@ -753,7 +775,7 @@ void handleDeviceSettingsGet() {
   }
   html += F("</table><button type='submit'>Save device settings</button>"
             "</form></body></html>");
-  server.send(200, "text/html", html);
+  sendChunkedHtml(200, html);
 }
 
 void handleDeviceSettingsPost() {
@@ -883,7 +905,7 @@ void handleDiagnosticsGet() {
           "network. The device reboots automatically after a successful "
           "flash.</p><p><a href='/firmware/update'>Open firmware update "
           "page</a></p></body></html>";
-  server.send(200, "text/html", html);
+  sendChunkedHtml(200, html);
 }
 
 void handleDiagnosticsPost() {
@@ -896,6 +918,34 @@ void handleDiagnosticsPost() {
   logSettingsDebug("diagnostics");
   finishSettingsSave("Diagnostics and OTA settings updated from web UI.",
                      "/settings/diagnostics");
+}
+
+void handleReleaseReservation() {
+  if (!ensureAuthorized())
+    return;
+  int idx = -1;
+  if (!server.hasArg("idx") || !parseIndexValue(server.arg("idx"), idx) ||
+      idx < 0 || idx >= cfg.numOutputs ||
+      !isValidOutputPin(cfg.devices[idx].pin)) {
+    server.send(400, "text/plain", "Invalid output index");
+    return;
+  }
+  logStatus(String(F("Releasing reservation for output ")) +
+            String(idx + 1) + F(" via web UI."));
+  JsonDocument req;
+  req["cmd"] = "release";
+  req["ver"] = STICKSERVER_PROTOCOL_VERSION;
+  req["mid"] = String(F("web-release-")) + String(millis());
+  JsonArray euids = req["euids"].to<JsonArray>();
+  euids.add(stickserverOutputEuid(static_cast<uint8_t>(idx)));
+  String payload;
+  serializeJson(req, payload);
+  // Processed in-process (not round-tripped through the broker) so the
+  // release takes effect immediately; the resulting response is still
+  // published over MQTT like any other stickserver command.
+  handleStickserverMessage(stickserverInstanceTopic(), payload);
+  server.sendHeader("Location", "/");
+  server.send(303);
 }
 
 void handleRebootDevice() {
@@ -926,7 +976,7 @@ void handleStickserverFleetGet() {
     html += F("<p style='color:#b00020;'><strong>MQTT is not connected.</"
               "strong> Enable and configure MQTT on the Network settings "
               "page to discover stickservers.</p></body></html>");
-    server.send(200, "text/html", html);
+    sendChunkedHtml(200, html);
     return;
   }
 
@@ -977,7 +1027,7 @@ void handleStickserverFleetGet() {
   }
 
   html += F("</body></html>");
-  server.send(200, "text/html", html);
+  sendChunkedHtml(200, html);
 }
 
 void handleNotFound() { server.send(404, "text/plain", "Not found"); }

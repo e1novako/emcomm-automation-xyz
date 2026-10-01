@@ -484,39 +484,49 @@ void handleStickserverMessage(const String &topicStr,
     String euids[MAX_DEVICES];
     size_t euidCount = 0;
     bool hasEuids = !request["euids"].isNull();
-    if (hasEuids && !extractStringArray(request["euids"], euids, euidCount)) {
+    // An explicitly-empty euids array ("euids": []) is treated the same as
+    // omitting euids entirely (see releaseAll below), not as invalid input.
+    bool euidsIsEmptyArray = hasEuids && request["euids"].is<JsonArrayConst>() &&
+                             request["euids"].as<JsonArrayConst>().size() == 0;
+    if (hasEuids && !euidsIsEmptyArray &&
+        !extractStringArray(request["euids"], euids, euidCount)) {
       publishStickserverFailure(cmd, ver, mid, F("invalid_member"), F("euids"),
                                 F("Invalid euids list."));
       return;
     }
-    if (owner.isEmpty() && euidCount == 0) {
-      publishStickserverFailure(cmd, ver, mid, F("invalid_member"),
-                                F("owner/euids"),
-                                F("Release requires owner and/or euids."));
-      return;
-    }
+    // No owner and no euids specified (or an empty euids list): release all
+    // currently-reserved managed outputs.
+    bool releaseAll = owner.isEmpty() && euidCount == 0;
 
     bool selected[MAX_DEVICES] = {false};
     JsonDocument response;
     JsonArray devices = response["devices"].to<JsonArray>();
-    if (!owner.isEmpty()) {
+    if (releaseAll) {
       for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
-        if (isManagedOutput(i) && outputReservations[i].reserved &&
-            outputReservations[i].owner == owner) {
+        if (isManagedOutput(i) && outputReservations[i].reserved) {
           selected[i] = true;
         }
       }
-      response["owner"] = owner;
-    }
-    for (size_t i = 0; i < euidCount; ++i) {
-      int idx = findManagedOutputByEuid(euids[i]);
-      if (idx < 0) {
-        JsonObject device = devices.add<JsonObject>();
-        device["euid"] = euids[i];
-        device["released"] = false;
-        device["status"] = "unknown_euid";
-      } else {
-        selected[idx] = true;
+    } else {
+      if (!owner.isEmpty()) {
+        for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
+          if (isManagedOutput(i) && outputReservations[i].reserved &&
+              outputReservations[i].owner == owner) {
+            selected[i] = true;
+          }
+        }
+        response["owner"] = owner;
+      }
+      for (size_t i = 0; i < euidCount; ++i) {
+        int idx = findManagedOutputByEuid(euids[i]);
+        if (idx < 0) {
+          JsonObject device = devices.add<JsonObject>();
+          device["euid"] = euids[i];
+          device["released"] = false;
+          device["status"] = "unknown_euid";
+        } else {
+          selected[idx] = true;
+        }
       }
     }
 

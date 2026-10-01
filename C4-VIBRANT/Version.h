@@ -1,4 +1,4 @@
 #pragma once
 namespace vibrant {
-constexpr const char SOFTWARE_VERSION[] = "1.4.11";
+constexpr const char SOFTWARE_VERSION[] = "1.4.12";
 }

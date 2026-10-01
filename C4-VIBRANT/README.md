@@ -145,6 +145,12 @@ Additional security note: HTTP Basic Auth is not encrypted on plain HTTP. Use th
 
 ## Release notes
 
+### 1.4.12
+
+- Reservation column button now shows just the `<owner>` (no "Reserved by" prefix), is disabled when the output is not reserved, and is enabled when reserved. Clicking it releases that output's reservation (processed in-process via the Stickserver `release` command, with the response still published over MQTT when connected).
+- Stickserver `release` command: sending it with no `owner` and an empty/omitted `euids` list now releases all currently-reserved managed outputs instead of returning an `invalid_member` error.
+- All HTML page responses (`/`, `/settings/*`, `/fleet`, config export, firmware update page) are now sent using HTTP chunked transfer-encoding (`chunkedResponseModeStart`/`sendContent`/`chunkedResponseFinalize`) instead of a single buffered `Content-Length` response.
+
 ### 1.4.11
 
 - Added a new "Fleet outputs" page (`/fleet`, linked from the main page and settings nav) showing all discovered stickserver instances in a table: each column is one stickserver, each row is one output slot, rendered as a read-only button (gray = off, yellow = on).
