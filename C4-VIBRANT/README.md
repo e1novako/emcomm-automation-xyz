@@ -145,6 +145,11 @@ Additional security note: HTTP Basic Auth is not encrypted on plain HTTP. Use th
 
 ## Release notes
 
+### 1.5.0
+
+- Found why output state color never showed on the All Outputs page: the `.output-toggle`/`.output-on`/`.output-off` button classes were only ever defined in the home page's stylesheet, not the settings-page stylesheet that `/fleet` (and all other `/settings/*` pages) actually use, so the buttons rendered with no state styling at all. Those classes (and centered `th`/`td` text) are now part of the shared settings-page stylesheet.
+- Removed the "Output #" row-number column from the All Outputs table; all cells are centered.
+
 ### 1.4.20
 
 - The hide-until-loaded change in 1.4.19 ruled out progressive-rendering as the cause -- the user still saw missing data on a fully-loaded page, with a consistent amount missing per row on some loads. The likely real cause: building a whole table row (up to 16 columns of `<form>` markup, several KB) as one `String` via repeated `+=` concatenation is exactly the kind of allocation pattern that can hit heap fragmentation on this memory-constrained device, where a failed/short reallocation can silently truncate the string. Each table cell is now built and sent as its own small, independently-written chunk (with a small `reserve()` up front) instead of accumulating a whole row first, cutting the peak String size needed per chunk from several KB down to under ~400 bytes.

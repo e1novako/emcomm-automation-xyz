@@ -39,11 +39,13 @@ static const char SETTINGS_PAGE_HEADER[] PROGMEM =
     "title><style>body{font-family:Arial,sans-serif;margin:20px;}fieldset{"
     "margin-bottom:16px;}label{display:block;margin:6px "
     "0;}table{border-collapse:collapse;width:100%;}th,td{border:1px solid "
-    "#ddd;padding:8px;}th{background:#f5f5f5;}input,select{width:100%;padding:"
-    "6px;box-sizing:border-box;}button{border:1px solid "
+    "#ddd;padding:8px;text-align:center;}th{background:#f5f5f5;}input,select{"
+    "width:100%;padding:"
+    "6px;box-sizing:border-box;}button,.output-toggle{border:1px solid "
     "#999;border-radius:999px;min-width:64px;padding:8px "
     "16px;margin:2px;font-weight:bold;cursor:pointer;background:#e0e0e0;"
-    "color:#222;}.bulk-actions{margin:10px 0;}.settings-nav a{"
+    "color:#222;}.output-on{background:#fff2b2;color:#222;}.output-off{"
+    "background:#d3d3d3;color:#222;}.bulk-actions{margin:10px 0;}.settings-nav a{"
     "display:inline-block;margin:4px 8px 12px 0;}.settings-nav .current{"
     "font-weight:bold;}.page-intro{color:#555;}</style>";
 static const char SETTINGS_PAGE_SCRIPT[] PROGMEM =

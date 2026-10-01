@@ -1111,8 +1111,7 @@ void handleStickserverFleetGet() {
   // thing has arrived, then reveal it with a trailing inline script so the
   // user only ever sees the complete table.
   piece += F("<p id='fleet-loading'>Loading discovered outputs&hellip;</p>"
-             "<table id='fleet-table' style='display:none'>"
-             "<tr><th>Output #</th>");
+             "<table id='fleet-table' style='display:none'><tr>");
   for (uint8_t c = 0; c < activeCount; ++c) {
     const DiscoveredServer &s = discoveredServers[activeIdx[c]];
     String label = s.hostname.isEmpty() ? s.instanceTopic : s.hostname;
@@ -1129,8 +1128,7 @@ void handleStickserverFleetGet() {
   // String concatenations are more likely to hit heap fragmentation on this
   // memory-constrained device, which can silently truncate content.
   for (uint8_t row = 0; row < maxRows; ++row) {
-    piece = "<tr><td>" + String(row + 1) + "</td>";
-    writeChunk(piece);
+    writeChunk(F("<tr>"));
     for (uint8_t c = 0; c < activeCount; ++c) {
       const DiscoveredServer &s = discoveredServers[activeIdx[c]];
       piece = "<td>";
