@@ -145,6 +145,11 @@ Additional security note: HTTP Basic Auth is not encrypted on plain HTTP. Use th
 
 ## Release notes
 
+### 1.4.15
+
+- Stickserver discovery now parses the per-output `devices` array (euid/name/state) from `hello` responses, not just `list` responses, so a discovered output's state on the **All Outputs** page updates as soon as any hello reply carries it (some stickserver implementations include it there). Our own `hello` response now includes this `devices` array too, for parity.
+- On the All Outputs page, each button's color (yellow = ON, gray = OFF) now reflects the most recently received `state` value from either `hello` or `list` discovery responses.
+
 ### 1.4.14
 
 - Renamed the "Fleet outputs" page to "All Outputs" (route still `/fleet`); updated nav labels and page title.

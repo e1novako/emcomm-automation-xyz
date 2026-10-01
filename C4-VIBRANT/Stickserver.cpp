@@ -220,6 +220,25 @@ int allocateDiscoveredServerSlot(const String &topic) {
   return oldest;
 }
 
+void applyDiscoveredOutputs(uint8_t idx, JsonArrayConst devices) {
+  uint8_t count = 0;
+  for (JsonVariantConst item : devices) {
+    if (count >= MAX_DEVICES)
+      break;
+    JsonObjectConst dev = item.as<JsonObjectConst>();
+    discoveredServers[idx].outputs[count].euid = dev["euid"] | String("");
+    discoveredServers[idx].outputs[count].name = dev["name"] | String("");
+    String stateStr = dev["state"] | String("OFF");
+    discoveredServers[idx].outputs[count].state = (stateStr == "ON");
+    discoveredServers[idx].outputs[count].valid = true;
+    ++count;
+  }
+  for (uint8_t i = count; i < MAX_DEVICES; ++i) {
+    discoveredServers[idx].outputs[i].valid = false;
+  }
+  discoveredServers[idx].outputCount = count;
+}
+
 void handleStickserverDiscoveryResponse(const String &topicStr,
                                         JsonDocument &response) {
   String rsp = response["rsp"] | String("");
@@ -232,31 +251,22 @@ void handleStickserverDiscoveryResponse(const String &topicStr,
     discoveredServers[idx].hostname = response["id"] | String("");
     discoveredServers[idx].instanceId = response["instance"] | String("");
     discoveredServers[idx].lastSeenMs = millis();
+    // Some stickserver implementations include a per-output "devices" array
+    // (euid/name/state) directly in the hello response; use it immediately
+    // if present instead of waiting for the next "list" request/response.
+    JsonArrayConst devices = response["devices"].as<JsonArrayConst>();
+    if (!devices.isNull())
+      applyDiscoveredOutputs(idx, devices);
   } else if (rsp == F("list")) {
     int idx = allocateDiscoveredServerSlot(topicStr);
     discoveredServers[idx].lastSeenMs = millis();
     String hostId = response["id"] | String("");
     if (!hostId.isEmpty())
       discoveredServers[idx].hostname = hostId;
-    JsonArrayConst devices = response["devices"].as<JsonArrayConst>();
-    uint8_t count = 0;
-    for (JsonVariantConst item : devices) {
-      if (count >= MAX_DEVICES)
-        break;
-      JsonObjectConst dev = item.as<JsonObjectConst>();
-      discoveredServers[idx].outputs[count].euid = dev["euid"] | String("");
-      discoveredServers[idx].outputs[count].name = dev["name"] | String("");
-      String stateStr = dev["state"] | String("OFF");
-      discoveredServers[idx].outputs[count].state = (stateStr == "ON");
-      discoveredServers[idx].outputs[count].valid = true;
-      ++count;
-    }
-    for (uint8_t i = count; i < MAX_DEVICES; ++i) {
-      discoveredServers[idx].outputs[i].valid = false;
-    }
-    discoveredServers[idx].outputCount = count;
+    applyDiscoveredOutputs(idx, response["devices"].as<JsonArrayConst>());
   }
 }
+
 
 void maintainStickserverDiscovery() {
   if (!cfg.mqttEnabled || !mqttClient.connected())
@@ -377,6 +387,12 @@ void handleStickserverMessage(const String &topicStr,
     response["instance"] = stickserverInstanceId();
     response["count"] = managedOutputCount();
     response["available"] = availableManagedOutputCount();
+    JsonArray devices = response["devices"].to<JsonArray>();
+    for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
+      if (!isManagedOutput(i))
+        continue;
+      populateStickserverDevice(devices.add<JsonObject>(), i);
+    }
     publishStickserverResponse(response);
     return;
   }
