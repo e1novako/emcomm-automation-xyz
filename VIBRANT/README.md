@@ -9,36 +9,39 @@ Factory Wi-Fi credentials are publicly known:
 - SSID: `Z-Wave Automation`
 - Password: `Fiber714Cvet`
 
-Change the password immediately in **Settings** after the first boot.
+Change the password immediately in **Network, Wi-Fi & MQTT** after the first
+boot.
 
 ## Highlights
 
 - All configuration is persisted in LittleFS JSON file: `/vibrant_config.json`
 - English-only UI labels and source comments
-- Main page lists configured devices (model, name, status) and provides checkbox toggles, per-output load action buttons, and bulk actions (`Leave Mesh All`, `Factory Reset All`)
+- Main page lists configured devices (model, name, status) and provides rounded state buttons (gray when ON, pastel yellow when OFF), per-output load action buttons, and bulk actions (`Leave Mesh All`, `Factory Reset All`)
 - Settings, toggle actions, and config maintenance endpoints are protected with HTTP Basic Auth (`admin` / current Wi-Fi password)
-- Settings page supports:
+- Settings are split into three navigable pages linked from the main page and from each other:
+  - **Network, Wi-Fi & MQTT** (`/settings/network`): station/AP credentials, MAC, hostname, Wi-Fi power, and MQTT broker settings
+  - **Devices & output configuration** (`/settings/devices`): output count, device names/models/manufacturers, and GPIO assignments
+  - **Diagnostics & OTA** (`/settings/diagnostics`): ArduinoOTA, verbose serial debug, configuration import/export/reset, and firmware update access
+- Saving any page only updates that page's settings; it does not clear checkboxes, credentials, or values on other pages. Station/AP and MQTT passwords are never pre-filled: leave them blank to keep the existing password; use the MQTT clear-password checkbox to remove broker authentication.
+- The Network page supports:
   - MAC address with an opt-in **Use custom MAC address** checkbox (off by default, including older saved configurations)
   - DHCP hostname (up to 32 letters, digits or hyphens; empty uses the MAC-based default)
-  - SSID
-  - Password
-  - Wi-Fi output power/strength
   - MQTT broker host, port, username, and password (enable/disable toggle)
+- The Devices page supports:
   - Bulk-copying the first Manufacturer/Model/Name to all visible rows (`#<number>` in the first name continues from the parsed starting number)
   - Clearing all Manufacturer, Model, and Name fields without changing Control output selections
   - Reversing GPIO assignments across the currently configured output rows
   - Up to 16 device entries (`manufacturer`, `model`, `name`, output `D0`–`D8`, `RX`, `TX`, or `none`)
   - Duplicate GPIO assignments among active outputs are rejected. TX/RX disable serial communication; GPIO0 (FLASH) and GPIO15 can affect boot, and remain selectable with warnings.
   - Unspecified device identity fields default to manufacturer `Control4` and model `Vibrant`
-  - MQTT server/host, port, user, password, and enable toggle
 - Configuration maintenance routes:
   - Export backup (`/config/export`)
   - Import backup (`/config/import`)
   - Factory reset to defaults (`/config/factory-reset`)
 - Web-based OTA firmware update (`/firmware/update`): upload a compiled `.bin` directly from the browser; the device reboots automatically after a successful flash
-- ArduinoOTA support (enabled by default): developer/service OTA uploads via Arduino IDE or OTA-capable tooling; it can be disabled in Settings
+- ArduinoOTA support (enabled by default): developer/service OTA uploads via Arduino IDE or OTA-capable tooling; it can be disabled on **Diagnostics & OTA**
 - Serial diagnostics print boot progress, Wi-Fi state, configured outputs, and important error/status messages
-- Verbose `[DEBUG]` MQTT, Stickserver and ArduinoOTA logs can be disabled in **Settings → Diagnostics** (off by default); boot Wi-Fi scan and detailed loaded Wi-Fi logging run only when debug is enabled
+- Verbose `[DEBUG]` MQTT, Stickserver, ArduinoOTA, and settings-save logs can be disabled with **Enable verbose serial debug logging** on **Diagnostics & OTA** (off by default); boot Wi-Fi scan and detailed loaded Wi-Fi logging run only when debug is enabled
 - Output pins are configured/driven only after a 1-second post-boot delay
 - Firmware automatically attempts Wi-Fi reconnect after disconnects
 - Firmware performs a controlled restart for unrecoverable conditions after logging the reason to serial
@@ -69,7 +72,7 @@ Stickserver `reserve` requests match the requested `ntype` case-insensitively ag
 
 ### Configuration
 
-Enable MQTT and set the broker host/port in **Settings → MQTT**.  Fields:
+Enable MQTT and set the broker host/port in **Network, Wi-Fi & MQTT**. Fields:
 
 | Field | Description |
 |-------|-------------|
@@ -138,13 +141,19 @@ For `Leave Mesh All` and `Factory Reset All`, all managed outputs prepare and cy
 - Wi-Fi power range: `5.0 - 20.5 dBm`
 - MQTT: disabled by default
 - Default GPIO assignments: outputs 1–8 mapped to D0–D7 (GPIO16, GPIO5, GPIO4, GPIO0, GPIO2, GPIO14, GPIO12, GPIO13)
-- ArduinoOTA: enabled by default; disable it from **Settings → Diagnostics** when not needed
+- ArduinoOTA: enabled by default; disable it from **Diagnostics & OTA** when not needed
 
 Security note: factory credentials are public and meant only for first setup.
 
 Additional security note: HTTP Basic Auth is not encrypted on plain HTTP. Use this firmware only on trusted local networks/AP access.
 
 ## Release notes
+
+### 1.4.0
+
+- Split configuration into Network/Wi-Fi/MQTT, Devices/outputs, and Diagnostics/OTA pages with independent saves and shared navigation.
+- Replaced main-page output checkboxes with accessible rounded buttons showing the current ON/OFF state and requesting its opposite.
+- Added diagnostics-page access to verbose-debug control, ArduinoOTA, maintenance actions, and web firmware upload; documented the `arduino-cli` ESP8266 build setup.
 
 ### 1.3.0
 
@@ -168,7 +177,7 @@ Additional security note: HTTP Basic Auth is not encrypted on plain HTTP. Use th
 
 ## MQTT
 
-When MQTT is enabled in Settings, the firmware:
+When MQTT is enabled in **Network, Wi-Fi & MQTT**, the firmware:
 
 - Connects to the configured broker on boot and reconnects automatically every 15 seconds if the connection is lost.
 - Publishes the retained state of each output to `vibrant/<hostname>/output/<N>/state` (`1` = ON, `0` = OFF) whenever a toggle is applied (from the web UI or MQTT).
@@ -189,7 +198,7 @@ VIBRANT supports two OTA firmware update paths:
    - Arduino IDE: **Sketch → Export Compiled Binary**
    - `arduino-cli`: `arduino-cli compile --fqbn esp8266:esp8266:nodemcuv2 --export-binaries VIBRANT/VIBRANT.ino`
 2. Open the device web UI and log in.
-3. Go to **Settings → Firmware update** and click **Open firmware update page**, or navigate directly to `http://<device-ip>/firmware/update`.
+3. Go to **Diagnostics & OTA → Open firmware update page**, or navigate directly to `http://<device-ip>/firmware/update`.
 4. Select the compiled `.bin` file and click **Upload and flash**.
 5. Wait for the upload to complete. The device reboots automatically.
 6. The page reloads after 15 seconds. Verify the new firmware is running.
@@ -200,7 +209,7 @@ VIBRANT supports two OTA firmware update paths:
 
 ArduinoOTA is available for developer/service workflows and is **enabled by default**.
 
-It can be disabled or re-enabled in **Settings → Diagnostics → Enable ArduinoOTA service**.
+It can be disabled or re-enabled in **Diagnostics & OTA → Enable ArduinoOTA service**.
 
 Behavior:
 
@@ -210,7 +219,7 @@ Behavior:
 
 Typical flow:
 
-1. Confirm ArduinoOTA is enabled in Settings (it is enabled by default) and save if needed.
+1. Confirm ArduinoOTA is enabled on **Diagnostics & OTA** (it is enabled by default) and save if needed.
 2. Ensure your development machine is on the same network.
 3. Select the device's network OTA target in Arduino IDE/tooling.
 4. Upload firmware over Wi-Fi; the device reboots automatically on success.
@@ -239,10 +248,27 @@ Typical flow:
 
 ## Build notes
 
-1. Open `VIBRANT/VIBRANT.ino` in Arduino IDE (or compile with `arduino-cli` for an ESP8266 board).
-2. Select a NodeMCU v3 compatible ESP8266 board profile.
-3. Ensure `ArduinoJson` and `PubSubClient` are installed.
-4. Flash the firmware.
+To prepare `arduino-cli` (one-time setup), run:
+
+```sh
+arduino-cli config init --overwrite
+arduino-cli config set board_manager.additional_urls https://arduino.esp8266.com/stable/package_esp8266com_index.json
+arduino-cli core update-index
+arduino-cli core install esp8266:esp8266
+arduino-cli lib install "ArduinoJson" "PubSubClient"
+```
+
+Compile from the correctly-cased `VIBRANT/` sketch directory (the folder and
+`VIBRANT.ino` filename must match):
+
+```sh
+cd VIBRANT
+arduino-cli compile --fqbn esp8266:esp8266:nodemcuv2 --export-binaries .
+```
+
+Alternatively, open `VIBRANT/VIBRANT.ino` in Arduino IDE, select a NodeMCU v3
+compatible ESP8266 board, ensure `ArduinoJson` and `PubSubClient` are installed,
+and flash the firmware.
 
 After boot, join the configured AP and open the device IP in a browser.
 

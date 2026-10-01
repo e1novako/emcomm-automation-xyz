@@ -33,7 +33,12 @@ void registerWebRoutes() {
   server.on("/action/leave-mesh-all", HTTP_POST, handleLeaveMeshAll);
   server.on("/action/factory-reset-all", HTTP_POST, handleFactoryResetAll);
   server.on("/settings", HTTP_GET, handleSettingsGet);
-  server.on("/settings", HTTP_POST, handleSettingsPost);
+  server.on("/settings/network", HTTP_GET, handleNetworkSettingsGet);
+  server.on("/settings/network", HTTP_POST, handleNetworkSettingsPost);
+  server.on("/settings/devices", HTTP_GET, handleDeviceSettingsGet);
+  server.on("/settings/devices", HTTP_POST, handleDeviceSettingsPost);
+  server.on("/settings/diagnostics", HTTP_GET, handleDiagnosticsGet);
+  server.on("/settings/diagnostics", HTTP_POST, handleDiagnosticsPost);
   server.on("/config/export", HTTP_GET, handleConfigExport);
   server.on("/config/import", HTTP_POST, handleConfigImportDone,
             handleConfigImportUpload);
@@ -129,7 +134,10 @@ void handleHome() {
   bool actionRunning = isActionRunning();
   String html = FPSTR(HOME_PAGE_HEADER);
   html += SOFTWARE_VERSION;
-  html += F("</p><p><a href='/settings'>Settings</a></p>");
+  html += F("</p><p><a href='/settings'>Settings</a> | "
+            "<a href='/settings/network'>Network</a> | "
+            "<a href='/settings/devices'>Devices</a> | "
+            "<a href='/settings/diagnostics'>Diagnostics &amp; OTA</a></p>");
   if (usingFactoryPassword()) {
     html += passwordWarningHtml();
   }
@@ -198,16 +206,15 @@ void handleHome() {
       html += "<form method='post' action='/toggle' style='margin:0;'>"
               "<input type='hidden' name='idx' value='" +
               String(i) +
-              "'>"
-              "<input type='hidden' name='state' id='state_" +
-              String(i) + "' value='" + String(d.state ? 1 : 0) +
-              "'>"
-              "<input type='checkbox'";
-      if (d.state)
-        html += " checked";
-      html += " onchange=\"document.getElementById('state_" + String(i) +
-              "').value=this.checked?1:0;this.form.submit();\">"
-              "</form>";
+              "'><input type='hidden' name='state' value='" +
+              String(d.state ? 0 : 1) + "'><button type='submit' "
+              "class='output-toggle " +
+              String(d.state ? "output-on" : "output-off") +
+              "' aria-label='Output " + String(i + 1) + " is " +
+              String(d.state ? "ON" : "OFF") + "; turn " +
+              String(d.state ? "off" : "on") + "' aria-pressed='" +
+              String(d.state ? "true" : "false") + "'>" +
+              String(d.state ? "ON" : "OFF") + "</button></form>";
     } else {
       html += F("(none)");
     }
@@ -438,38 +445,86 @@ void handleLeaveMeshAll() {
   server.send(303);
 }
 
+static String settingsNavigation(const char *activePage) {
+  String html = F("<nav class='settings-nav' aria-label='Settings pages'>");
+  const char *paths[] = {"/settings/network", "/settings/devices",
+                         "/settings/diagnostics"};
+  const char *labels[] = {"Network, Wi-Fi & MQTT", "Devices & outputs",
+                          "Diagnostics & OTA"};
+  const char *pages[] = {"network", "devices", "diagnostics"};
+  for (uint8_t i = 0; i < 3; ++i) {
+    html += "<a href='" + String(paths[i]) + "'";
+    if (String(activePage) == pages[i])
+      html += " class='current' aria-current='page'";
+    html += ">" + String(labels[i]) + "</a>";
+  }
+  html += F("</nav>");
+  return html;
+}
+
+static String settingsPageStart(const char *title, const char *activePage) {
+  String html = FPSTR(SETTINGS_PAGE_HEADER);
+  html += "</head><body><h1>" + String(title) + "</h1>"
+          "<p><a href='/'>Main output control</a></p>";
+  html += settingsNavigation(activePage);
+  if (usingFactoryPassword())
+    html += passwordWarningHtml();
+  return html;
+}
+
+static void finishSettingsSave(const char *logMessage, const char *redirect) {
+  logStatus(logMessage);
+  if (!saveConfig())
+    restartDevice(F("Failed to persist updated settings."));
+  applyRuntimeSettings();
+  server.sendHeader("Location", redirect);
+  server.send(303);
+}
+
+static void logSettingsDebug(const char *pageName) {
+  if (cfg.debugSerial) {
+    Serial.print(F("[DEBUG] Settings page saved: "));
+    Serial.println(pageName);
+  }
+}
+
 void handleSettingsGet() {
   if (!ensureAuthorized())
     return;
+  String html = settingsPageStart("Settings", "");
+  html += F("<p class='page-intro'>Choose a settings page to configure the "
+            "network, outputs, or diagnostics and firmware updates.</p>"
+            "<ul><li><a href='/settings/network'>Network, Wi-Fi &amp; "
+            "MQTT</a></li><li><a href='/settings/devices'>Devices &amp; "
+            "outputs</a></li><li><a href='/settings/diagnostics'>Diagnostics "
+            "&amp; OTA</a></li></ul></body></html>");
+  server.send(200, "text/html", html);
+}
 
-  String html = FPSTR(SETTINGS_PAGE_HEADER);
-  html += FPSTR(SETTINGS_PAGE_SCRIPT);
-  html += F("</head><body><h1>Settings</h1>"
-            "<p><a href='/'>Back to main page</a></p><form method='post' "
-            "action='/settings'>");
-  if (usingFactoryPassword()) {
-    html += passwordWarningHtml();
-  }
-
-  html += "<fieldset><legend>Station network</legend>"
+void handleNetworkSettingsGet() {
+  if (!ensureAuthorized())
+    return;
+  String html = settingsPageStart("Network, Wi-Fi & MQTT", "network");
+  html += "<p class='page-intro'>Network and broker changes are saved without "
+          "altering device or diagnostics settings.</p>"
+          "<form method='post' action='/settings/network'>"
+          "<fieldset><legend>Station network</legend>"
           "<label>Station SSID <input name='staSsid' value='" +
           htmlEscape(cfg.staSsid) +
           "'></label>"
           "<label for='staPassword'>Station password</label><input "
           "id='staPassword' name='staPassword' type='password' value='' "
           "placeholder='Leave empty to keep current station password'>"
-          "</fieldset>";
-
-  html += "<fieldset><legend>Access point</legend>"
+          "</fieldset>"
+          "<fieldset><legend>Access point</legend>"
           "<label>SoftAP SSID <input value='" +
           htmlEscape(defaultSoftApSsidFromMac(cfg.mac)) +
           "' readonly></label>"
           "<label for='apPassword'>SoftAP password</label><input "
           "id='apPassword' name='apPassword' type='password' value='' "
           "placeholder='Leave empty to keep current AP password'>"
-          "</fieldset>";
-
-  html += "<fieldset><legend>Network device settings</legend>"
+          "</fieldset>"
+          "<fieldset><legend>Network device settings</legend>"
           "<label>MAC address <input name='mac' value='" +
           htmlEscape(cfg.mac) +
           "' maxlength='17'></label>"
@@ -482,56 +537,7 @@ void handleSettingsGet() {
           "<label>Wi-Fi power (5.0 - 20.5 dBm) <input name='wifiPower' "
           "type='number' min='5' max='20.5' step='0.1' value='" +
           String(cfg.wifiPower, 1) +
-          "'></label>"
-          "</fieldset>";
-
-  html += "<fieldset><legend>Devices</legend>"
-          "<label>Number of outputs (1 - 16) <input name='numOutputs' "
-          "type='number' min='1' max='16' step='1' value='" +
-          String(cfg.numOutputs) +
-          "'></label>"
-          "<p>Each active output must use a different GPIO. TX/RX disable "
-          "serial communication; GPIO0 (FLASH) and GPIO15 affect boot.</p>"
-          "<div class='bulk-actions'><button type='button' "
-          "onclick='copyFirstManufacturerToAll()'>Use first Manufacturer for "
-          "all</button>"
-          "<button type='button' onclick='copyFirstModelToAll()'>Use first "
-          "Model for all</button>"
-          "<button type='button' onclick='copyFirstNameToAll()'>Use first Name "
-          "for all</button>"
-          "<button type='button' onclick='clearAllFieldsExceptOutput()'>Clear "
-          "all fields</button>"
-          "<button type='button' onclick='reverseGpioAssignments()'>Reverse "
-          "GPIO assignments</button>"
-          "<span>If the first Name contains #5, copy keeps the first row at #5 "
-          "and fills later rows as #6, #7, and so on.</span></div>"
-          "<table><tr><th>#</th><th>Manufacturer</th><th>Model</th><th>Name</"
-          "th><th>Control output</th></tr>";
-  for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
-    html += "<tr><td>" + String(i + 1) +
-            "</td>"
-            "<td><input name='manufacturer_" +
-            String(i) + "' value='" + htmlEscape(cfg.devices[i].manufacturer) +
-            "'></td>"
-            "<td><input name='model_" +
-            String(i) + "' value='" + htmlEscape(cfg.devices[i].model) +
-            "'></td>"
-            "<td><input name='name_" +
-            String(i) + "' value='" + htmlEscape(cfg.devices[i].name) +
-            "'></td>"
-            "<td><select name='pin_" +
-            String(i) + "'>";
-
-    html += (cfg.devices[i].pin < 0)
-                ? "<option value='-1' selected>none</option>"
-                : "<option value='-1'>none</option>";
-    for (size_t pinIndex = 0; pinIndex < OUTPUT_PIN_MAPPING_COUNT; ++pinIndex) {
-      html += pinOption(cfg.devices[i].pin, OUTPUT_PIN_MAPPINGS[pinIndex]);
-    }
-    html += "</select></td></tr>";
-  }
-  html += "</table></fieldset>";
-
+          "'></label></fieldset>";
   html +=
       "<fieldset><legend>MQTT</legend>"
       "<label><input type='checkbox' name='mqttEnabled' value='1'" +
@@ -567,13 +573,255 @@ void handleSettingsGet() {
       "<code>vibrant/" +
       htmlEscape(cfg.hostname) +
       "/out/&lt;N&gt;/action</code> (power_on / power_off / leave_mesh / "
-      "factory_reset). "
-      "Stickserver compatibility subscribes to <code>" +
+      "factory_reset). Stickserver compatibility subscribes to <code>" +
       htmlEscape(String(STICKSERVER_ROOT_TOPIC)) +
-      "</code> and replies on the device topic.</p>"
-      "</fieldset>";
+      "</code> and replies on the device topic.</p></fieldset>"
+      "<button type='submit'>Save network settings</button></form>"
+      "</body></html>";
+  server.send(200, "text/html", html);
+}
 
-  html += "<fieldset><legend>Diagnostics</legend>"
+void handleNetworkSettingsPost() {
+  if (!ensureAuthorized())
+    return;
+  if (!server.hasArg("staSsid") || !server.hasArg("mac") ||
+      !server.hasArg("hostname") || !server.hasArg("wifiPower") ||
+      !server.hasArg("mqttHost") || !server.hasArg("mqttPort") ||
+      !server.hasArg("mqttUser")) {
+    logError(F("Network settings save rejected: required field missing."));
+    server.send(400, "text/plain", "Missing required network setting");
+    return;
+  }
+
+  String macValue = server.arg("mac");
+  macValue.toUpperCase();
+  uint8_t macBytes[6] = {0};
+  if (!parseMac(macValue, macBytes)) {
+    logError(F("Network settings save rejected due to invalid MAC address."));
+    server.send(400, "text/plain",
+                "Invalid MAC address format. Use AA:BB:CC:DD:EE:FF");
+    return;
+  }
+  String hostname = server.arg("hostname");
+  if (hostname.length() > 32) {
+    logError(F("Network settings save rejected due to invalid hostname."));
+    server.send(400, "text/plain",
+                "Hostname must be at most 32 characters (letters, digits, "
+                "hyphens only)");
+    return;
+  }
+  for (size_t i = 0; i < hostname.length(); ++i) {
+    char c = hostname[i];
+    if (!((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+          (c >= '0' && c <= '9') || c == '-')) {
+      logError(F("Network settings save rejected due to invalid hostname."));
+      server.send(400, "text/plain",
+                  "Hostname must contain only letters, digits, and hyphens");
+      return;
+    }
+  }
+  float parsedPower = 0.0f;
+  if (!parseFloatValue(server.arg("wifiPower"), parsedPower)) {
+    logError(F("Network settings save rejected due to invalid Wi-Fi power."));
+    server.send(400, "text/plain", "Invalid Wi-Fi power value");
+    return;
+  }
+  String stationSsid = server.arg("staSsid");
+  String stationPassword = cfg.staPassword;
+  if (!server.arg("staPassword").isEmpty())
+    stationPassword = server.arg("staPassword");
+  String apPassword = cfg.apPassword;
+  if (!server.arg("apPassword").isEmpty())
+    apPassword = server.arg("apPassword");
+  if (stationSsid.isEmpty() || stationPassword.isEmpty() ||
+      apPassword.isEmpty()) {
+    logError(F("Network settings save rejected because required credentials "
+               "were empty."));
+    server.send(400, "text/plain",
+                "Station SSID, station password, and AP password must not be "
+                "empty");
+    return;
+  }
+
+  cfg.mac = macValue;
+  cfg.useCustomMac =
+      server.hasArg("useCustomMac") && server.arg("useCustomMac") == "1";
+  cfg.hostname =
+      hostname.isEmpty() ? defaultHostnameFromMac(cfg.mac) : hostname;
+  cfg.staSsid = stationSsid;
+  cfg.staPassword = stationPassword;
+  cfg.apPassword = apPassword;
+  cfg.wifiPower = constrain(parsedPower, MIN_WIFI_POWER, MAX_WIFI_POWER);
+  cfg.mqttEnabled =
+      server.hasArg("mqttEnabled") && server.arg("mqttEnabled") == "1";
+  cfg.mqttHost = server.arg("mqttHost");
+  int parsedPort = -1;
+  if (parseIndexValue(server.arg("mqttPort"), parsedPort) && parsedPort >= 1 &&
+      parsedPort <= 65535) {
+    cfg.mqttPort = static_cast<uint16_t>(parsedPort);
+  } else {
+    cfg.mqttPort = DEFAULT_MQTT_PORT;
+  }
+  cfg.mqttUser = server.arg("mqttUser");
+  if (server.hasArg("mqttPasswordClear") &&
+      server.arg("mqttPasswordClear") == "1") {
+    cfg.mqttPassword = "";
+  } else {
+    String newMqttPassword = server.arg("mqttPassword");
+    String legacyMqttPassword = server.arg("mqttPass");
+    if (newMqttPassword.isEmpty())
+      newMqttPassword = legacyMqttPassword;
+    else if (!legacyMqttPassword.isEmpty() &&
+             legacyMqttPassword != newMqttPassword)
+      logWarning(F("Network settings POST contained conflicting MQTT "
+                   "password fields; applying mqttPassword."));
+    if (!newMqttPassword.isEmpty())
+      cfg.mqttPassword = newMqttPassword;
+  }
+
+  logSettingsDebug("network");
+  finishSettingsSave("Network settings updated from web UI.",
+                     "/settings/network");
+}
+
+void handleDeviceSettingsGet() {
+  if (!ensureAuthorized())
+    return;
+  String html = settingsPageStart("Devices & output configuration", "devices");
+  html += FPSTR(SETTINGS_PAGE_SCRIPT);
+  html += "<p>Each active output must use a different GPIO. TX/RX disable "
+          "serial communication; GPIO0 (FLASH) and GPIO15 affect boot.</p>"
+          "<form id='device-form' method='post' action='/settings/devices'>"
+          "<label>Number of outputs (1 - 16) <input name='numOutputs' "
+          "type='number' min='1' max='16' step='1' value='" +
+          String(cfg.numOutputs) +
+          "'></label>"
+          "<div class='bulk-actions'><button type='button' "
+          "onclick='copyFirstManufacturerToAll()'>Use first Manufacturer for "
+          "all</button>"
+          "<button type='button' onclick='copyFirstModelToAll()'>Use first "
+          "Model for all</button>"
+          "<button type='button' onclick='copyFirstNameToAll()'>Use first Name "
+          "for all</button>"
+          "<button type='button' onclick='clearAllFieldsExceptOutput()'>Clear "
+          "all fields</button>"
+          "<button type='button' onclick='reverseGpioAssignments()'>Reverse "
+          "GPIO assignments</button>"
+          "<span>If the first Name contains #5, copy keeps the first row at #5 "
+          "and fills later rows as #6, #7, and so on.</span></div>"
+          "<table><tr><th>#</th><th>Manufacturer</th><th>Model</th><th>Name</"
+          "th><th>Control output</th></tr>";
+  for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
+    html += "<tr><td>" + String(i + 1) +
+            "</td><td><input name='manufacturer_" + String(i) + "' value='" +
+            htmlEscape(cfg.devices[i].manufacturer) +
+            "'></td><td><input name='model_" + String(i) + "' value='" +
+            htmlEscape(cfg.devices[i].model) +
+            "'></td><td><input name='name_" + String(i) + "' value='" +
+            htmlEscape(cfg.devices[i].name) +
+            "'></td><td><select name='pin_" + String(i) + "'>";
+    html += (cfg.devices[i].pin < 0)
+                ? "<option value='-1' selected>none</option>"
+                : "<option value='-1'>none</option>";
+    for (size_t pinIndex = 0; pinIndex < OUTPUT_PIN_MAPPING_COUNT; ++pinIndex)
+      html += pinOption(cfg.devices[i].pin, OUTPUT_PIN_MAPPINGS[pinIndex]);
+    html += F("</select></td></tr>");
+  }
+  html += F("</table><button type='submit'>Save device settings</button>"
+            "</form></body></html>");
+  server.send(200, "text/html", html);
+}
+
+void handleDeviceSettingsPost() {
+  if (!ensureAuthorized())
+    return;
+  int parsedOutputs = -1;
+  if (!server.hasArg("numOutputs") ||
+      !parseIndexValue(server.arg("numOutputs"), parsedOutputs) ||
+      parsedOutputs < 1 || parsedOutputs > MAX_DEVICES) {
+    logError(F("Device settings save rejected: output count must be 1-16."));
+    server.send(400, "text/plain", "Number of outputs must be 1-16");
+    return;
+  }
+  bool usedPins[17] = {false};
+  for (int i = 0; i < parsedOutputs; ++i) {
+    String pinArgName = "pin_" + String(i);
+    if (!server.hasArg(pinArgName)) {
+      if (i < cfg.numOutputs) {
+        logError(F("Device settings save rejected: output field missing."));
+        server.send(400, "text/plain", "Missing device output setting");
+        return;
+      }
+      continue;
+    }
+    int pin = -1;
+    if (!parsePinValue(server.arg(pinArgName), pin)) {
+      logError(F("Device settings save rejected: invalid output pin."));
+      server.send(400, "text/plain", "Invalid output pin");
+      return;
+    }
+    if (pin >= 0) {
+      if (usedPins[pin]) {
+        logError(F("Device settings save rejected: duplicate GPIO."));
+        server.send(400, "text/plain",
+                    "Duplicate GPIO assignment among active outputs");
+        return;
+      }
+      usedPins[pin] = true;
+    }
+  }
+  for (int i = 0; i < parsedOutputs; ++i) {
+    String index = String(i);
+    if (i < cfg.numOutputs &&
+        (!server.hasArg("manufacturer_" + index) ||
+         !server.hasArg("model_" + index) || !server.hasArg("name_" + index))) {
+      logError(F("Device settings save rejected: device field missing."));
+      server.send(400, "text/plain", "Missing device setting");
+      return;
+    }
+  }
+
+  cfg.numOutputs = static_cast<uint8_t>(parsedOutputs);
+  for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
+    String index = String(i);
+    cfg.devices[i].manufacturer =
+        server.hasArg("manufacturer_" + index)
+            ? server.arg("manufacturer_" + index)
+            : String(DEFAULT_DEVICE_MANUFACTURER);
+    cfg.devices[i].model = server.hasArg("model_" + index)
+                               ? server.arg("model_" + index)
+                               : String(DEFAULT_DEVICE_MODEL);
+    String manufacturer = cfg.devices[i].manufacturer;
+    String model = cfg.devices[i].model;
+    manufacturer.trim();
+    model.trim();
+    if (manufacturer.isEmpty())
+      cfg.devices[i].manufacturer = DEFAULT_DEVICE_MANUFACTURER;
+    if (model.isEmpty())
+      cfg.devices[i].model = DEFAULT_DEVICE_MODEL;
+    cfg.devices[i].name =
+        server.hasArg("name_" + index) ? server.arg("name_" + index) : "";
+    int pin = -1;
+    String pinArgName = "pin_" + index;
+    if (server.hasArg(pinArgName))
+      parsePinValue(server.arg(pinArgName), pin);
+    cfg.devices[i].pin = pin;
+    if (!isValidOutputPin(cfg.devices[i].pin))
+      cfg.devices[i].state = false;
+  }
+  logSettingsDebug("devices");
+  finishSettingsSave("Device settings updated from web UI.",
+                     "/settings/devices");
+}
+
+void handleDiagnosticsGet() {
+  if (!ensureAuthorized())
+    return;
+  String html = settingsPageStart("Diagnostics & OTA", "diagnostics");
+  html += "<p class='page-intro'>Control verbose serial diagnostics and update "
+          "the firmware.</p><form method='post' "
+          "action='/settings/diagnostics'><fieldset><legend>Diagnostics and "
+          "ArduinoOTA</legend>"
           "<label><input type='checkbox' name='arduinoOtaEnabled' value='1'" +
           String(cfg.arduinoOtaEnabled ? " checked" : "") +
           "> Enable ArduinoOTA service (developer OTA via IDE/tools; uses "
@@ -584,16 +832,11 @@ void handleSettingsGet() {
           "</code> and requires the current admin password.</p>"
           "<label><input type='checkbox' name='debugSerial' value='1'" +
           String(cfg.debugSerial ? " checked" : "") +
-          "> Enable verbose serial debug logging (euid parsing, idx "
-          "resolution, etc.)</label>"
-          "</fieldset>";
-
-  html += F("<button type='submit'>Save settings</button></form>");
-
-  html +=
-      F("<h2>Configuration maintenance</h2>"
-        "<p><a href='/config/export'>Download configuration backup</a></p>");
-  html += "<p>Hold the FLASH button during power-on (during the first " +
+          "> Enable verbose serial debug logging</label></fieldset>"
+          "<button type='submit'>Save diagnostics settings</button></form>"
+          "<h2>Configuration maintenance</h2>"
+          "<p><a href='/config/export'>Download configuration backup</a></p>"
+          "<p>Hold the FLASH button during power-on (during the first " +
           String(FLASH_BOOT_DETECTION_WINDOW_MS) +
           " milliseconds of boot) to trigger factory reset and restart.</p>"
           "<form method='post' action='/config/factory-reset' "
@@ -606,186 +849,22 @@ void handleSettingsGet() {
           "<button type='submit'>Upload and restore</button></form>"
           "<h2>Firmware update</h2>"
           "<p>Upload a compiled <code>.bin</code> to update firmware over the "
-          "network. "
-          "The device reboots automatically after a successful flash.</p>"
-          "<p><a href='/firmware/update'>Open firmware update page</a></p>";
-
-  html += F("</body></html>");
+          "network. The device reboots automatically after a successful "
+          "flash.</p><p><a href='/firmware/update'>Open firmware update "
+          "page</a></p></body></html>";
   server.send(200, "text/html", html);
 }
 
-void handleSettingsPost() {
+void handleDiagnosticsPost() {
   if (!ensureAuthorized())
     return;
-
-  String macValue = server.arg("mac");
-  macValue.toUpperCase();
-  uint8_t macBytes[6] = {0};
-  if (!parseMac(macValue, macBytes)) {
-    logError(F("Settings save rejected due to invalid MAC address."));
-    server.send(400, "text/plain",
-                "Invalid MAC address format. Use AA:BB:CC:DD:EE:FF");
-    return;
-  }
-
-  String hostname = server.arg("hostname");
-  if (hostname.length() > 32) {
-    server.send(400, "text/plain",
-                "Hostname must be at most 32 characters (letters, digits, "
-                "hyphens only)");
-    return;
-  }
-  for (size_t i = 0; i < hostname.length(); ++i) {
-    char c = hostname[i];
-    if (!((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
-          (c >= '0' && c <= '9') || c == '-')) {
-      server.send(400, "text/plain",
-                  "Hostname must contain only letters, digits, and hyphens");
-      return;
-    }
-  }
-
-  int parsedOutputs = -1;
-  if (!parseIndexValue(server.arg("numOutputs"), parsedOutputs) ||
-      parsedOutputs < 1 || parsedOutputs > MAX_DEVICES) {
-    logError(F(
-        "Settings save rejected: number of outputs must be between 1 and 16."));
-    server.send(400, "text/plain", "Number of outputs must be 1-16");
-    return;
-  }
-  bool usedPins[17] = {false};
-  for (int i = 0; i < parsedOutputs; ++i) {
-    int pin = -1;
-    String pinArgName = "pin_" + String(i);
-    if (server.hasArg(pinArgName) &&
-        parsePinValue(server.arg(pinArgName), pin) && pin >= 0) {
-      if (usedPins[pin]) {
-        server.send(400, "text/plain",
-                    "Duplicate GPIO assignment among active outputs");
-        return;
-      }
-      usedPins[pin] = true;
-    }
-  }
-
-  float parsedPower = 0.0f;
-  if (!parseFloatValue(server.arg("wifiPower"), parsedPower)) {
-    logError(F("Settings save rejected due to invalid Wi-Fi power value."));
-    server.send(400, "text/plain", "Invalid Wi-Fi power value");
-    return;
-  }
-
-  cfg.mac = macValue;
-  cfg.useCustomMac =
-      server.hasArg("useCustomMac") && server.arg("useCustomMac") == "1";
-  cfg.hostname = hostname;
-  cfg.staSsid = server.arg("staSsid");
-
-  String newStaPassword = server.arg("staPassword");
-  if (!newStaPassword.isEmpty()) {
-    cfg.staPassword = newStaPassword;
-  }
-
-  String newApPassword = server.arg("apPassword");
-  if (!newApPassword.isEmpty()) {
-    cfg.apPassword = newApPassword;
-  }
-
-  cfg.wifiPower = constrain(parsedPower, MIN_WIFI_POWER, MAX_WIFI_POWER);
-
-  if (cfg.staSsid.isEmpty() || cfg.staPassword.isEmpty() ||
-      cfg.apPassword.isEmpty()) {
-    logError(F("Settings save rejected because station SSID or passwords were "
-               "empty."));
-    server.send(
-        400, "text/plain",
-        "Station SSID, station password, and AP password must not be empty");
-    return;
-  }
-  if (cfg.hostname.isEmpty())
-    cfg.hostname = defaultHostnameFromMac(cfg.mac);
-
-  cfg.numOutputs = static_cast<uint8_t>(parsedOutputs);
-
-  for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
-    cfg.devices[i].manufacturer = server.arg("manufacturer_" + String(i));
-    cfg.devices[i].model = server.arg("model_" + String(i));
-    String manufacturer = cfg.devices[i].manufacturer;
-    String model = cfg.devices[i].model;
-    manufacturer.trim();
-    model.trim();
-    if (manufacturer.isEmpty())
-      cfg.devices[i].manufacturer = DEFAULT_DEVICE_MANUFACTURER;
-    if (model.isEmpty())
-      cfg.devices[i].model = DEFAULT_DEVICE_MODEL;
-    cfg.devices[i].name = server.arg("name_" + String(i));
-    int pin = -1;
-    String pinArgName = "pin_" + String(i);
-    if (!server.hasArg(pinArgName) ||
-        !parsePinValue(server.arg(pinArgName), pin)) {
-      pin = -1;
-    }
-    cfg.devices[i].pin = pin;
-    if (!isValidOutputPin(cfg.devices[i].pin)) {
-      cfg.devices[i].state = false;
-    }
-  }
-
-  cfg.mqttEnabled =
-      server.hasArg("mqttEnabled") && server.arg("mqttEnabled") == "1";
-  cfg.mqttHost = server.arg("mqttHost");
-  {
-    int parsedPort = -1;
-    if (parseIndexValue(server.arg("mqttPort"), parsedPort) &&
-        parsedPort >= 1 && parsedPort <= 65535) {
-      cfg.mqttPort = static_cast<uint16_t>(parsedPort);
-    } else {
-      cfg.mqttPort = DEFAULT_MQTT_PORT;
-    }
-  }
-  cfg.mqttUser = server.arg("mqttUser");
-  bool clearMqttPassword = server.hasArg("mqttPasswordClear") &&
-                           server.arg("mqttPasswordClear") == "1";
-  if (clearMqttPassword) {
-    cfg.mqttPassword = "";
-  } else {
-    String newMqttPassword = server.arg("mqttPassword");
-    String legacyMqttPassword = server.arg("mqttPass");
-    if (newMqttPassword.isEmpty()) {
-      newMqttPassword = legacyMqttPassword;
-    } else if (!legacyMqttPassword.isEmpty() &&
-               legacyMqttPassword != newMqttPassword) {
-      logWarning(F("Settings POST contained both mqttPassword and legacy "
-                   "mqttPass; applying mqttPassword."));
-    }
-    if (!newMqttPassword.isEmpty()) {
-      cfg.mqttPassword = newMqttPassword;
-    }
-  }
-
   cfg.arduinoOtaEnabled = server.hasArg("arduinoOtaEnabled") &&
                           server.arg("arduinoOtaEnabled") == "1";
   cfg.debugSerial =
       server.hasArg("debugSerial") && server.arg("debugSerial") == "1";
-  if (cfg.debugSerial) {
-    Serial.println(F("[DEBUG] Settings manufacturer fields updated:"));
-    for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
-      Serial.print(F("[DEBUG] manufacturer_"));
-      Serial.print(i);
-      Serial.print(F("='"));
-      Serial.print(cfg.devices[i].manufacturer);
-      Serial.println(F("'"));
-    }
-  }
-
-  logStatus(F("Settings updated from web UI."));
-  if (!saveConfig()) {
-    restartDevice(F("Failed to persist updated settings."));
-  }
-  applyRuntimeSettings();
-
-  server.sendHeader("Location", "/settings");
-  server.send(303);
+  logSettingsDebug("diagnostics");
+  finishSettingsSave("Diagnostics and OTA settings updated from web UI.",
+                     "/settings/diagnostics");
 }
 
 void handleNotFound() { server.send(404, "text/plain", "Not found"); }

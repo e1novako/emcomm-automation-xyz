@@ -23,7 +23,8 @@ void handleFirmwareUpdatePage() {
       "10px;margin-right:8px;}"
       ".warn{color:#b00020;font-weight:bold;}</style></head><body>"
       "<h1>Firmware Update</h1>"
-      "<p><a href='/settings'>Back to Settings</a></p>"
+      "<p><a href='/settings/diagnostics'>Back to Diagnostics &amp; OTA</a> | "
+      "<a href='/'>Main output control</a></p>"
       "<p>Upload a compiled <code>.bin</code> firmware file to update the "
       "device. "
       "The device will reboot automatically after a successful update.</p>"
@@ -107,7 +108,7 @@ void handleFirmwareUpdateDone() {
                     "<h1 class='err'>Firmware Update Failed</h1><p>");
     html += htmlEscape(otaUpdateError);
     html += F("</p><p><a href='/firmware/update'>Try again</a> | <a "
-              "href='/settings'>Settings</a></p>"
+              "href='/settings/diagnostics'>Diagnostics &amp; OTA</a></p>"
               "</body></html>");
     server.send(500, "text/html", html);
     return;
