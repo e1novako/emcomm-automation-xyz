@@ -14,7 +14,11 @@ static const char HOME_PAGE_HEADER[] PROGMEM =
     "16px;margin:2px;font-weight:bold;cursor:pointer;background:#e0e0e0;"
     "color:#222;}"
     ".output-on{background:#fff2b2;color:#222;}.output-off{background:#d3d3d3;"
-    "color:#222;}input[type='"
+    "color:#222;}.nav-btn{display:inline-block;border:1px solid "
+    "#999;border-radius:999px;padding:6px "
+    "14px;margin:2px;font-weight:bold;cursor:pointer;background:#e0e0e0;"
+    "color:#222;text-decoration:none;}.nav-btn.current{background:#9fd3ff;}"
+    "input[type='"
     "checkbox']{width:18px;height:18px;}.action-"
     "banner{background:#fff3cd;border:1px solid "
     "#ffc107;padding:10px;margin:10px "
@@ -47,7 +51,11 @@ static const char SETTINGS_PAGE_HEADER[] PROGMEM =
     "color:#222;}.output-on{background:#fff2b2;color:#222;}.output-off{"
     "background:#d3d3d3;color:#222;}.bulk-actions{margin:10px 0;}.settings-nav a{"
     "display:inline-block;margin:4px 8px 12px 0;}.settings-nav .current{"
-    "font-weight:bold;}.page-intro{color:#555;}</style>";
+    "font-weight:bold;}.page-intro{color:#555;}.nav-btn{display:inline-block;"
+    "border:1px solid #999;border-radius:999px;padding:6px "
+    "14px;margin:2px;font-weight:bold;cursor:pointer;background:#e0e0e0;"
+    "color:#222;text-decoration:none;}.nav-btn.current{background:#9fd3ff;}"
+    "</style>";
 static const char SETTINGS_PAGE_SCRIPT[] PROGMEM =
     "<script>\nfunction parseNameSequence(template){\n  const "
     "match=template.match(/#(\\d+)/);\n  if(!match)return null;\n  return "

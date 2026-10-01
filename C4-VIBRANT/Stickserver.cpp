@@ -293,18 +293,34 @@ void handleStickserverDiscoveryResponse(const String &topicStr,
 }
 
 
+// Last time (from any source: this device's own request or any peer's) a
+// "hello" discovery command was observed on the MQTT bus. Every stickserver
+// sees every hello request via the shared root-topic subscription (this
+// device's own published requests are echoed back to it too), and a hello
+// RESPONSE carries full self-describing device info regardless of who asked
+// -- so there is no need for every one of N fleet devices to independently
+// issue the same broadcast every discovery cycle. Only one hello command is
+// allowed on the bus per kHelloIntervalMs; every device defers to whichever
+// one (its own or a peer's) is observed first and resets its own timer from
+// it, collapsing what used to be up to N redundant broadcasts per interval
+// into just one.
+unsigned long lastHelloCommandSeenMs = 0;
+
 void maintainStickserverDiscovery() {
   if (!cfg.mqttEnabled || !mqttClient.connected())
     return;
   unsigned long now = millis();
-  static unsigned long lastHelloMs = 0;
   static unsigned long lastPruneMs = 0;
-  const unsigned long kHelloIntervalMs = 15000;
+  const unsigned long kHelloIntervalMs = 5000;
   const unsigned long kListIntervalMs = 10000;
   const unsigned long kStaleTimeoutMs = 90000;
 
-  if (now - lastHelloMs >= kHelloIntervalMs) {
-    lastHelloMs = now;
+  if (now - lastHelloCommandSeenMs >= kHelloIntervalMs) {
+    // Optimistically mark the cooldown as started immediately (rather than
+    // waiting for our own publish to echo back) so a near-simultaneous loop
+    // iteration on this same device can't also fire before the echo
+    // arrives.
+    lastHelloCommandSeenMs = now;
     JsonDocument req;
     req["cmd"] = "hello";
     req["ver"] = STICKSERVER_PROTOCOL_VERSION;
@@ -404,6 +420,10 @@ void handleStickserverMessage(const String &topicStr,
   }
 
   if (cmd == F("hello")) {
+    // A hello command was just observed on the bus (ours or a peer's);
+    // reset the shared fleet-wide cooldown so no device re-broadcasts one
+    // again too soon -- see maintainStickserverDiscovery().
+    lastHelloCommandSeenMs = millis();
     JsonDocument response;
     buildStickserverEnvelope(response, cmd, ver, mid, "ok");
     response["id"] = cfg.hostname;

@@ -145,6 +145,12 @@ Additional security note: HTTP Basic Auth is not encrypted on plain HTTP. Use th
 
 ## Release notes
 
+### 1.6.0
+
+- Reduced MQTT discovery traffic: previously every stickserver independently broadcast its own "hello" discovery request every 15 seconds, so an N-device fleet generated up to N redundant broadcasts (and N sets of responses) per cycle even though every device already observes every response on the shared bus regardless of who asked. Each device now tracks the last time *any* hello command was seen on the bus (its own or a peer's) and only issues its own broadcast if none has been observed in the last 5 seconds, collapsing the fleet down to one hello broadcast per 5-second window.
+- All Outputs page: each column header is now a link to `http://<stick_server_ip>` (opens in a new tab) for stickservers with a known IP, for quick access to that device's own UI.
+- Replaced plain text menu links with button-styled links (`.nav-btn`) on every page (main output control, all settings pages, All Outputs), keeping the existing `|` separators between them.
+
 ### 1.5.2
 
 - Fixed ArduinoOTA (network/IDE firmware upload) typically needing 2-3 retries to succeed. Root cause: `loop()` called the web server, MQTT, and stickserver discovery on every iteration regardless of an in-flight OTA transfer, and the web server's chunked-write retry loop can legitimately block for up to several seconds under backpressure -- either of these could starve `ArduinoOTA.handle()` of CPU time long enough for `espota`'s upload to time out mid-transfer. `loop()` now pauses the web server/MQTT/discovery entirely while an OTA transfer is active (from `onStart` to `onEnd`/`onError`), and the web server's blocking write-retry loop now opportunistically services `ArduinoOTA.handle()` too, so an OTA invitation/transfer in progress is never starved even by a slow concurrent page load.

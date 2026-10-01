@@ -264,11 +264,12 @@ void handleHome() {
              "el=document.getElementById('uptime-value');if(el)"
              "el.textContent=fmt(s);s++;}tick();setInterval(tick,1000);})();"
              "</script>");
-  piece += F("<p><a href='/settings'>Settings</a> | "
-             "<a href='/settings/network'>Network</a> | "
-             "<a href='/settings/devices'>Devices</a> | "
-             "<a href='/settings/diagnostics'>Diagnostics &amp; OTA</a> | "
-             "<a href='/fleet'>All Outputs</a></p>");
+  piece += F("<p><a class='nav-btn' href='/settings'>Settings</a> | "
+             "<a class='nav-btn' href='/settings/network'>Network</a> | "
+             "<a class='nav-btn' href='/settings/devices'>Devices</a> | "
+             "<a class='nav-btn' href='/settings/diagnostics'>Diagnostics "
+             "&amp; OTA</a> | "
+             "<a class='nav-btn' href='/fleet'>All Outputs</a></p>");
   if (usingFactoryPassword()) {
     piece += passwordWarningHtml();
   }
@@ -592,7 +593,7 @@ void handleLeaveMeshAll() {
 
 static String settingsNavigation(const char *activePage) {
   String html = F("<nav class='settings-nav' aria-label='Settings pages'>"
-                   "<a href='/'>Main output control</a> | ");
+                   "<a class='nav-btn' href='/'>Main output control</a> | ");
   const char *paths[] = {"/settings/network", "/settings/devices",
                          "/settings/diagnostics", "/fleet"};
   const char *labels[] = {"Network, Wi-Fi & MQTT", "Devices & outputs",
@@ -601,9 +602,12 @@ static String settingsNavigation(const char *activePage) {
   for (uint8_t i = 0; i < 4; ++i) {
     if (i > 0)
       html += F(" | ");
-    html += "<a href='" + String(paths[i]) + "'";
+    html += "<a class='nav-btn";
     if (String(activePage) == pages[i])
-      html += " class='current' aria-current='page'";
+      html += " current";
+    html += "' href='" + String(paths[i]) + "'";
+    if (String(activePage) == pages[i])
+      html += " aria-current='page'";
     html += ">" + String(labels[i]) + "</a>";
   }
   html += F("</nav>");
@@ -1158,7 +1162,13 @@ void handleStickserverFleetGet() {
   for (uint8_t c = 0; c < activeCount; ++c) {
     const DiscoveredServer &s = discoveredServers[activeIdx[c]];
     String label = s.hostname.isEmpty() ? s.instanceTopic : s.hostname;
-    piece += "<th>" + htmlEscape(label) + "</th>";
+    if (!s.ipAddress.isEmpty()) {
+      piece += "<th><a href=\"http://" + htmlEscape(s.ipAddress) +
+               "\" target=\"_blank\" rel=\"noopener\">" + htmlEscape(label) +
+               "</a></th>";
+    } else {
+      piece += "<th>" + htmlEscape(label) + "</th>";
+    }
   }
   piece += F("</tr>");
   writeChunk(piece);
