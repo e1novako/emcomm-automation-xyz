@@ -34029,13 +34029,13 @@ OUTPUT(/data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/
                                       0x21d42 (size before relaxing)
  .debug_str     0x00000000000216b0      0x2fe /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/BootDiagnostics.cpp.o
                                        0x2b96 (size before relaxing)
- .debug_str     0x00000000000219ae     0xb43e /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/C4-VIBRANT.ino.cpp.o
-                                      0x1de47 (size before relaxing)
- .debug_str     0x000000000002cdec    0x11c94 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Config.cpp.o
+ .debug_str     0x00000000000219ae     0xb40e /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/C4-VIBRANT.ino.cpp.o
+                                      0x1de3c (size before relaxing)
+ .debug_str     0x000000000002cdbc    0x11c94 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Config.cpp.o
                                       0x30963 (size before relaxing)
- .debug_str     0x000000000003ea80      0x17a /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Debug.cpp.o
+ .debug_str     0x000000000003ea50      0x17a /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Debug.cpp.o
                                        0xa83a (size before relaxing)
- .debug_str     0x000000000003ebfa     0x1133 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/MqttClient.cpp.o
+ .debug_str     0x000000000003ebca     0x1163 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/MqttClient.cpp.o
                                        0xb40c (size before relaxing)
  .debug_str     0x000000000003fd2d      0xc5b /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/OtaService.cpp.o
                                        0x862b (size before relaxing)
@@ -34048,7 +34048,7 @@ OUTPUT(/data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/
  .debug_str     0x0000000000040d8e     0x8261 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Stickserver.cpp.o
                                       0x25a18 (size before relaxing)
  .debug_str     0x0000000000048fef     0x3edc /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WebServer.cpp.o
-                                      0x2b6f1 (size before relaxing)
+                                      0x2b6e6 (size before relaxing)
  .debug_str     0x000000000004cecb      0x98a /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WebUpdate.cpp.o
                                       0x18112 (size before relaxing)
  .debug_str     0x000000000004d855      0x231 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WifiManager.cpp.o
