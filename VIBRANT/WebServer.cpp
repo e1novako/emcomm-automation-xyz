@@ -187,20 +187,19 @@ void handleHome() {
       "<button type='submit'" +
       bulkDisabled + ">Factory Reset All</button></form>" + "</div>";
 
-  html += F("<table><tr><th>#</th><th>Model</th><th>Name</th><th>Status</"
-            "th><th>Output</th><th>Actions</th></tr>");
+  html += F("<table><tr><th>#</th><th>Manufacturer</th><th>Model</th><th>Name"
+            "</th><th>Output</th><th>Actions</th></tr>");
 
   for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
     const DeviceEntry &d = cfg.devices[i];
     bool mapped = isValidOutputPin(d.pin);
-    String status = mapped ? (d.state ? String(F("ON")) : String(F("OFF")))
-                           : String(F("Unassigned"));
     bool thisActionRunning = actionOwnsOutput(i);
     bool otherActionRunning = actionRunning && !thisActionRunning;
 
-    html += "<tr><td>" + String(i + 1) + "</td><td>" + htmlEscape(d.model) +
-            "</td><td>" + htmlEscape(d.name) + "</td><td>" + status +
-            "</td><td>";
+    html += "<tr><td>" + String(i + 1) + "</td><td>" +
+            htmlEscape(d.manufacturer) + "</td><td>" + htmlEscape(d.model) +
+            "</td><td>" + htmlEscape(d.name) + "</td><td style='text-align:"
+            "center;'>";
 
     if (mapped) {
       html += "<form method='post' action='/toggle' style='margin:0;'>"
@@ -230,26 +229,8 @@ void handleHome() {
                 "<input type='hidden' name='idx' value='" +
                 String(i) +
                 "'>"
-                "<input type='hidden' name='cmd' value='power_on'>"
-                "<button type='submit'" +
-                disabledAttr +
-                ">On</button></form>"
-                "<form method='post' action='/action' "
-                "style='display:inline;margin:0;'>"
-                "<input type='hidden' name='idx' value='" +
-                String(i) +
-                "'>"
-                "<input type='hidden' name='cmd' value='power_off'>"
-                "<button type='submit'" +
-                disabledAttr +
-                ">Off</button></form>"
-                "<form method='post' action='/action' "
-                "style='display:inline;margin:0;'>"
-                "<input type='hidden' name='idx' value='" +
-                String(i) +
-                "'>"
                 "<input type='hidden' name='cmd' value='leave_mesh'>"
-                "<button type='submit'" +
+                "<button type='submit' class='output-toggle action-toggle'" +
                 disabledAttr +
                 ">Leave Mesh</button></form>"
                 "<form method='post' action='/action' "
@@ -258,7 +239,7 @@ void handleHome() {
                 String(i) +
                 "'>"
                 "<input type='hidden' name='cmd' value='factory_reset'>"
-                "<button type='submit'" +
+                "<button type='submit' class='output-toggle action-toggle'" +
                 disabledAttr + ">Factory Reset</button></form>";
       }
     } else {

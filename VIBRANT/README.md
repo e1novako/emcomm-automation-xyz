@@ -149,6 +149,16 @@ Additional security note: HTTP Basic Auth is not encrypted on plain HTTP. Use th
 
 ## Release notes
 
+### 1.4.2
+
+- Added a Manufacturer column to the main page, alongside Model and Name.
+
+### 1.4.1
+
+- Removed the redundant Status column (the Output column already shows ON/OFF) and centered its button.
+- Removed the per-output On/Off action buttons, keeping only Leave Mesh and Factory Reset.
+- Restyled the Leave Mesh and Factory Reset buttons to match the Output column's pill-button appearance.
+
 ### 1.4.0
 
 - Split configuration into Network/Wi-Fi/MQTT, Devices/outputs, and Diagnostics/OTA pages with independent saves and shared navigation.
