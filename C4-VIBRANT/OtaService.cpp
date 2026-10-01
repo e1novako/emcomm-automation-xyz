@@ -6,6 +6,7 @@
 namespace vibrant {
 
 bool arduinoOtaActive = false, arduinoOtaCallbacksConfigured = false;
+bool otaTransferInProgress = false;
 
 void applyArduinoOtaSettings() {
   if (!cfg.arduinoOtaEnabled) {
@@ -28,10 +29,17 @@ void applyArduinoOtaSettings() {
                                                          : F("filesystem");
       logStatus(String(F("ArduinoOTA start (")) + mode + F(")."));
       DBG("ArduinoOTA host: %s", cfg.hostname.c_str());
+      // Pause the web server, MQTT, and stickserver discovery for the
+      // duration of the transfer: any of those blocking the main loop for
+      // even a second or two mid-transfer was enough to stall
+      // ArduinoOTA.handle() and make espota.py time out, which is why
+      // uploads previously often needed 2-3 retries to succeed.
+      otaTransferInProgress = true;
     });
     ArduinoOTA.onEnd([]() {
       logStatus(F("ArduinoOTA completed."));
       DBG("ArduinoOTA transfer finished successfully.");
+      otaTransferInProgress = false;
     });
     ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
       if (cfg.debugSerial) {
@@ -43,6 +51,7 @@ void applyArduinoOtaSettings() {
       logError(String(F("ArduinoOTA error #")) +
                String(static_cast<int>(error)));
       DBG("ArduinoOTA transfer aborted due to error.");
+      otaTransferInProgress = false;
     });
     arduinoOtaCallbacksConfigured = true;
   }

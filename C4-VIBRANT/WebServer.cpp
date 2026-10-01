@@ -5,6 +5,7 @@
 #include "Config.h"
 #include "Debug.h"
 #include "MqttClient.h"
+#include "OtaService.h"
 #include "Outputs.h"
 #include "Reservations.h"
 #include "Runtime.h"
@@ -15,6 +16,7 @@
 #include "WifiManager.h"
 #include <Arduino.h>
 #include <ArduinoJson.h>
+#include <ArduinoOTA.h>
 #include <ESP8266WebServer.h>
 
 namespace vibrant {
@@ -113,6 +115,13 @@ void writeFully(WiFiClient &client, const uint8_t *data, size_t len) {
     } else if (millis() - lastProgressMs > 15000) {
       break; // genuinely stuck/disconnected; give up rather than hang forever
     } else {
+      // Give ArduinoOTA a chance to process its UDP invitation/TCP transfer
+      // even while a slow client stalls this write -- otherwise a page load
+      // under backpressure could starve an in-flight OTA upload of CPU time
+      // for seconds, which was making uploads fail and need 2-3 retries.
+      if (arduinoOtaActive) {
+        ArduinoOTA.handle();
+      }
       delay(1);
     }
   }

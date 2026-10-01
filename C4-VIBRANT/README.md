@@ -145,6 +145,10 @@ Additional security note: HTTP Basic Auth is not encrypted on plain HTTP. Use th
 
 ## Release notes
 
+### 1.5.2
+
+- Fixed ArduinoOTA (network/IDE firmware upload) typically needing 2-3 retries to succeed. Root cause: `loop()` called the web server, MQTT, and stickserver discovery on every iteration regardless of an in-flight OTA transfer, and the web server's chunked-write retry loop can legitimately block for up to several seconds under backpressure -- either of these could starve `ArduinoOTA.handle()` of CPU time long enough for `espota`'s upload to time out mid-transfer. `loop()` now pauses the web server/MQTT/discovery entirely while an OTA transfer is active (from `onStart` to `onEnd`/`onError`), and the web server's blocking write-retry loop now opportunistically services `ArduinoOTA.handle()` too, so an OTA invitation/transfer in progress is never starved even by a slow concurrent page load.
+
 ### 1.5.1
 
 - All Outputs page columns are now sorted by ascending IP address (numeric, so `.9` sorts before `.10`), instead of arbitrary discovery/slot order. This firmware's own `hello`/`list` responses now include an `"ip"` field (`WiFi.localIP()`); the field is parsed into each discovered server's record when present. Third-party stickservers that don't report an IP sort after all known-IP columns, falling back to hostname ordering among themselves.

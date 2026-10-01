@@ -74,10 +74,18 @@ void setup() {
 }
 
 void loop() {
-  server.handleClient();
   if (arduinoOtaActive) {
     ArduinoOTA.handle();
   }
+  // While an ArduinoOTA transfer is actively writing flash, skip everything
+  // else: the web server's chunked-write retries, MQTT, and stickserver
+  // discovery can each block for up to several seconds, which previously
+  // starved ArduinoOTA.handle() of CPU time mid-transfer and made uploads
+  // fail and need 2-3 retries. See OtaService.h for details.
+  if (otaTransferInProgress) {
+    return;
+  }
+  server.handleClient();
   if (!outputsActivated && outputActivationDelayElapsed()) {
     applyOutputsWhenSafe();
   }
