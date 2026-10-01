@@ -164,7 +164,10 @@ void handleHome() {
   html += "</div>";
 
   // Global bulk-action buttons
-  const char *bulkDisabled = actionRunning ? " disabled" : "";
+  bool allOutputsReserved =
+      managedOutputCount() > 0 && availableManagedOutputCount() == 0;
+  const char *bulkDisabled =
+      (actionRunning || allOutputsReserved) ? " disabled" : "";
   html +=
       String(F("<div style='margin:10px 0;'>")) +
       "<form method='post' action='/action/all-on' "
@@ -187,10 +190,11 @@ void handleHome() {
       "<button type='submit'" +
       bulkDisabled + ">Factory Reset All</button></form>" + "</div>";
 
-  html += F("<table><colgroup><col style='width:5%'><col style='width:22%'>"
-            "<col style='width:22%'><col style='width:22%'><col "
-            "style='width:12%'><col style='width:17%'></colgroup><tr><th>#</"
-            "th><th>Manufacturer</th><th>Model</th><th>Name</th><th>Output</"
+  html += F("<table><colgroup><col style='width:4%'><col style='width:20%'>"
+            "<col style='width:20%'><col style='width:20%'><col "
+            "style='width:10%'><col style='width:14%'><col "
+            "style='width:12%'></colgroup><tr><th>#</th><th>Manufacturer</"
+            "th><th>Model</th><th>Name</th><th>Output</th><th>Reservation</"
             "th><th>Actions</th></tr>");
 
   for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
@@ -198,21 +202,23 @@ void handleHome() {
     bool mapped = isValidOutputPin(d.pin);
     bool thisActionRunning = actionOwnsOutput(i);
     bool otherActionRunning = actionRunning && !thisActionRunning;
+    bool reserved = outputReservations[i].reserved;
 
     html += "<tr><td>" + String(i + 1) + "</td><td>" +
             htmlEscape(d.manufacturer) + "</td><td>" + htmlEscape(d.model) +
             "</td><td>" + htmlEscape(d.name) + "</td><td>";
 
     if (mapped) {
+      const char *toggleDisabledAttr = reserved ? " disabled" : "";
       html += "<form method='post' action='/toggle' style='margin:0;'>"
               "<input type='hidden' name='idx' value='" +
               String(i) +
               "'><input type='hidden' name='state' value='" +
               String(d.state ? 0 : 1) + "'><button type='submit' "
               "class='output-toggle " +
-              String(d.state ? "output-on" : "output-off") +
-              "' aria-label='Output " + String(i + 1) + " is " +
-              String(d.state ? "ON" : "OFF") + "; turn " +
+              String(d.state ? "output-on" : "output-off") + "'" +
+              toggleDisabledAttr + " aria-label='Output " + String(i + 1) +
+              " is " + String(d.state ? "ON" : "OFF") + "; turn " +
               String(d.state ? "off" : "on") + "' aria-pressed='" +
               String(d.state ? "true" : "false") + "'>" +
               String(d.state ? "ON" : "OFF") + "</button></form>";
@@ -222,10 +228,26 @@ void handleHome() {
 
     html += "</td><td>";
     if (mapped) {
+      String reservationLabel =
+          reserved ? (outputReservations[i].owner.isEmpty()
+                          ? String(F("Reserved"))
+                          : String(F("Reserved by ")) +
+                                htmlEscape(outputReservations[i].owner))
+                   : String(F("Not reserved"));
+      html += "<button type='button' disabled class='output-toggle " +
+              String(reserved ? "output-on" : "output-off") + "'>" +
+              reservationLabel + "</button>";
+    } else {
+      html += F("(none)");
+    }
+
+    html += "</td><td>";
+    if (mapped) {
       if (thisActionRunning) {
         html += F("<em>Running...</em>");
       } else {
-        const char *disabledAttr = otherActionRunning ? " disabled" : "";
+        const char *disabledAttr =
+            (otherActionRunning || reserved) ? " disabled" : "";
         html += "<form method='post' action='/action' "
                 "style='display:inline;margin:0;'>"
                 "<input type='hidden' name='idx' value='" +

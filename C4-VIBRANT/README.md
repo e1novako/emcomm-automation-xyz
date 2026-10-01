@@ -149,6 +149,12 @@ Additional security note: HTTP Basic Auth is not encrypted on plain HTTP. Use th
 
 ## Release notes
 
+### 1.4.8
+
+- Added a "Reservation" column to the main page showing "Reserved by &lt;owner&gt;" (gray when not reserved, yellow when reserved).
+- When an output is reserved, its Output toggle, Leave Mesh, and Factory Reset buttons are disabled.
+- When all managed outputs are reserved, the bulk Turn ON all/Turn OFF all/Leave Mesh All/Factory Reset All buttons are disabled.
+
 ### 1.4.7
 
 - Main page table width is now 60% of the screen, capped at a maximum of 1200px.
