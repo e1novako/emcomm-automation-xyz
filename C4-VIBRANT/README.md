@@ -145,6 +145,11 @@ Additional security note: HTTP Basic Auth is not encrypted on plain HTTP. Use th
 
 ## Release notes
 
+### 1.4.20
+
+- The hide-until-loaded change in 1.4.19 ruled out progressive-rendering as the cause -- the user still saw missing data on a fully-loaded page, with a consistent amount missing per row on some loads. The likely real cause: building a whole table row (up to 16 columns of `<form>` markup, several KB) as one `String` via repeated `+=` concatenation is exactly the kind of allocation pattern that can hit heap fragmentation on this memory-constrained device, where a failed/short reallocation can silently truncate the string. Each table cell is now built and sent as its own small, independently-written chunk (with a small `reserve()` up front) instead of accumulating a whole row first, cutting the peak String size needed per chunk from several KB down to under ~400 bytes.
+- Added free heap and heap fragmentation percentage to the Diagnostics & OTA page, to help diagnose memory-pressure-related issues going forward.
+
 ### 1.4.19
 
 - Found the actual source of the still-reported "missing/corrupted data" on the All Outputs page: it wasn't corruption at all. The page streams as many HTTP chunks, and with `table-layout:fixed` a browser can render the table progressively as each chunk arrives; on a slow or weak WiFi link, a user looking at the page mid-load would see rows/cells that simply hadn't arrived yet -- which looked exactly like randomly missing data, varying with network speed and timing. The table is now built hidden behind a "Loading discovered outputs…" message and only revealed (by a trailing inline script) once the entire table has been fully received, so the page can never be viewed in a partially-loaded state.

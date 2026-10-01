@@ -978,6 +978,9 @@ void handleDiagnosticsGet() {
           "<p>Current uptime: " +
           formatUptimeHHMMSS(millis() / 1000UL) +
           "</p>"
+          "<p>Free heap: " + String(ESP.getFreeHeap()) +
+          " bytes (fragmentation: " + String(ESP.getHeapFragmentation()) +
+          "%)</p>"
           "<form method='post' action='/device/reboot' "
           "onsubmit=\"return confirm('Reboot the device now?');\">"
           "<button type='submit'>Reboot device</button></form>"
@@ -1120,11 +1123,18 @@ void handleStickserverFleetGet() {
 
   // Each row is flushed independently so the table never needs to be held
   // in RAM all at once, even with many discovered stickservers/outputs.
+  // Within a row, each cell is also built and sent as its own small chunk
+  // (rather than concatenating a whole row, which can be several KB for 16
+  // columns) to keep peak String allocation size small -- large repeated
+  // String concatenations are more likely to hit heap fragmentation on this
+  // memory-constrained device, which can silently truncate content.
   for (uint8_t row = 0; row < maxRows; ++row) {
     piece = "<tr><td>" + String(row + 1) + "</td>";
+    writeChunk(piece);
     for (uint8_t c = 0; c < activeCount; ++c) {
       const DiscoveredServer &s = discoveredServers[activeIdx[c]];
-      piece += "<td>";
+      piece = "<td>";
+      piece.reserve(400);
       if (row < s.outputCount && s.outputs[row].valid) {
         const DiscoveredOutputEntry &o = s.outputs[row];
         String label = o.name.isEmpty()
@@ -1146,9 +1156,9 @@ void handleStickserverFleetGet() {
                  htmlEscape(label) + "</button></form>";
       }
       piece += "</td>";
+      writeChunk(piece);
     }
-    piece += F("</tr>");
-    writeChunk(piece);
+    writeChunk(F("</tr>"));
   }
 
   writeChunk(F(
