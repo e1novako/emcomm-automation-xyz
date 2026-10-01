@@ -1,0 +1,9 @@
+{
+  "additionalFiles": "../..",
+  "compiler.optimization_flags": "-Os",
+  "customBuildProperties": "",
+  "fqbn": "esp32:esp32:esp32cam",
+  "hardwareFolders": "/data/home/tony/.arduino15/packages/esp32/hardware/esp32/3.3.12,/data/home/tony/.arduino15/packages/esp32/hardware/esp32/3.3.12",
+  "otherLibrariesFolders": "/data/home/tony/Arduino/libraries",
+  "sketchLocation": "/data/Projects/emcomm-automation-xyz/Vibrant-ESP32CAM"
+}
