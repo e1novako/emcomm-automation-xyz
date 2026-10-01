@@ -149,6 +149,14 @@ Additional security note: HTTP Basic Auth is not encrypted on plain HTTP. Use th
 
 ## Release notes
 
+### 1.4.7
+
+- Main page table width is now 60% of the screen, capped at a maximum of 1200px.
+
+### 1.4.6
+
+- Main page table: all cell data is now centered; Manufacturer, Model, and Name columns share equal width, while Name, Output, and Actions columns are narrower.
+
 ### 1.4.5
 
 - Unified the appearance of all buttons (Save, Cancel, bulk actions, Leave Mesh, Factory Reset, Output toggle) to the same pill-shaped style; only the Output toggle's ON/OFF background color still differs to indicate state.
@@ -293,6 +301,25 @@ compatible ESP8266 board, ensure `ArduinoJson` and `PubSubClient` are installed,
 and flash the firmware.
 
 After boot, join the configured AP and open the device IP in a browser.
+
+### Fleet OTA updates
+
+To build and OTA-upload the firmware to the whole device fleet (or a subset)
+in one step, use `scripts/ota_update_fleet.sh` from the repo root:
+
+```sh
+# Update the default fleet (192.168.1.194, 192.168.1.81-95)
+scripts/ota_update_fleet.sh
+
+# Update only specific devices
+scripts/ota_update_fleet.sh 192.168.1.81 192.168.1.82
+
+# Override the ArduinoOTA password (default: factory password Fiber714Cvet)
+scripts/ota_update_fleet.sh -p MyPassword
+```
+
+The script cleans stale build artifacts, compiles the sketch, then uploads to
+each IP over ArduinoOTA with automatic retries, printing a per-device summary.
 
 ## Current networking behavior
 

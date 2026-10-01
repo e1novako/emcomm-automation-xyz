@@ -187,8 +187,11 @@ void handleHome() {
       "<button type='submit'" +
       bulkDisabled + ">Factory Reset All</button></form>" + "</div>";
 
-  html += F("<table><tr><th>#</th><th>Manufacturer</th><th>Model</th><th>Name"
-            "</th><th>Output</th><th>Actions</th></tr>");
+  html += F("<table><colgroup><col style='width:5%'><col style='width:22%'>"
+            "<col style='width:22%'><col style='width:22%'><col "
+            "style='width:12%'><col style='width:17%'></colgroup><tr><th>#</"
+            "th><th>Manufacturer</th><th>Model</th><th>Name</th><th>Output</"
+            "th><th>Actions</th></tr>");
 
   for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
     const DeviceEntry &d = cfg.devices[i];
@@ -198,8 +201,7 @@ void handleHome() {
 
     html += "<tr><td>" + String(i + 1) + "</td><td>" +
             htmlEscape(d.manufacturer) + "</td><td>" + htmlEscape(d.model) +
-            "</td><td>" + htmlEscape(d.name) + "</td><td style='text-align:"
-            "center;'>";
+            "</td><td>" + htmlEscape(d.name) + "</td><td>";
 
     if (mapped) {
       html += "<form method='post' action='/toggle' style='margin:0;'>"
