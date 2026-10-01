@@ -84,22 +84,61 @@ String formatUptimeHHMMSS(unsigned long totalSeconds) {
   return String(buf);
 }
 
-// Sends an HTML response using HTTP chunked transfer-encoding (rather than
-// building the whole response with a Content-Length header) so large pages
-// are streamed to the client instead of requiring a single large send.
-void sendChunkedHtml(int code, const String &html) {
-  if (!server.chunkedResponseModeStart(code, "text/html")) {
-    // HTTP/1.0 client: chunked mode unsupported, fall back to a plain send.
-    server.send(code, "text/html", html);
-    return;
-  }
-  const size_t kChunkSize = 1024;
-  size_t len = html.length();
+namespace {
+// Streaming helpers: callers build and send one small piece of HTML at a
+// time (e.g. one table row) instead of accumulating a whole page in RAM, so
+// each piece becomes its own independently-flushed HTTP chunk. Only one
+// request is handled at a time by ESP8266WebServer, so this file-local state
+// is safe.
+bool gChunkedActive = false;
+String gChunkedFallback;
+const size_t kChunkSize = 256;
+
+void writeRaw(const char *data, size_t len) {
   for (size_t pos = 0; pos < len; pos += kChunkSize) {
     size_t count = min(kChunkSize, len - pos);
-    server.sendContent(html.c_str() + pos, count);
+    server.sendContent(data + pos, count);
   }
-  server.chunkedResponseFinalize();
+}
+} // namespace
+
+// Starts a chunked HTML response. Must be paired with one or more calls to
+// writeChunk() followed by endChunkedHtml().
+void beginChunkedHtml(int code) {
+  gChunkedFallback = "";
+  gChunkedActive = server.chunkedResponseModeStart(code, "text/html");
+}
+
+// Sends one piece of HTML immediately as its own independent chunk (split
+// further into kChunkSize-sized writes). If the client only supports
+// HTTP/1.0 (chunked mode unavailable), the piece is buffered instead and
+// sent as a single plain response by endChunkedHtml().
+void writeChunk(const String &piece) {
+  if (gChunkedActive) {
+    writeRaw(piece.c_str(), piece.length());
+  } else {
+    gChunkedFallback += piece;
+  }
+}
+
+void endChunkedHtml() {
+  if (gChunkedActive) {
+    server.chunkedResponseFinalize();
+    gChunkedActive = false;
+  } else {
+    server.send(200, "text/html", gChunkedFallback);
+    gChunkedFallback = "";
+  }
+}
+
+// Sends an already-fully-built HTML string as a chunked response, split into
+// kChunkSize-sized, independently-sent pieces. Prefer beginChunkedHtml() /
+// writeChunk() / endChunkedHtml() for pages built incrementally (e.g. table
+// rows), so the whole page never needs to exist in RAM at once.
+void sendChunkedHtml(int code, const String &html) {
+  beginChunkedHtml(code);
+  writeChunk(html);
+  endChunkedHtml();
 }
 
 String pinOption(int selectedPin, const PinMapping &mapping) {
@@ -162,32 +201,36 @@ bool ensureAuthorized() {
 
 void handleHome() {
   bool actionRunning = isActionRunning();
-  String html = FPSTR(HOME_PAGE_HEADER);
-  html += SOFTWARE_VERSION;
-  html += F("</p><p>Uptime: <span id='uptime-value'>");
-  html += formatUptimeHHMMSS(millis() / 1000UL);
-  html += F("</span></p><script>(function(){var s=");
-  html += String(millis() / 1000UL);
-  html += F(";function pad(n){return (n<10?'0':'')+n;}function "
-            "fmt(t){var h=Math.floor(t/3600);var "
-            "m=Math.floor((t%3600)/60);var sec=t%60;return "
-            "pad(h)+':'+pad(m)+':'+pad(sec);}function tick(){var "
-            "el=document.getElementById('uptime-value');if(el)"
-            "el.textContent=fmt(s);s++;}tick();setInterval(tick,1000);})();"
-            "</script>");
-  html += F("<p><a href='/settings'>Settings</a> | "
-            "<a href='/settings/network'>Network</a> | "
-            "<a href='/settings/devices'>Devices</a> | "
-            "<a href='/settings/diagnostics'>Diagnostics &amp; OTA</a> | "
-            "<a href='/fleet'>Fleet outputs</a></p>");
+  beginChunkedHtml(200);
+
+  String piece = FPSTR(HOME_PAGE_HEADER);
+  piece += SOFTWARE_VERSION;
+  piece += F("</p><p>Uptime: <span id='uptime-value'>");
+  piece += formatUptimeHHMMSS(millis() / 1000UL);
+  piece += F("</span></p><script>(function(){var s=");
+  piece += String(millis() / 1000UL);
+  piece += F(";function pad(n){return (n<10?'0':'')+n;}function "
+             "fmt(t){var h=Math.floor(t/3600);var "
+             "m=Math.floor((t%3600)/60);var sec=t%60;return "
+             "pad(h)+':'+pad(m)+':'+pad(sec);}function tick(){var "
+             "el=document.getElementById('uptime-value');if(el)"
+             "el.textContent=fmt(s);s++;}tick();setInterval(tick,1000);})();"
+             "</script>");
+  piece += F("<p><a href='/settings'>Settings</a> | "
+             "<a href='/settings/network'>Network</a> | "
+             "<a href='/settings/devices'>Devices</a> | "
+             "<a href='/settings/diagnostics'>Diagnostics &amp; OTA</a> | "
+             "<a href='/fleet'>Fleet outputs</a></p>");
   if (usingFactoryPassword()) {
-    html += passwordWarningHtml();
+    piece += passwordWarningHtml();
   }
+  writeChunk(piece);
+
   // Initial action-status banner rendered server-side; JS polling keeps it
   // updated. The phase-detail string is also formatted by the JS updater; they
   // share the same visual format but run in different contexts (C++/server vs
   // JS/browser).
-  html += "<div id='action-status'>";
+  piece = "<div id='action-status'>";
   if (actionRunning) {
     String phaseDetail = isInCyclePhase()
                              ? String(F(" (cycles remaining: ")) +
@@ -196,21 +239,21 @@ void handleHome() {
     String target = bgAction.allOutputs
                         ? String(F("all outputs"))
                         : String(F("output ")) + String(bgAction.deviceIdx + 1);
-    html += "<div class='action-banner'><strong>Action running on " + target +
-            ": " + actionPhaseName() + phaseDetail +
-            "</strong>"
-            " &nbsp; <form method='post' action='/action/cancel' "
-            "style='display:inline;'>"
-            "<button type='submit'>Cancel</button></form></div>";
+    piece += "<div class='action-banner'><strong>Action running on " +
+             target + ": " + actionPhaseName() + phaseDetail +
+             "</strong>"
+             " &nbsp; <form method='post' action='/action/cancel' "
+             "style='display:inline;'>"
+             "<button type='submit'>Cancel</button></form></div>";
   }
-  html += "</div>";
+  piece += "</div>";
 
   // Global bulk-action buttons
   bool allOutputsReserved =
       managedOutputCount() > 0 && availableManagedOutputCount() == 0;
   const char *bulkDisabled =
       (actionRunning || allOutputsReserved) ? " disabled" : "";
-  html +=
+  piece +=
       String(F("<div style='margin:10px 0;'>")) +
       "<form method='post' action='/action/all-on' "
       "style='display:inline;margin:0;'>"
@@ -232,13 +275,16 @@ void handleHome() {
       "<button type='submit'" +
       bulkDisabled + ">Factory Reset All</button></form>" + "</div>";
 
-  html += F("<table><colgroup><col style='width:4%'><col style='width:20%'>"
-            "<col style='width:20%'><col style='width:20%'><col "
-            "style='width:10%'><col style='width:14%'><col "
-            "style='width:12%'></colgroup><tr><th>#</th><th>Manufacturer</"
-            "th><th>Model</th><th>Name</th><th>Output</th><th>Reservation</"
-            "th><th>Actions</th></tr>");
+  piece += F("<table><colgroup><col style='width:4%'><col style='width:20%'>"
+             "<col style='width:20%'><col style='width:20%'><col "
+             "style='width:10%'><col style='width:14%'><col "
+             "style='width:12%'></colgroup><tr><th>#</th><th>Manufacturer</"
+             "th><th>Model</th><th>Name</th><th>Output</th><th>Reservation</"
+             "th><th>Actions</th></tr>");
+  writeChunk(piece);
 
+  // Each output row is built and flushed independently so the whole table
+  // never needs to be held in RAM at once.
   for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
     const DeviceEntry &d = cfg.devices[i];
     bool mapped = isValidOutputPin(d.pin);
@@ -246,29 +292,29 @@ void handleHome() {
     bool otherActionRunning = actionRunning && !thisActionRunning;
     bool reserved = outputReservations[i].reserved;
 
-    html += "<tr><td>" + String(i + 1) + "</td><td>" +
+    piece = "<tr><td>" + String(i + 1) + "</td><td>" +
             htmlEscape(d.manufacturer) + "</td><td>" + htmlEscape(d.model) +
             "</td><td>" + htmlEscape(d.name) + "</td><td>";
 
     if (mapped) {
       const char *toggleDisabledAttr = reserved ? " disabled" : "";
-      html += "<form method='post' action='/toggle' style='margin:0;'>"
-              "<input type='hidden' name='idx' value='" +
-              String(i) +
-              "'><input type='hidden' name='state' value='" +
-              String(d.state ? 0 : 1) + "'><button type='submit' "
-              "class='output-toggle " +
-              String(d.state ? "output-on" : "output-off") + "'" +
-              toggleDisabledAttr + " aria-label='Output " + String(i + 1) +
-              " is " + String(d.state ? "ON" : "OFF") + "; turn " +
-              String(d.state ? "off" : "on") + "' aria-pressed='" +
-              String(d.state ? "true" : "false") + "'>" +
-              String(d.state ? "ON" : "OFF") + "</button></form>";
+      piece += "<form method='post' action='/toggle' style='margin:0;'>"
+               "<input type='hidden' name='idx' value='" +
+               String(i) +
+               "'><input type='hidden' name='state' value='" +
+               String(d.state ? 0 : 1) + "'><button type='submit' "
+               "class='output-toggle " +
+               String(d.state ? "output-on" : "output-off") + "'" +
+               toggleDisabledAttr + " aria-label='Output " + String(i + 1) +
+               " is " + String(d.state ? "ON" : "OFF") + "; turn " +
+               String(d.state ? "off" : "on") + "' aria-pressed='" +
+               String(d.state ? "true" : "false") + "'>" +
+               String(d.state ? "ON" : "OFF") + "</button></form>";
     } else {
-      html += F("(none)");
+      piece += F("(none)");
     }
 
-    html += "</td><td>";
+    piece += "</td><td>";
     if (mapped) {
       String reservationLabel =
           reserved ? (outputReservations[i].owner.isEmpty()
@@ -276,49 +322,50 @@ void handleHome() {
                           : htmlEscape(outputReservations[i].owner))
                    : String(F("Not reserved"));
       const char *releaseDisabledAttr = reserved ? "" : " disabled";
-      html += "<form method='post' action='/reservation/release' "
-              "style='margin:0;'><input type='hidden' name='idx' value='" +
-              String(i) + "'><button type='submit' class='output-toggle " +
-              String(reserved ? "output-on" : "output-off") + "'" +
-              releaseDisabledAttr + ">" + reservationLabel +
-              "</button></form>";
+      piece += "<form method='post' action='/reservation/release' "
+               "style='margin:0;'><input type='hidden' name='idx' value='" +
+               String(i) + "'><button type='submit' class='output-toggle " +
+               String(reserved ? "output-on" : "output-off") + "'" +
+               releaseDisabledAttr + ">" + reservationLabel +
+               "</button></form>";
     } else {
-      html += F("(none)");
+      piece += F("(none)");
     }
 
-    html += "</td><td>";
+    piece += "</td><td>";
     if (mapped) {
       if (thisActionRunning) {
-        html += F("<em>Running...</em>");
+        piece += F("<em>Running...</em>");
       } else {
         const char *disabledAttr =
             (otherActionRunning || reserved) ? " disabled" : "";
-        html += "<form method='post' action='/action' "
-                "style='display:inline;margin:0;'>"
-                "<input type='hidden' name='idx' value='" +
-                String(i) +
-                "'>"
-                "<input type='hidden' name='cmd' value='leave_mesh'>"
-                "<button type='submit' class='output-toggle'" +
-                disabledAttr +
-                ">Leave Mesh</button></form>"
-                "<form method='post' action='/action' "
-                "style='display:inline;margin:0;'>"
-                "<input type='hidden' name='idx' value='" +
-                String(i) +
-                "'>"
-                "<input type='hidden' name='cmd' value='factory_reset'>"
-                "<button type='submit' class='output-toggle'" +
-                disabledAttr + ">Factory Reset</button></form>";
+        piece += "<form method='post' action='/action' "
+                 "style='display:inline;margin:0;'>"
+                 "<input type='hidden' name='idx' value='" +
+                 String(i) +
+                 "'>"
+                 "<input type='hidden' name='cmd' value='leave_mesh'>"
+                 "<button type='submit' class='output-toggle'" +
+                 disabledAttr +
+                 ">Leave Mesh</button></form>"
+                 "<form method='post' action='/action' "
+                 "style='display:inline;margin:0;'>"
+                 "<input type='hidden' name='idx' value='" +
+                 String(i) +
+                 "'>"
+                 "<input type='hidden' name='cmd' value='factory_reset'>"
+                 "<button type='submit' class='output-toggle'" +
+                 disabledAttr + ">Factory Reset</button></form>";
       }
     } else {
-      html += F("(none)");
+      piece += F("(none)");
     }
-    html += "</td></tr>";
+    piece += "</td></tr>";
+    writeChunk(piece);
   }
 
-  html += F("</table></body></html>");
-  sendChunkedHtml(200, html);
+  writeChunk(F("</table></body></html>"));
+  endChunkedHtml();
 }
 
 void handleToggle() {
@@ -733,32 +780,37 @@ void handleNetworkSettingsPost() {
 void handleDeviceSettingsGet() {
   if (!ensureAuthorized())
     return;
-  String html = settingsPageStart("Devices & output configuration", "devices");
-  html += FPSTR(SETTINGS_PAGE_SCRIPT);
-  html += "<p>Each active output must use a different GPIO. TX/RX disable "
-          "serial communication; GPIO0 (FLASH) and GPIO15 affect boot.</p>"
-          "<form id='device-form' method='post' action='/settings/devices'>"
-          "<label>Number of outputs (1 - 16) <input name='numOutputs' "
-          "type='number' min='1' max='16' step='1' value='" +
-          String(cfg.numOutputs) +
-          "'></label>"
-          "<div class='bulk-actions'><button type='button' "
-          "onclick='copyFirstManufacturerToAll()'>Use first Manufacturer for "
-          "all</button>"
-          "<button type='button' onclick='copyFirstModelToAll()'>Use first "
-          "Model for all</button>"
-          "<button type='button' onclick='copyFirstNameToAll()'>Use first Name "
-          "for all</button>"
-          "<button type='button' onclick='clearAllFieldsExceptOutput()'>Clear "
-          "all fields</button>"
-          "<button type='button' onclick='reverseGpioAssignments()'>Reverse "
-          "GPIO assignments</button>"
-          "<span>If the first Name contains #5, copy keeps the first row at #5 "
-          "and fills later rows as #6, #7, and so on.</span></div>"
-          "<table><tr><th>#</th><th>Manufacturer</th><th>Model</th><th>Name</"
-          "th><th>Control output</th></tr>";
+  beginChunkedHtml(200);
+  String piece = settingsPageStart("Devices & output configuration", "devices");
+  piece += FPSTR(SETTINGS_PAGE_SCRIPT);
+  piece += "<p>Each active output must use a different GPIO. TX/RX disable "
+           "serial communication; GPIO0 (FLASH) and GPIO15 affect boot.</p>"
+           "<form id='device-form' method='post' action='/settings/devices'>"
+           "<label>Number of outputs (1 - 16) <input name='numOutputs' "
+           "type='number' min='1' max='16' step='1' value='" +
+           String(cfg.numOutputs) +
+           "'></label>"
+           "<div class='bulk-actions'><button type='button' "
+           "onclick='copyFirstManufacturerToAll()'>Use first Manufacturer for "
+           "all</button>"
+           "<button type='button' onclick='copyFirstModelToAll()'>Use first "
+           "Model for all</button>"
+           "<button type='button' onclick='copyFirstNameToAll()'>Use first "
+           "Name for all</button>"
+           "<button type='button' onclick='clearAllFieldsExceptOutput()'>"
+           "Clear all fields</button>"
+           "<button type='button' onclick='reverseGpioAssignments()'>Reverse "
+           "GPIO assignments</button>"
+           "<span>If the first Name contains #5, copy keeps the first row at "
+           "#5 and fills later rows as #6, #7, and so on.</span></div>"
+           "<table><tr><th>#</th><th>Manufacturer</th><th>Model</th><th>Name</"
+           "th><th>Control output</th></tr>";
+  writeChunk(piece);
+
+  // Each output row is flushed independently so the whole form table never
+  // needs to be held in RAM at once.
   for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
-    html += "<tr><td>" + String(i + 1) +
+    piece = "<tr><td>" + String(i + 1) +
             "</td><td><input name='manufacturer_" + String(i) + "' value='" +
             htmlEscape(cfg.devices[i].manufacturer) +
             "'></td><td><input name='model_" + String(i) + "' value='" +
@@ -766,16 +818,17 @@ void handleDeviceSettingsGet() {
             "'></td><td><input name='name_" + String(i) + "' value='" +
             htmlEscape(cfg.devices[i].name) +
             "'></td><td><select name='pin_" + String(i) + "'>";
-    html += (cfg.devices[i].pin < 0)
-                ? "<option value='-1' selected>none</option>"
-                : "<option value='-1'>none</option>";
+    piece += (cfg.devices[i].pin < 0)
+                 ? "<option value='-1' selected>none</option>"
+                 : "<option value='-1'>none</option>";
     for (size_t pinIndex = 0; pinIndex < OUTPUT_PIN_MAPPING_COUNT; ++pinIndex)
-      html += pinOption(cfg.devices[i].pin, OUTPUT_PIN_MAPPINGS[pinIndex]);
-    html += F("</select></td></tr>");
+      piece += pinOption(cfg.devices[i].pin, OUTPUT_PIN_MAPPINGS[pinIndex]);
+    piece += F("</select></td></tr>");
+    writeChunk(piece);
   }
-  html += F("</table><button type='submit'>Save device settings</button>"
-            "</form></body></html>");
-  sendChunkedHtml(200, html);
+  writeChunk(F("</table><button type='submit'>Save device settings</button>"
+               "</form></body></html>"));
+  endChunkedHtml();
 }
 
 void handleDeviceSettingsPost() {
@@ -965,18 +1018,20 @@ void handleRebootDevice() {
 void handleStickserverFleetGet() {
   if (!ensureAuthorized())
     return;
-  String html = settingsPageStart("Fleet outputs", "fleet");
-  html += F(
+  beginChunkedHtml(200);
+  String piece = settingsPageStart("Fleet outputs", "fleet");
+  piece += F(
       "<p class='page-intro'>Discovered stickserver instances and their "
       "outputs, gathered passively over MQTT (hello/list). Each column is "
       "one stickserver; each row is one output slot. Buttons are a "
       "read-only state indicator: gray = off, yellow = on.</p>");
 
   if (!cfg.mqttEnabled || !mqttClient.connected()) {
-    html += F("<p style='color:#b00020;'><strong>MQTT is not connected.</"
-              "strong> Enable and configure MQTT on the Network settings "
-              "page to discover stickservers.</p></body></html>");
-    sendChunkedHtml(200, html);
+    piece += F("<p style='color:#b00020;'><strong>MQTT is not connected.</"
+               "strong> Enable and configure MQTT on the Network settings "
+               "page to discover stickservers.</p></body></html>");
+    writeChunk(piece);
+    endChunkedHtml();
     return;
   }
 
@@ -994,40 +1049,47 @@ void handleStickserverFleetGet() {
   }
 
   if (activeCount == 0) {
-    html += F("<p>No stickservers discovered yet. This page refreshes "
-              "discovery automatically in the background; reload in a few "
-              "seconds.</p>");
-  } else {
-    html += F("<table><tr><th>Output #</th>");
-    for (uint8_t c = 0; c < activeCount; ++c) {
-      const DiscoveredServer &s = discoveredServers[activeIdx[c]];
-      String label = s.hostname.isEmpty() ? s.instanceTopic : s.hostname;
-      html += "<th>" + htmlEscape(label) + "</th>";
-    }
-    html += F("</tr>");
-    for (uint8_t row = 0; row < maxRows; ++row) {
-      html += "<tr><td>" + String(row + 1) + "</td>";
-      for (uint8_t c = 0; c < activeCount; ++c) {
-        const DiscoveredServer &s = discoveredServers[activeIdx[c]];
-        html += "<td>";
-        if (row < s.outputCount && s.outputs[row].valid) {
-          const DiscoveredOutputEntry &o = s.outputs[row];
-          String label = o.name.isEmpty() ? String(F("Output ")) +
-                                                 String(row + 1)
-                                           : o.name;
-          html += "<button type='button' disabled class='output-toggle " +
-                  String(o.state ? "output-on" : "output-off") + "'>" +
-                  htmlEscape(label) + "</button>";
-        }
-        html += "</td>";
-      }
-      html += F("</tr>");
-    }
-    html += F("</table>");
+    piece += F("<p>No stickservers discovered yet. This page refreshes "
+               "discovery automatically in the background; reload in a few "
+               "seconds.</p></body></html>");
+    writeChunk(piece);
+    endChunkedHtml();
+    return;
   }
 
-  html += F("</body></html>");
-  sendChunkedHtml(200, html);
+  piece += F("<table><tr><th>Output #</th>");
+  for (uint8_t c = 0; c < activeCount; ++c) {
+    const DiscoveredServer &s = discoveredServers[activeIdx[c]];
+    String label = s.hostname.isEmpty() ? s.instanceTopic : s.hostname;
+    piece += "<th>" + htmlEscape(label) + "</th>";
+  }
+  piece += F("</tr>");
+  writeChunk(piece);
+
+  // Each row is flushed independently so the table never needs to be held
+  // in RAM all at once, even with many discovered stickservers/outputs.
+  for (uint8_t row = 0; row < maxRows; ++row) {
+    piece = "<tr><td>" + String(row + 1) + "</td>";
+    for (uint8_t c = 0; c < activeCount; ++c) {
+      const DiscoveredServer &s = discoveredServers[activeIdx[c]];
+      piece += "<td>";
+      if (row < s.outputCount && s.outputs[row].valid) {
+        const DiscoveredOutputEntry &o = s.outputs[row];
+        String label = o.name.isEmpty()
+                           ? String(F("Output ")) + String(row + 1)
+                           : o.name;
+        piece += "<button type='button' disabled class='output-toggle " +
+                 String(o.state ? "output-on" : "output-off") + "'>" +
+                 htmlEscape(label) + "</button>";
+      }
+      piece += "</td>";
+    }
+    piece += F("</tr>");
+    writeChunk(piece);
+  }
+
+  writeChunk(F("</table></body></html>"));
+  endChunkedHtml();
 }
 
 void handleNotFound() { server.send(404, "text/plain", "Not found"); }

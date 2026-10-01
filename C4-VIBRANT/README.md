@@ -145,6 +145,10 @@ Additional security note: HTTP Basic Auth is not encrypted on plain HTTP. Use th
 
 ## Release notes
 
+### 1.4.13
+
+- Chunked HTML responses (`/`, `/settings/devices`, `/fleet`) are now streamed section-by-section (and row-by-row for tables) directly to the network as each piece is built, instead of assembling the full page into one `String` and splitting it afterwards. This bounds peak RAM usage to roughly one row's worth of HTML regardless of how many outputs/stickservers are configured/discovered.
+
 ### 1.4.12
 
 - Reservation column button now shows just the `<owner>` (no "Reserved by" prefix), is disabled when the output is not reserved, and is enabled when reserved. Clicking it releases that output's reservation (processed in-process via the Stickserver `release` command, with the response still published over MQTT when connected).
