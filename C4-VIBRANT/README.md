@@ -84,17 +84,9 @@ Enable MQTT and set the broker host/port in **Network, Wi-Fi & MQTT**. Fields:
 
 ### Topics
 
-Base: `vibrant/<hostname>/`
+Base: `<STICKSERVER_ROOT_TOPIC>` (see `Stickserver.cpp`)
 
-| Topic | Direction | Payload | Description |
-|-------|-----------|---------|-------------|
-| `vibrant/<hostname>/out/<N>/set` | Subscribe | `ON` or `OFF` | Set output N state |
-| `vibrant/<hostname>/out/<N>/action` | Subscribe | command name | Run a load action on output N |
-| `vibrant/<hostname>/out/<N>/state` | Publish (retained) | `ON` or `OFF` | Current output N state |
-
-N is the zero-based output index (0 = output 1, 1 = output 2, …).
-
-Action commands accepted via the `action` topic: `power_on`, `power_off`, `leave_mesh`, `factory_reset`.
+Device control is handled exclusively via the Stickserver protocol: `hello`, `list`, `reserve`, `release`, `status`, `join`, `leave`, `power_on`, `power_off`, `leave_mesh`/`factory_reset`, and `reboot`. The legacy native `vibrant/<hostname>/out/<N>/set|action|state` topics were removed in 1.4.10 since the Stickserver protocol already covers identical functionality.
 
 ## Load action commands
 
@@ -148,6 +140,16 @@ Security note: factory credentials are public and meant only for first setup.
 Additional security note: HTTP Basic Auth is not encrypted on plain HTTP. Use this firmware only on trusted local networks/AP access.
 
 ## Release notes
+
+### 1.4.10
+
+- Removed the legacy native `vibrant/<hostname>/out/<N>/set|action|state` MQTT topics (publish and subscribe). Device control now goes exclusively through the Stickserver protocol, which already implements identical functionality (confirmed in 1.4.9).
+
+### 1.4.9
+
+- Added a "Reboot device" button on the Diagnostics & OTA settings page.
+- Added a live device uptime timer (hh:mm:ss, counted from boot) shown on the main page and the Diagnostics & OTA page.
+- Verified MQTT command parity with `example.ino`: `hello`, `list`, `reserve`, `release`, `status`, `join`, `leave`, `power_on`, `power_off`, `leave_mesh`, `factory_reset`, and `reboot` were already fully implemented via the native per-output topics and the Stickserver protocol; no gaps found.
 
 ### 1.4.8
 

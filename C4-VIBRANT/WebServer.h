@@ -28,5 +28,6 @@ void handleDeviceSettingsGet();
 void handleDeviceSettingsPost();
 void handleDiagnosticsGet();
 void handleDiagnosticsPost();
+void handleRebootDevice();
 void handleNotFound();
 } // namespace vibrant

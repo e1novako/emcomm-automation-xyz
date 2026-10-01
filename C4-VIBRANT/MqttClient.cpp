@@ -36,42 +36,11 @@ bool deviceModelMatches(const String &modelField, const String &ntype) {
   return matched;
 }
 
-String mqttOutputStateTopic(uint8_t idx) {
-  return String(F("vibrant/")) + cfg.hostname + "/out/" + String(idx) +
-         "/state";
-}
-
-String mqttOutputSetTopic(uint8_t idx) {
-  return String(F("vibrant/")) + cfg.hostname + "/out/" + String(idx) + "/set";
-}
-
-String mqttOutputActionTopic(uint8_t idx) {
-  return String(F("vibrant/")) + cfg.hostname + "/out/" + String(idx) +
-         "/action";
-}
-
-void mqttPublishOutputState(uint8_t idx) {
-  if (!cfg.mqttEnabled || !mqttClient.connected())
-    return;
-  if (idx >= cfg.numOutputs)
-    return;
-  const char *statePayload = cfg.devices[idx].state ? "ON" : "OFF";
-  String topic = mqttOutputStateTopic(idx);
-  bool ok = mqttClient.publish(topic.c_str(), statePayload, true);
-  if (ok) {
-    DBG("[MQTT] Published state -> topic: %s payload: %s", topic.c_str(),
-        statePayload);
-  } else {
-    Serial.print(F("[WARN] [MQTT] Failed to publish state -> topic: "));
-    Serial.println(topic);
-  }
-}
-
-void mqttPublishAllOutputStates() {
-  for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
-    mqttPublishOutputState(i);
-  }
-}
+// Native "vibrant/<hostname>/out/<idx>/..." topics have been removed; only
+// the Stickserver protocol (handleStickserverMessage) is used now. This
+// function is kept as a no-op so existing call sites after output state
+// changes do not need to be edited.
+void mqttPublishOutputState(uint8_t) {}
 
 void mqttCallback(char *topic, byte *payload, unsigned int length) {
   if (topic == nullptr || payload == nullptr)
@@ -101,27 +70,6 @@ void mqttCallback(char *topic, byte *payload, unsigned int length) {
         payloadStr.length() > MQTT_PAYLOAD_LOG_MAX_LEN ? "...(truncated)" : "");
   }
 
-  for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
-    if (topicStr == mqttOutputSetTopic(i)) {
-      bool newState =
-          (payloadStr == "ON" || payloadStr == "1" || payloadStr == "true");
-      DBG("[MQTT] Set command -> output %u state: %s",
-          static_cast<unsigned>(i + 1), newState ? "ON" : "OFF");
-      if (actionOwnsOutput(i))
-        cancelAction();
-      setOutputDirect(i, newState);
-      mqttPublishOutputState(i);
-      // Runtime state changes are not persisted to flash by design.
-      return;
-    }
-    if (topicStr == mqttOutputActionTopic(i)) {
-      DBG("[MQTT] Action command -> output %u action: %s",
-          static_cast<unsigned>(i + 1), payloadStr.c_str());
-      handleLoadAction(i, payloadStr);
-
-      return;
-    }
-  }
   if (topicStr == STICKSERVER_ROOT_TOPIC ||
       topicStr == stickserverInstanceTopic()) {
     DBG("[MQTT] Stickserver message -> topic: %s", topicStr.c_str());
@@ -197,16 +145,6 @@ bool mqttDoConnect() {
   String instanceTopic = stickserverInstanceTopic();
   DBG("[MQTT] Subscribing -> %s", instanceTopic.c_str());
   mqttClient.subscribe(instanceTopic.c_str());
-  // Subscribe to per-output set and action topics
-  for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
-    String setTopic = mqttOutputSetTopic(i);
-    String actionTopic = mqttOutputActionTopic(i);
-    DBG("[MQTT] Subscribing -> %s", setTopic.c_str());
-    mqttClient.subscribe(setTopic.c_str());
-    DBG("[MQTT] Subscribing -> %s", actionTopic.c_str());
-    mqttClient.subscribe(actionTopic.c_str());
-  }
-  mqttPublishAllOutputStates();
   logStatus(String(F("MQTT connected. Host: ")) + cfg.mqttHost + F(" port: ") +
             String(cfg.mqttPort));
   return true;

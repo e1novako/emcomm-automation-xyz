@@ -39,6 +39,7 @@ void registerWebRoutes() {
   server.on("/settings/devices", HTTP_POST, handleDeviceSettingsPost);
   server.on("/settings/diagnostics", HTTP_GET, handleDiagnosticsGet);
   server.on("/settings/diagnostics", HTTP_POST, handleDiagnosticsPost);
+  server.on("/device/reboot", HTTP_POST, handleRebootDevice);
   server.on("/config/export", HTTP_GET, handleConfigExport);
   server.on("/config/import", HTTP_POST, handleConfigImportDone,
             handleConfigImportUpload);
@@ -70,6 +71,15 @@ String htmlEscape(const String &value) {
       out += c;
   }
   return out;
+}
+
+String formatUptimeHHMMSS(unsigned long totalSeconds) {
+  unsigned long hours = totalSeconds / 3600UL;
+  unsigned long minutes = (totalSeconds % 3600UL) / 60UL;
+  unsigned long seconds = totalSeconds % 60UL;
+  char buf[16];
+  snprintf(buf, sizeof(buf), "%02lu:%02lu:%02lu", hours, minutes, seconds);
+  return String(buf);
 }
 
 String pinOption(int selectedPin, const PinMapping &mapping) {
@@ -134,7 +144,18 @@ void handleHome() {
   bool actionRunning = isActionRunning();
   String html = FPSTR(HOME_PAGE_HEADER);
   html += SOFTWARE_VERSION;
-  html += F("</p><p><a href='/settings'>Settings</a> | "
+  html += F("</p><p>Uptime: <span id='uptime-value'>");
+  html += formatUptimeHHMMSS(millis() / 1000UL);
+  html += F("</span></p><script>(function(){var s=");
+  html += String(millis() / 1000UL);
+  html += F(";function pad(n){return (n<10?'0':'')+n;}function "
+            "fmt(t){var h=Math.floor(t/3600);var "
+            "m=Math.floor((t%3600)/60);var sec=t%60;return "
+            "pad(h)+':'+pad(m)+':'+pad(sec);}function tick(){var "
+            "el=document.getElementById('uptime-value');if(el)"
+            "el.textContent=fmt(s);s++;}tick();setInterval(tick,1000);})();"
+            "</script>");
+  html += F("<p><a href='/settings'>Settings</a> | "
             "<a href='/settings/network'>Network</a> | "
             "<a href='/settings/devices'>Devices</a> | "
             "<a href='/settings/diagnostics'>Diagnostics &amp; OTA</a></p>");
@@ -570,17 +591,13 @@ void handleNetworkSettingsGet() {
       "name='mqttPasswordClear' value='1'"
       " onchange=\"if(this.checked)document.getElementById('mqttPassword')."
       "value='';\"> Clear MQTT password (remove broker authentication)</label>"
-      "<p style='font-size:0.9em;color:#555;'>Topics (N = zero-based output "
-      "index, e.g. 0 = Output 1): "
-      "<code>vibrant/" +
-      htmlEscape(cfg.hostname) +
-      "/out/&lt;N&gt;/set</code> (ON/OFF) &amp; "
-      "<code>vibrant/" +
-      htmlEscape(cfg.hostname) +
-      "/out/&lt;N&gt;/action</code> (power_on / power_off / leave_mesh / "
-      "factory_reset). Stickserver compatibility subscribes to <code>" +
+      "<p style='font-size:0.9em;color:#555;'>Device control is handled "
+      "exclusively via the Stickserver protocol, which subscribes to "
+      "<code>" +
       htmlEscape(String(STICKSERVER_ROOT_TOPIC)) +
-      "</code> and replies on the device topic.</p></fieldset>"
+      "</code> and replies on the device topic (hello / list / reserve / "
+      "release / status / join / leave / power_on / power_off / "
+      "factory_reset / reboot).</p></fieldset>"
       "<button type='submit'>Save network settings</button></form>"
       "</body></html>";
   server.send(200, "text/html", html);
@@ -839,6 +856,13 @@ void handleDiagnosticsGet() {
           String(cfg.debugSerial ? " checked" : "") +
           "> Enable verbose serial debug logging</label></fieldset>"
           "<button type='submit'>Save diagnostics settings</button></form>"
+          "<h2>Device control</h2>"
+          "<p>Current uptime: " +
+          formatUptimeHHMMSS(millis() / 1000UL) +
+          "</p>"
+          "<form method='post' action='/device/reboot' "
+          "onsubmit=\"return confirm('Reboot the device now?');\">"
+          "<button type='submit'>Reboot device</button></form>"
           "<h2>Configuration maintenance</h2>"
           "<p><a href='/config/export'>Download configuration backup</a></p>"
           "<p>Hold the FLASH button during power-on (during the first " +
@@ -870,6 +894,20 @@ void handleDiagnosticsPost() {
   logSettingsDebug("diagnostics");
   finishSettingsSave("Diagnostics and OTA settings updated from web UI.",
                      "/settings/diagnostics");
+}
+
+void handleRebootDevice() {
+  if (!ensureAuthorized())
+    return;
+  logStatus(F("Device reboot requested from web UI."));
+  server.send(200, "text/html",
+              "<!doctype html><html><head><meta charset='utf-8'><title>"
+              "Rebooting</title></head><body><p>Rebooting device...</p>"
+              "<script>setTimeout(function(){window.location='/';},8000);"
+              "</script></body></html>");
+  server.client().flush();
+  delay(200);
+  ESP.restart();
 }
 
 void handleNotFound() { server.send(404, "text/plain", "Not found"); }
