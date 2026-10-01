@@ -42,6 +42,7 @@ void registerWebRoutes() {
   server.on("/device/reboot", HTTP_POST, handleRebootDevice);
   server.on("/reservation/release", HTTP_POST, handleReleaseReservation);
   server.on("/fleet", HTTP_GET, handleStickserverFleetGet);
+  server.on("/fleet/toggle", HTTP_POST, handleFleetOutputToggle);
   server.on("/config/export", HTTP_GET, handleConfigExport);
   server.on("/config/import", HTTP_POST, handleConfigImportDone,
             handleConfigImportUpload);
@@ -220,7 +221,7 @@ void handleHome() {
              "<a href='/settings/network'>Network</a> | "
              "<a href='/settings/devices'>Devices</a> | "
              "<a href='/settings/diagnostics'>Diagnostics &amp; OTA</a> | "
-             "<a href='/fleet'>Fleet outputs</a></p>");
+             "<a href='/fleet'>All Outputs</a></p>");
   if (usingFactoryPassword()) {
     piece += passwordWarningHtml();
   }
@@ -543,13 +544,16 @@ void handleLeaveMeshAll() {
 }
 
 static String settingsNavigation(const char *activePage) {
-  String html = F("<nav class='settings-nav' aria-label='Settings pages'>");
+  String html = F("<nav class='settings-nav' aria-label='Settings pages'>"
+                   "<a href='/'>Main output control</a> | ");
   const char *paths[] = {"/settings/network", "/settings/devices",
                          "/settings/diagnostics", "/fleet"};
   const char *labels[] = {"Network, Wi-Fi & MQTT", "Devices & outputs",
-                          "Diagnostics & OTA", "Fleet outputs"};
+                          "Diagnostics & OTA", "All Outputs"};
   const char *pages[] = {"network", "devices", "diagnostics", "fleet"};
   for (uint8_t i = 0; i < 4; ++i) {
+    if (i > 0)
+      html += F(" | ");
     html += "<a href='" + String(paths[i]) + "'";
     if (String(activePage) == pages[i])
       html += " class='current' aria-current='page'";
@@ -561,8 +565,7 @@ static String settingsNavigation(const char *activePage) {
 
 static String settingsPageStart(const char *title, const char *activePage) {
   String html = FPSTR(SETTINGS_PAGE_HEADER);
-  html += "</head><body><h1>" + String(title) + "</h1>"
-          "<p><a href='/'>Main output control</a></p>";
+  html += "</head><body><h1>" + String(title) + "</h1>";
   html += settingsNavigation(activePage);
   if (usingFactoryPassword())
     html += passwordWarningHtml();
@@ -1019,12 +1022,13 @@ void handleStickserverFleetGet() {
   if (!ensureAuthorized())
     return;
   beginChunkedHtml(200);
-  String piece = settingsPageStart("Fleet outputs", "fleet");
+  String piece = settingsPageStart("All Outputs", "fleet");
   piece += F(
       "<p class='page-intro'>Discovered stickserver instances and their "
       "outputs, gathered passively over MQTT (hello/list). Each column is "
-      "one stickserver; each row is one output slot. Buttons are a "
-      "read-only state indicator: gray = off, yellow = on.</p>");
+      "one stickserver; each row is one output slot. Buttons reflect live "
+      "MQTT state: gray = off, yellow = on. Click a button to toggle that "
+      "output over MQTT.</p>");
 
   if (!cfg.mqttEnabled || !mqttClient.connected()) {
     piece += F("<p style='color:#b00020;'><strong>MQTT is not connected.</"
@@ -1078,9 +1082,20 @@ void handleStickserverFleetGet() {
         String label = o.name.isEmpty()
                            ? String(F("Output ")) + String(row + 1)
                            : o.name;
-        piece += "<button type='button' disabled class='output-toggle " +
+        // Clicking the button toggles this specific output over MQTT; the
+        // command sent (power_on/power_off) is derived from the last known
+        // state so the click always acts as a toggle.
+        piece += "<form method='post' action='/fleet/toggle' "
+                 "style='margin:0;display:inline;'>"
+                 "<input type='hidden' name='topic' value='" +
+                 htmlEscape(s.instanceTopic) +
+                 "'><input type='hidden' name='euid' value='" +
+                 htmlEscape(o.euid) +
+                 "'><input type='hidden' name='cmd' value='" +
+                 String(o.state ? "power_off" : "power_on") +
+                 "'><button type='submit' class='output-toggle " +
                  String(o.state ? "output-on" : "output-off") + "'>" +
-                 htmlEscape(label) + "</button>";
+                 htmlEscape(label) + "</button></form>";
       }
       piece += "</td>";
     }
@@ -1090,6 +1105,40 @@ void handleStickserverFleetGet() {
 
   writeChunk(F("</table></body></html>"));
   endChunkedHtml();
+}
+
+void handleFleetOutputToggle() {
+  if (!ensureAuthorized())
+    return;
+  if (!server.hasArg("topic") || !server.hasArg("euid") ||
+      !server.hasArg("cmd")) {
+    server.send(400, "text/plain", "Missing topic/euid/cmd");
+    return;
+  }
+  String topic = server.arg("topic");
+  String euid = server.arg("euid");
+  String cmd = server.arg("cmd");
+  if (topic.isEmpty() || euid.isEmpty() ||
+      (cmd != "power_on" && cmd != "power_off")) {
+    server.send(400, "text/plain", "Invalid toggle request");
+    return;
+  }
+  if (!cfg.mqttEnabled || !mqttClient.connected()) {
+    server.send(503, "text/plain", "MQTT is not connected");
+    return;
+  }
+  logStatus(String(F("Fleet output toggle (")) + cmd + F(") requested for "
+            "euid ") + euid + F(" on topic ") + topic + F(" via web UI."));
+  JsonDocument req;
+  req["cmd"] = cmd;
+  req["ver"] = STICKSERVER_PROTOCOL_VERSION;
+  req["mid"] = String(F("fleet-toggle-")) + String(millis());
+  req["euid"] = euid;
+  String payload;
+  serializeJson(req, payload);
+  mqttClient.publish(topic.c_str(), payload.c_str());
+  server.sendHeader("Location", "/fleet");
+  server.send(303);
 }
 
 void handleNotFound() { server.send(404, "text/plain", "Not found"); }

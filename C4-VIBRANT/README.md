@@ -90,7 +90,7 @@ Device control is handled exclusively via the Stickserver protocol: `hello`, `li
 
 ### Fleet discovery
 
-The device passively discovers other stickserver instances on the broker by periodically broadcasting `hello` on the root topic and requesting `list` from each instance it learns about. Discovered instances and their outputs are shown on the **Fleet outputs** page (`/fleet`), one column per stickserver, one row per output.
+The device passively discovers other stickserver instances on the broker by periodically broadcasting `hello` on the root topic and requesting `list` from each instance it learns about. Discovered instances and their outputs are shown on the **All Outputs** page (`/fleet`), one column per stickserver, one row per output. Clicking an output's button sends a `power_on`/`power_off` command directly to that stickserver's instance topic to toggle it.
 
 ## Load action commands
 
@@ -144,6 +144,12 @@ Security note: factory credentials are public and meant only for first setup.
 Additional security note: HTTP Basic Auth is not encrypted on plain HTTP. Use this firmware only on trusted local networks/AP access.
 
 ## Release notes
+
+### 1.4.14
+
+- Renamed the "Fleet outputs" page to "All Outputs" (route still `/fleet`); updated nav labels and page title.
+- Added `|` separators between navigation links on every settings page, matching the main page's link style.
+- All Outputs page buttons are now live controls: clicking a button publishes a Stickserver `power_on`/`power_off` command (toggling the output) directly to that device's MQTT instance topic, using the last known state (from passive `hello`/`list` discovery) to decide the toggle direction. New `POST /fleet/toggle` route.
 
 ### 1.4.13
 
