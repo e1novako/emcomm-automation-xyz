@@ -19,6 +19,7 @@ struct DiscoveredServer {
   String instanceTopic;
   String instanceId;
   String hostname;
+  String ipAddress;
   unsigned long lastSeenMs = 0;
   unsigned long lastListRequestMs = 0;
   DiscoveredOutputEntry outputs[MAX_DEVICES];

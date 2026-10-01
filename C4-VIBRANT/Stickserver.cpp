@@ -269,6 +269,9 @@ void handleStickserverDiscoveryResponse(const String &topicStr,
     int idx = allocateDiscoveredServerSlot(topic);
     discoveredServers[idx].hostname = response["id"] | String("");
     discoveredServers[idx].instanceId = response["instance"] | String("");
+    String ip = response["ip"] | String("");
+    if (!ip.isEmpty())
+      discoveredServers[idx].ipAddress = ip;
     discoveredServers[idx].lastSeenMs = millis();
     // Some stickserver implementations include a per-output "devices" array
     // (euid/name/state) directly in the hello response; use it immediately
@@ -282,6 +285,9 @@ void handleStickserverDiscoveryResponse(const String &topicStr,
     String hostId = response["id"] | String("");
     if (!hostId.isEmpty())
       discoveredServers[idx].hostname = hostId;
+    String ip = response["ip"] | String("");
+    if (!ip.isEmpty())
+      discoveredServers[idx].ipAddress = ip;
     applyDiscoveredOutputs(idx, response["devices"].as<JsonArrayConst>());
   }
 }
@@ -404,6 +410,7 @@ void handleStickserverMessage(const String &topicStr,
     response["mac"] = cfg.mac;
     response["topic"] = stickserverInstanceTopic();
     response["instance"] = stickserverInstanceId();
+    response["ip"] = WiFi.localIP().toString();
     response["count"] = managedOutputCount();
     response["available"] = availableManagedOutputCount();
     JsonArray devices = response["devices"].to<JsonArray>();
@@ -421,6 +428,7 @@ void handleStickserverMessage(const String &topicStr,
     buildStickserverEnvelope(response, cmd, ver, mid, "ok");
     response["id"] = cfg.hostname;
     response["mac"] = cfg.mac;
+    response["ip"] = WiFi.localIP().toString();
     response["count"] = managedOutputCount();
     response["available"] = availableManagedOutputCount();
     JsonArray devices = response["devices"].to<JsonArray>();

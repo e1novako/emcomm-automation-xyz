@@ -1102,6 +1102,40 @@ void handleStickserverFleetGet() {
     return;
   }
 
+  // Sort columns by ascending IP address (numeric, not lexicographic, so
+  // e.g. .9 sorts before .10). Servers with no known IP (third-party
+  // stickservers that don't report one) sort after all known-IP servers,
+  // falling back to hostname order among themselves.
+  for (uint8_t a = 0; a + 1 < activeCount; ++a) {
+    for (uint8_t b = 0; b + 1 < activeCount - a; ++b) {
+      const DiscoveredServer &sa = discoveredServers[activeIdx[b]];
+      const DiscoveredServer &sb = discoveredServers[activeIdx[b + 1]];
+      IPAddress ipa, ipb;
+      bool haveA = ipa.fromString(sa.ipAddress);
+      bool haveB = ipb.fromString(sb.ipAddress);
+      bool swapNeeded = false;
+      if (haveA && haveB) {
+        uint32_t keyA = ((uint32_t)ipa[0] << 24) | ((uint32_t)ipa[1] << 16) |
+                        ((uint32_t)ipa[2] << 8) | ipa[3];
+        uint32_t keyB = ((uint32_t)ipb[0] << 24) | ((uint32_t)ipb[1] << 16) |
+                        ((uint32_t)ipb[2] << 8) | ipb[3];
+        swapNeeded = keyA > keyB;
+      } else if (haveA != haveB) {
+        swapNeeded = !haveA; // known IP sorts before unknown IP
+      } else {
+        // Neither has a known IP: fall back to hostname ordering.
+        String labelA = sa.hostname.isEmpty() ? sa.instanceTopic : sa.hostname;
+        String labelB = sb.hostname.isEmpty() ? sb.instanceTopic : sb.hostname;
+        swapNeeded = labelA > labelB;
+      }
+      if (swapNeeded) {
+        uint8_t tmp = activeIdx[b];
+        activeIdx[b] = activeIdx[b + 1];
+        activeIdx[b + 1] = tmp;
+      }
+    }
+  }
+
   // This page is streamed as many small HTTP chunks; on a slow/weak WiFi
   // link the browser can render a table with table-layout:fixed
   // progressively as chunks arrive, so a user looking at it mid-load would

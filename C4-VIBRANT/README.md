@@ -145,6 +145,10 @@ Additional security note: HTTP Basic Auth is not encrypted on plain HTTP. Use th
 
 ## Release notes
 
+### 1.5.1
+
+- All Outputs page columns are now sorted by ascending IP address (numeric, so `.9` sorts before `.10`), instead of arbitrary discovery/slot order. This firmware's own `hello`/`list` responses now include an `"ip"` field (`WiFi.localIP()`); the field is parsed into each discovered server's record when present. Third-party stickservers that don't report an IP sort after all known-IP columns, falling back to hostname ordering among themselves.
+
 ### 1.5.0
 
 - Found why output state color never showed on the All Outputs page: the `.output-toggle`/`.output-on`/`.output-off` button classes were only ever defined in the home page's stylesheet, not the settings-page stylesheet that `/fleet` (and all other `/settings/*` pages) actually use, so the buttons rendered with no state styling at all. Those classes (and centered `th`/`td` text) are now part of the shared settings-page stylesheet.
