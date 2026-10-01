@@ -282,6 +282,11 @@ void handleStickserverDiscoveryResponse(const String &topicStr,
   } else if (rsp == F("list")) {
     int idx = allocateDiscoveredServerSlot(topicStr);
     discoveredServers[idx].lastSeenMs = millis();
+    // A list response was just observed for this server (regardless of who
+    // asked for it); it carries the full up-to-date output list, so there
+    // is no need for this device to also re-request "list" from the same
+    // server again soon. Mirrors the fleet-wide hello suppression below.
+    discoveredServers[idx].lastListRequestMs = millis();
     String hostId = response["id"] | String("");
     if (!hostId.isEmpty())
       discoveredServers[idx].hostname = hostId;
@@ -377,9 +382,24 @@ void handleStickserverMessage(const String &topicStr,
   }
 
   // Commands not addressed to us (root broadcast or our own instance topic)
-  // belong to another stickserver instance; ignore (do not respond).
+  // belong to another stickserver instance. We don't respond, but a "list"
+  // request addressed to a peer is visible to us too via the shared
+  // wildcard subscription -- note it against that peer's record so this
+  // device doesn't also independently re-request "list" from them again
+  // too soon (the resulting response, observed above, will refresh us
+  // either way). Mirrors the fleet-wide hello suppression.
   if (topicStr != STICKSERVER_ROOT_TOPIC &&
       topicStr != stickserverInstanceTopic()) {
+    if (request["cmd"].is<const char *>() &&
+        String(request["cmd"].as<const char *>()) == F("list")) {
+      for (uint8_t i = 0; i < MAX_DISCOVERED_SERVERS; ++i) {
+        if (discoveredServers[i].active &&
+            discoveredServers[i].instanceTopic == topicStr) {
+          discoveredServers[i].lastListRequestMs = millis();
+          break;
+        }
+      }
+    }
     return;
   }
 

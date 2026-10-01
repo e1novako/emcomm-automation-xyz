@@ -145,6 +145,10 @@ Additional security note: HTTP Basic Auth is not encrypted on plain HTTP. Use th
 
 ## Release notes
 
+### 1.6.1
+
+- Extended the hello broadcast-suppression idea from 1.6.0 to the per-server "list" request too: every stickserver already observes every "list" request/response addressed to any peer via the shared wildcard subscription, so a device now skips re-requesting "list" from a given peer if a request or response for that same peer was observed (by anyone, not just itself) within the last 10-second window, instead of blindly polling on its own fixed timer regardless of what others already asked.
+
 ### 1.6.0
 
 - Reduced MQTT discovery traffic: previously every stickserver independently broadcast its own "hello" discovery request every 15 seconds, so an N-device fleet generated up to N redundant broadcasts (and N sets of responses) per cycle even though every device already observes every response on the shared bus regardless of who asked. Each device now tracks the last time *any* hello command was seen on the bus (its own or a peer's) and only issues its own broadcast if none has been observed in the last 5 seconds, collapsing the fleet down to one hello broadcast per 5-second window.
