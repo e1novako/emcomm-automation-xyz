@@ -221,22 +221,41 @@ int allocateDiscoveredServerSlot(const String &topic) {
 }
 
 void applyDiscoveredOutputs(uint8_t idx, JsonArrayConst devices) {
-  uint8_t count = 0;
+  if (devices.isNull())
+    return; // no per-output data in this particular response; keep what we
+            // already know rather than wiping it out.
+  DiscoveredServer &server = discoveredServers[idx];
   for (JsonVariantConst item : devices) {
-    if (count >= MAX_DEVICES)
-      break;
     JsonObjectConst dev = item.as<JsonObjectConst>();
-    discoveredServers[idx].outputs[count].euid = dev["euid"] | String("");
-    discoveredServers[idx].outputs[count].name = dev["name"] | String("");
+    String euid = dev["euid"] | String("");
+    if (euid.isEmpty())
+      continue;
+    String name = dev["name"] | String("");
     String stateStr = dev["state"] | String("OFF");
-    discoveredServers[idx].outputs[count].state = (stateStr == "ON");
-    discoveredServers[idx].outputs[count].valid = true;
-    ++count;
+    bool state = (stateStr == "ON");
+
+    // Match by euid so each output keeps a stable row position across
+    // updates. A response that happens to omit some of a server's outputs
+    // (e.g. a short/partial reply) must not erase previously known outputs;
+    // otherwise the All Outputs page intermittently blanks out cells that
+    // were already known, which is the bug this merge logic fixes.
+    int slot = -1;
+    for (uint8_t i = 0; i < server.outputCount; ++i) {
+      if (server.outputs[i].valid && server.outputs[i].euid == euid) {
+        slot = i;
+        break;
+      }
+    }
+    if (slot < 0) {
+      if (server.outputCount >= MAX_DEVICES)
+        continue;
+      slot = server.outputCount++;
+    }
+    server.outputs[slot].euid = euid;
+    server.outputs[slot].name = name;
+    server.outputs[slot].state = state;
+    server.outputs[slot].valid = true;
   }
-  for (uint8_t i = count; i < MAX_DEVICES; ++i) {
-    discoveredServers[idx].outputs[i].valid = false;
-  }
-  discoveredServers[idx].outputCount = count;
 }
 
 void handleStickserverDiscoveryResponse(const String &topicStr,

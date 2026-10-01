@@ -145,6 +145,10 @@ Additional security note: HTTP Basic Auth is not encrypted on plain HTTP. Use th
 
 ## Release notes
 
+### 1.4.16
+
+- Fixed a bug where the All Outputs page intermittently rendered blank `<td>` cells for outputs that had previously been discovered. The discovery output table is now merged by `euid` instead of being wholesale overwritten on each `hello`/`list` response, so a short/partial reply from one stickserver instance no longer erases already-known outputs for that column. Outputs are only fully cleared when their parent server entry goes stale (no `hello`/`list` activity for ~90s) and is pruned.
+
 ### 1.4.15
 
 - Stickserver discovery now parses the per-output `devices` array (euid/name/state) from `hello` responses, not just `list` responses, so a discovered output's state on the **All Outputs** page updates as soon as any hello reply carries it (some stickserver implementations include it there). Our own `hello` response now includes this `devices` array too, for parity.
