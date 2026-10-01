@@ -230,7 +230,7 @@ void handleHome() {
                 String(i) +
                 "'>"
                 "<input type='hidden' name='cmd' value='leave_mesh'>"
-                "<button type='submit' class='output-toggle action-toggle'" +
+                "<button type='submit' class='output-toggle'" +
                 disabledAttr +
                 ">Leave Mesh</button></form>"
                 "<form method='post' action='/action' "
@@ -239,7 +239,7 @@ void handleHome() {
                 String(i) +
                 "'>"
                 "<input type='hidden' name='cmd' value='factory_reset'>"
-                "<button type='submit' class='output-toggle action-toggle'" +
+                "<button type='submit' class='output-toggle'" +
                 disabledAttr + ">Factory Reset</button></form>";
       }
     } else {

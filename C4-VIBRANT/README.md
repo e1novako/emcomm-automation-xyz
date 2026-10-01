@@ -1,4 +1,4 @@
-# VIBRANT (NodeMCU v3 / ESP8266)
+# C4-VIBRANT (NodeMCU v3 / ESP8266)
 
 Arduino project for NodeMCU v3 with a web interface for controlling up to 16 outputs.
 
@@ -149,6 +149,18 @@ Additional security note: HTTP Basic Auth is not encrypted on plain HTTP. Use th
 
 ## Release notes
 
+### 1.4.5
+
+- Unified the appearance of all buttons (Save, Cancel, bulk actions, Leave Mesh, Factory Reset, Output toggle) to the same pill-shaped style; only the Output toggle's ON/OFF background color still differs to indicate state.
+
+### 1.4.4
+
+- Fixed Output column button colors: OFF is now gray, ON is now yellow.
+
+### 1.4.3
+
+- Renamed the project folder and sketch from `VIBRANT` to `C4-VIBRANT`.
+
 ### 1.4.2
 
 - Added a Manufacturer column to the main page, alongside Model and Name.
@@ -197,16 +209,16 @@ MQTT username and password are optional (leave blank for anonymous access). The 
 
 ## Firmware update (OTA)
 
-VIBRANT supports two OTA firmware update paths:
+C4-VIBRANT supports two OTA firmware update paths:
 
 - **Web UI OTA upload (primary/recommended)**
 - **ArduinoOTA (secondary developer/service path, enabled by default)**
 
 ### Web UI firmware upload (primary method)
 
-1. Compile `VIBRANT/VIBRANT.ino` for your NodeMCU board to produce a `.bin` file.
+1. Compile `C4-VIBRANT/C4-VIBRANT.ino` for your NodeMCU board to produce a `.bin` file.
    - Arduino IDE: **Sketch → Export Compiled Binary**
-   - `arduino-cli`: `arduino-cli compile --fqbn esp8266:esp8266:nodemcuv2 --export-binaries VIBRANT/VIBRANT.ino`
+   - `arduino-cli`: `arduino-cli compile --fqbn esp8266:esp8266:nodemcuv2 --export-binaries C4-VIBRANT/C4-VIBRANT.ino`
 2. Open the device web UI and log in.
 3. Go to **Diagnostics & OTA → Open firmware update page**, or navigate directly to `http://<device-ip>/firmware/update`.
 4. Select the compiled `.bin` file and click **Upload and flash**.
@@ -243,7 +255,7 @@ Typical flow:
 
 ## Source layout
 
-- `VIBRANT.ino` — Arduino `setup()` and `loop()` entry points
+- `C4-VIBRANT.ino` — Arduino `setup()` and `loop()` entry points
 - `Config` — device configuration, defaults, persistence, and MAC handling
 - `Debug` — status, warning, error, and diagnostic logging
 - `Outputs` and `Actions` — GPIO management and load-action sequences
@@ -268,15 +280,15 @@ arduino-cli core install esp8266:esp8266
 arduino-cli lib install "ArduinoJson" "PubSubClient"
 ```
 
-Compile from the correctly-cased `VIBRANT/` sketch directory (the folder and
-`VIBRANT.ino` filename must match):
+Compile from the correctly-cased `C4-VIBRANT/` sketch directory (the folder and
+`C4-VIBRANT.ino` filename must match):
 
 ```sh
-cd VIBRANT
+cd C4-VIBRANT
 arduino-cli compile --fqbn esp8266:esp8266:nodemcuv2 --export-binaries .
 ```
 
-Alternatively, open `VIBRANT/VIBRANT.ino` in Arduino IDE, select a NodeMCU v3
+Alternatively, open `C4-VIBRANT/C4-VIBRANT.ino` in Arduino IDE, select a NodeMCU v3
 compatible ESP8266 board, ensure `ArduinoJson` and `PubSubClient` are installed,
 and flash the firmware.
 
