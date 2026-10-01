@@ -109,10 +109,30 @@ const char *mqttStateString(int state) {
   }
 }
 
+// Ensures the PubSubClient internal TX/RX buffer is large enough for our
+// JSON payloads (hello/list responses can exceed PubSubClient's 256-byte
+// library default). setBufferSize() reallocates on the heap and can
+// silently fail under memory pressure, leaving the client at its previous
+// (too-small) buffer size -- which truncates large payloads and shows up on
+// the receiving end as "invalid_json"/"IncompleteInput" errors. We only
+// call it once the first time (or again if it did not take effect), rather
+// than on every reconnect attempt, to avoid needless realloc churn that
+// contributes to heap fragmentation.
+void ensureMqttBufferSize() {
+  if (mqttClient.getBufferSize() == MQTT_PACKET_BUFFER_SIZE)
+    return;
+  if (!mqttClient.setBufferSize(MQTT_PACKET_BUFFER_SIZE)) {
+    Serial.print(F("[WARN] [MQTT] setBufferSize("));
+    Serial.print(MQTT_PACKET_BUFFER_SIZE);
+    Serial.print(F(") failed -- low heap? current buffer size: "));
+    Serial.println(mqttClient.getBufferSize());
+  }
+}
+
 bool mqttDoConnect() {
   if (!cfg.mqttEnabled || cfg.mqttHost.isEmpty())
     return false;
-  mqttClient.setBufferSize(MQTT_PACKET_BUFFER_SIZE);
+  ensureMqttBufferSize();
   mqttClient.setServer(cfg.mqttHost.c_str(), cfg.mqttPort);
   mqttClient.setCallback(mqttCallback);
   String clientId = cfg.hostname;
@@ -168,7 +188,7 @@ void applyMqttSettings() {
   Serial.print(cfg.mqttHost);
   Serial.print(F(" port: "));
   Serial.println(cfg.mqttPort);
-  mqttClient.setBufferSize(MQTT_PACKET_BUFFER_SIZE);
+  ensureMqttBufferSize();
   mqttClient.setServer(cfg.mqttHost.c_str(), cfg.mqttPort);
   mqttClient.setCallback(mqttCallback);
   if (mqttClient.connected()) {

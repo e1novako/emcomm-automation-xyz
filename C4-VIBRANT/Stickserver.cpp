@@ -335,8 +335,15 @@ void maintainStickserverDiscovery() {
     mqttClient.publish(STICKSERVER_ROOT_TOPIC, payload.c_str());
   }
 
+  String selfTopic = stickserverInstanceTopic();
   for (uint8_t i = 0; i < MAX_DISCOVERED_SERVERS; ++i) {
     if (!discoveredServers[i].active)
+      continue;
+    // Never poll ourselves: our own hello response (received back via the
+    // root-topic echo) already carries a full "devices" array every
+    // kHelloIntervalMs, so a "list" round-trip to our own instance topic
+    // would be a pointless, self-inflicted MQTT message every cycle.
+    if (discoveredServers[i].instanceTopic == selfTopic)
       continue;
     if (now - discoveredServers[i].lastListRequestMs >= kListIntervalMs) {
       discoveredServers[i].lastListRequestMs = now;

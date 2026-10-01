@@ -47,6 +47,21 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 BUILD_DIR="$REPO_ROOT/$PROJECT_DIR/build/$BUILD_DIR_NAME"
 
+# Guard against two invocations of this script running at the same time:
+# both would clean/compile/read the same shared build directory, and a
+# second run's "clean" step deleting the .bin mid-upload (or a half-written
+# .bin being uploaded) was a real, confirmed cause of spurious upload
+# failures ("FileNotFoundError", "could not find a valid build artifact")
+# seen in practice. Only one instance may hold this lock at a time; a
+# second concurrent invocation fails fast instead of corrupting the build.
+LOCK_FILE="$REPO_ROOT/$PROJECT_DIR/build/.ota_update_fleet.lock"
+mkdir -p "$(dirname "$LOCK_FILE")"
+exec 9>"$LOCK_FILE"
+if ! flock -n 9; then
+  echo "Another ota_update_fleet.sh run is already in progress (lock: $LOCK_FILE). Aborting." >&2
+  exit 1
+fi
+
 export PATH="$HOME/bin:$PATH"
 cd "$REPO_ROOT"
 

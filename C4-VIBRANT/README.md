@@ -145,6 +145,11 @@ Additional security note: HTTP Basic Auth is not encrypted on plain HTTP. Use th
 
 ## Release notes
 
+### 1.6.2
+
+- Fixed MQTT "invalid_json"/"IncompleteInput" parse errors observed live on the bus: `PubSubClient::setBufferSize()` was called on every MQTT (re)connect attempt without checking its return value; under heap pressure the 2048-byte realloc can silently fail, leaving the client at its previous (possibly library-default 256-byte) buffer, which truncates large hello/list JSON responses in transit. The buffer size is now only (re)applied once, its result is checked, and a warning is logged if it doesn't take effect.
+- Fixed each stickserver needlessly sending itself a periodic "list" request every ~10 seconds: a device's own "hello" response is echoed back to itself via the shared MQTT subscription and already includes a full `devices` array, so self-polling via "list" was pure redundant bus traffic. The periodic list-request loop now skips the entry matching the device's own instance topic.
+
 ### 1.6.1
 
 - Extended the hello broadcast-suppression idea from 1.6.0 to the per-server "list" request too: every stickserver already observes every "list" request/response addressed to any peer via the shared wildcard subscription, so a device now skips re-requesting "list" from a given peer if a request or response for that same peer was observed (by anyone, not just itself) within the last 10-second window, instead of blindly polling on its own fixed timer regardless of what others already asked.
