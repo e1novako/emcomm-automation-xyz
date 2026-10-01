@@ -70,8 +70,10 @@ void mqttCallback(char *topic, byte *payload, unsigned int length) {
         payloadStr.length() > MQTT_PAYLOAD_LOG_MAX_LEN ? "...(truncated)" : "");
   }
 
+  // Subscribed via root topic + wildcard (root/#), so this also receives
+  // other stickserver instances' requests/responses, used for discovery.
   if (topicStr == STICKSERVER_ROOT_TOPIC ||
-      topicStr == stickserverInstanceTopic()) {
+      topicStr.startsWith(String(STICKSERVER_ROOT_TOPIC) + '/')) {
     DBG("[MQTT] Stickserver message -> topic: %s", topicStr.c_str());
     handleStickserverMessage(topicStr, payloadStr);
     return;
@@ -139,12 +141,14 @@ bool mqttDoConnect() {
     Serial.println(mqttStateString(mqttClient.state()));
     return false;
   }
-  // Subscribe to stickserver root and instance topics
+  // Subscribe to the stickserver root topic (broadcast commands, e.g. hello)
+  // plus a wildcard on everything beneath it so this device also observes
+  // other stickserver instances' requests/responses for discovery purposes.
   DBG("[MQTT] Subscribing -> %s", STICKSERVER_ROOT_TOPIC);
   mqttClient.subscribe(STICKSERVER_ROOT_TOPIC);
-  String instanceTopic = stickserverInstanceTopic();
-  DBG("[MQTT] Subscribing -> %s", instanceTopic.c_str());
-  mqttClient.subscribe(instanceTopic.c_str());
+  String wildcardTopic = String(STICKSERVER_ROOT_TOPIC) + F("/#");
+  DBG("[MQTT] Subscribing -> %s", wildcardTopic.c_str());
+  mqttClient.subscribe(wildcardTopic.c_str());
   logStatus(String(F("MQTT connected. Host: ")) + cfg.mqttHost + F(" port: ") +
             String(cfg.mqttPort));
   return true;

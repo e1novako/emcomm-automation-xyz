@@ -40,6 +40,7 @@ void registerWebRoutes() {
   server.on("/settings/diagnostics", HTTP_GET, handleDiagnosticsGet);
   server.on("/settings/diagnostics", HTTP_POST, handleDiagnosticsPost);
   server.on("/device/reboot", HTTP_POST, handleRebootDevice);
+  server.on("/fleet", HTTP_GET, handleStickserverFleetGet);
   server.on("/config/export", HTTP_GET, handleConfigExport);
   server.on("/config/import", HTTP_POST, handleConfigImportDone,
             handleConfigImportUpload);
@@ -158,7 +159,8 @@ void handleHome() {
   html += F("<p><a href='/settings'>Settings</a> | "
             "<a href='/settings/network'>Network</a> | "
             "<a href='/settings/devices'>Devices</a> | "
-            "<a href='/settings/diagnostics'>Diagnostics &amp; OTA</a></p>");
+            "<a href='/settings/diagnostics'>Diagnostics &amp; OTA</a> | "
+            "<a href='/fleet'>Fleet outputs</a></p>");
   if (usingFactoryPassword()) {
     html += passwordWarningHtml();
   }
@@ -474,11 +476,11 @@ void handleLeaveMeshAll() {
 static String settingsNavigation(const char *activePage) {
   String html = F("<nav class='settings-nav' aria-label='Settings pages'>");
   const char *paths[] = {"/settings/network", "/settings/devices",
-                         "/settings/diagnostics"};
+                         "/settings/diagnostics", "/fleet"};
   const char *labels[] = {"Network, Wi-Fi & MQTT", "Devices & outputs",
-                          "Diagnostics & OTA"};
-  const char *pages[] = {"network", "devices", "diagnostics"};
-  for (uint8_t i = 0; i < 3; ++i) {
+                          "Diagnostics & OTA", "Fleet outputs"};
+  const char *pages[] = {"network", "devices", "diagnostics", "fleet"};
+  for (uint8_t i = 0; i < 4; ++i) {
     html += "<a href='" + String(paths[i]) + "'";
     if (String(activePage) == pages[i])
       html += " class='current' aria-current='page'";
@@ -908,6 +910,74 @@ void handleRebootDevice() {
   server.client().flush();
   delay(200);
   ESP.restart();
+}
+
+void handleStickserverFleetGet() {
+  if (!ensureAuthorized())
+    return;
+  String html = settingsPageStart("Fleet outputs", "fleet");
+  html += F(
+      "<p class='page-intro'>Discovered stickserver instances and their "
+      "outputs, gathered passively over MQTT (hello/list). Each column is "
+      "one stickserver; each row is one output slot. Buttons are a "
+      "read-only state indicator: gray = off, yellow = on.</p>");
+
+  if (!cfg.mqttEnabled || !mqttClient.connected()) {
+    html += F("<p style='color:#b00020;'><strong>MQTT is not connected.</"
+              "strong> Enable and configure MQTT on the Network settings "
+              "page to discover stickservers.</p></body></html>");
+    server.send(200, "text/html", html);
+    return;
+  }
+
+  // Collect active discovered servers (this device's own instance is
+  // discovered the same way as any other, via its own hello/list replies).
+  uint8_t activeIdx[MAX_DISCOVERED_SERVERS];
+  uint8_t activeCount = 0;
+  uint8_t maxRows = 0;
+  for (uint8_t i = 0; i < MAX_DISCOVERED_SERVERS; ++i) {
+    if (!discoveredServers[i].active)
+      continue;
+    activeIdx[activeCount++] = i;
+    if (discoveredServers[i].outputCount > maxRows)
+      maxRows = discoveredServers[i].outputCount;
+  }
+
+  if (activeCount == 0) {
+    html += F("<p>No stickservers discovered yet. This page refreshes "
+              "discovery automatically in the background; reload in a few "
+              "seconds.</p>");
+  } else {
+    html += F("<table><tr><th>Output #</th>");
+    for (uint8_t c = 0; c < activeCount; ++c) {
+      const DiscoveredServer &s = discoveredServers[activeIdx[c]];
+      String label = s.hostname.isEmpty() ? s.instanceTopic : s.hostname;
+      html += "<th>" + htmlEscape(label) + "</th>";
+    }
+    html += F("</tr>");
+    for (uint8_t row = 0; row < maxRows; ++row) {
+      html += "<tr><td>" + String(row + 1) + "</td>";
+      for (uint8_t c = 0; c < activeCount; ++c) {
+        const DiscoveredServer &s = discoveredServers[activeIdx[c]];
+        html += "<td>";
+        if (row < s.outputCount && s.outputs[row].valid) {
+          const DiscoveredOutputEntry &o = s.outputs[row];
+          String label = o.name.isEmpty() ? String(F("Output ")) +
+                                                 String(row + 1)
+                                           : o.name;
+          html += "<button type='button' disabled class='output-toggle " +
+                  String(o.state ? "output-on" : "output-off") + "'>" +
+                  htmlEscape(label) + "</button>";
+        }
+        html += "</td>";
+      }
+      html += F("</tr>");
+    }
+    html += F("</table>");
+  }
+
+  html += F("</body></html>");
+  server.send(200, "text/html", html);
 }
 
 void handleNotFound() { server.send(404, "text/plain", "Not found"); }

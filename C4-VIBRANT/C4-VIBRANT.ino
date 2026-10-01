@@ -7,6 +7,7 @@
 #include "OtaService.h"
 #include "Outputs.h"
 #include "Runtime.h"
+#include "Stickserver.h"
 #include "Version.h"
 #include "WebServer.h"
 #include "WifiManager.h"
@@ -82,5 +83,6 @@ void loop() {
   }
   maintainWifiConnection();
   maintainMqtt();
+  maintainStickserverDiscovery();
   maintainBackgroundAction();
 }

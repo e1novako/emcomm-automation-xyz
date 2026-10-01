@@ -5,6 +5,29 @@ namespace vibrant {
 extern const char STICKSERVER_ROOT_TOPIC[], STICKSERVER_OUTPUT_TYPE[];
 extern const uint8_t STICKSERVER_PROTOCOL_VERSION;
 
+// Discovery of other stickserver instances on the MQTT network (used to
+// render a fleet-wide output table). Populated passively from hello/list
+// responses observed on the stickserver root wildcard subscription.
+struct DiscoveredOutputEntry {
+  String euid;
+  String name;
+  bool state = false;
+  bool valid = false;
+};
+struct DiscoveredServer {
+  bool active = false;
+  String instanceTopic;
+  String instanceId;
+  String hostname;
+  unsigned long lastSeenMs = 0;
+  unsigned long lastListRequestMs = 0;
+  DiscoveredOutputEntry outputs[MAX_DEVICES];
+  uint8_t outputCount = 0;
+};
+constexpr uint8_t MAX_DISCOVERED_SERVERS = 16;
+extern DiscoveredServer discoveredServers[MAX_DISCOVERED_SERVERS];
+void maintainStickserverDiscovery();
+
 String stickserverMacToken();
 String stickserverIdToken();
 String stickserverInstanceId();

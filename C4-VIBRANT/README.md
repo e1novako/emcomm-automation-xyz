@@ -88,6 +88,10 @@ Base: `<STICKSERVER_ROOT_TOPIC>` (see `Stickserver.cpp`)
 
 Device control is handled exclusively via the Stickserver protocol: `hello`, `list`, `reserve`, `release`, `status`, `join`, `leave`, `power_on`, `power_off`, `leave_mesh`/`factory_reset`, and `reboot`. The legacy native `vibrant/<hostname>/out/<N>/set|action|state` topics were removed in 1.4.10 since the Stickserver protocol already covers identical functionality.
 
+### Fleet discovery
+
+The device passively discovers other stickserver instances on the broker by periodically broadcasting `hello` on the root topic and requesting `list` from each instance it learns about. Discovered instances and their outputs are shown on the **Fleet outputs** page (`/fleet`), one column per stickserver, one row per output.
+
 ## Load action commands
 
 The main page exposes per-output action buttons. The same commands are accepted via MQTT and the `/action` HTTP endpoint.
@@ -140,6 +144,12 @@ Security note: factory credentials are public and meant only for first setup.
 Additional security note: HTTP Basic Auth is not encrypted on plain HTTP. Use this firmware only on trusted local networks/AP access.
 
 ## Release notes
+
+### 1.4.11
+
+- Added a new "Fleet outputs" page (`/fleet`, linked from the main page and settings nav) showing all discovered stickserver instances in a table: each column is one stickserver, each row is one output slot, rendered as a read-only button (gray = off, yellow = on).
+- Added passive stickserver discovery: the device now subscribes to the Stickserver root topic plus a wildcard on everything beneath it, periodically broadcasts `hello` on the root topic, and requests `list` from each discovered instance to populate its outputs. Entries are pruned after ~90s of inactivity.
+- Hardened `handleStickserverMessage` so commands addressed to other instances (observed via the new wildcard subscription) are never answered on our own topic; only responses are used for discovery.
 
 ### 1.4.10
 

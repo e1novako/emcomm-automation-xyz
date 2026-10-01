@@ -186,6 +186,126 @@ int resolveRequestedEuid(JsonVariantConst value, String &euid) {
   return idx;
 }
 
+DiscoveredServer discoveredServers[MAX_DISCOVERED_SERVERS];
+
+int findDiscoveredServerSlot(const String &topic) {
+  for (uint8_t i = 0; i < MAX_DISCOVERED_SERVERS; ++i) {
+    if (discoveredServers[i].active && discoveredServers[i].instanceTopic == topic)
+      return i;
+  }
+  return -1;
+}
+
+int allocateDiscoveredServerSlot(const String &topic) {
+  int idx = findDiscoveredServerSlot(topic);
+  if (idx >= 0)
+    return idx;
+  for (uint8_t i = 0; i < MAX_DISCOVERED_SERVERS; ++i) {
+    if (!discoveredServers[i].active) {
+      discoveredServers[i] = DiscoveredServer();
+      discoveredServers[i].active = true;
+      discoveredServers[i].instanceTopic = topic;
+      return i;
+    }
+  }
+  // Table full; evict the least-recently-seen entry.
+  uint8_t oldest = 0;
+  for (uint8_t i = 1; i < MAX_DISCOVERED_SERVERS; ++i) {
+    if (discoveredServers[i].lastSeenMs < discoveredServers[oldest].lastSeenMs)
+      oldest = i;
+  }
+  discoveredServers[oldest] = DiscoveredServer();
+  discoveredServers[oldest].active = true;
+  discoveredServers[oldest].instanceTopic = topic;
+  return oldest;
+}
+
+void handleStickserverDiscoveryResponse(const String &topicStr,
+                                        JsonDocument &response) {
+  String rsp = response["rsp"] | String("");
+  String status = response["status"] | String("");
+  if (status != "ok")
+    return;
+  if (rsp == F("hello")) {
+    String topic = response["topic"] | topicStr;
+    int idx = allocateDiscoveredServerSlot(topic);
+    discoveredServers[idx].hostname = response["id"] | String("");
+    discoveredServers[idx].instanceId = response["instance"] | String("");
+    discoveredServers[idx].lastSeenMs = millis();
+  } else if (rsp == F("list")) {
+    int idx = allocateDiscoveredServerSlot(topicStr);
+    discoveredServers[idx].lastSeenMs = millis();
+    String hostId = response["id"] | String("");
+    if (!hostId.isEmpty())
+      discoveredServers[idx].hostname = hostId;
+    JsonArrayConst devices = response["devices"].as<JsonArrayConst>();
+    uint8_t count = 0;
+    for (JsonVariantConst item : devices) {
+      if (count >= MAX_DEVICES)
+        break;
+      JsonObjectConst dev = item.as<JsonObjectConst>();
+      discoveredServers[idx].outputs[count].euid = dev["euid"] | String("");
+      discoveredServers[idx].outputs[count].name = dev["name"] | String("");
+      String stateStr = dev["state"] | String("OFF");
+      discoveredServers[idx].outputs[count].state = (stateStr == "ON");
+      discoveredServers[idx].outputs[count].valid = true;
+      ++count;
+    }
+    for (uint8_t i = count; i < MAX_DEVICES; ++i) {
+      discoveredServers[idx].outputs[i].valid = false;
+    }
+    discoveredServers[idx].outputCount = count;
+  }
+}
+
+void maintainStickserverDiscovery() {
+  if (!cfg.mqttEnabled || !mqttClient.connected())
+    return;
+  unsigned long now = millis();
+  static unsigned long lastHelloMs = 0;
+  static unsigned long lastPruneMs = 0;
+  const unsigned long kHelloIntervalMs = 15000;
+  const unsigned long kListIntervalMs = 10000;
+  const unsigned long kStaleTimeoutMs = 90000;
+
+  if (now - lastHelloMs >= kHelloIntervalMs) {
+    lastHelloMs = now;
+    JsonDocument req;
+    req["cmd"] = "hello";
+    req["ver"] = STICKSERVER_PROTOCOL_VERSION;
+    req["mid"] = String(F("disc-")) + String(now);
+    String payload;
+    serializeJson(req, payload);
+    mqttClient.publish(STICKSERVER_ROOT_TOPIC, payload.c_str());
+  }
+
+  for (uint8_t i = 0; i < MAX_DISCOVERED_SERVERS; ++i) {
+    if (!discoveredServers[i].active)
+      continue;
+    if (now - discoveredServers[i].lastListRequestMs >= kListIntervalMs) {
+      discoveredServers[i].lastListRequestMs = now;
+      JsonDocument req;
+      req["cmd"] = "list";
+      req["ver"] = STICKSERVER_PROTOCOL_VERSION;
+      req["mid"] = String(F("disc-list-")) + String(now) + "-" + String(i);
+      String payload;
+      serializeJson(req, payload);
+      mqttClient.publish(discoveredServers[i].instanceTopic.c_str(),
+                         payload.c_str());
+    }
+  }
+
+  if (now - lastPruneMs >= 5000) {
+    lastPruneMs = now;
+    for (uint8_t i = 0; i < MAX_DISCOVERED_SERVERS; ++i) {
+      if (discoveredServers[i].active &&
+          now - discoveredServers[i].lastSeenMs > kStaleTimeoutMs) {
+        discoveredServers[i] = DiscoveredServer();
+      }
+    }
+  }
+}
+
 void handleStickserverMessage(const String &topicStr,
                               const String &payloadStr) {
   JsonDocument request;
@@ -198,8 +318,19 @@ void handleStickserverMessage(const String &topicStr,
                               err.c_str());
     return;
   }
-  if (request["rsp"].is<const char *>())
+  if (request["rsp"].is<const char *>()) {
+    // Response message (ours or another stickserver instance's); used only
+    // for fleet discovery, never re-processed as a command.
+    handleStickserverDiscoveryResponse(topicStr, request);
     return;
+  }
+
+  // Commands not addressed to us (root broadcast or our own instance topic)
+  // belong to another stickserver instance; ignore (do not respond).
+  if (topicStr != STICKSERVER_ROOT_TOPIC &&
+      topicStr != stickserverInstanceTopic()) {
+    return;
+  }
 
   String cmd = request["cmd"] | String("");
   String mid = "";

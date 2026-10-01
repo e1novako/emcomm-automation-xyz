@@ -4,6 +4,7 @@ On every commit:
 - increment firmware version
 - update documentation
 - build and upload the firmware for every change
+- only upload built firmware to device 192.168.1.194 (do not deploy to the rest of the device fleet unless explicitly asked)
 
 ## Building C4-VIBRANT/C4-VIBRANT.ino with arduino-cli
 
