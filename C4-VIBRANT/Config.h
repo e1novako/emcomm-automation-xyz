@@ -73,6 +73,11 @@ void maybePersistOutputState();
 // restoreReservationsOnBoot is enabled; no-op otherwise. Call after any
 // reservation or release (GUI or MQTT).
 void maybePersistReservations();
+// Unconditionally mirrors outputReservations[] into cfg.devices[] (without
+// saving to flash). Used by config export so a backup always captures each
+// output's current, live reservation state regardless of
+// restoreReservationsOnBoot.
+void syncReservationsIntoConfig();
 bool parseMac(const String &, uint8_t out[6]);
 bool applyConfiguredMac();
 void performFactoryResetAndRestart(const String &);

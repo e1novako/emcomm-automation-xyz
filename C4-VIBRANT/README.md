@@ -145,6 +145,12 @@ Additional security note: HTTP Basic Auth is not encrypted on plain HTTP. Use th
 
 ## Release notes
 
+### 1.13.0
+
+- Configuration backups (`/config/export`) now always include each output's current reservation (`reserved`/`reservedOwner`), captured live at export time regardless of the `restoreReservationsOnBoot` flag.
+- Restoring a backup (`/config/import`) now always restores each output's reservation from the backup file, independent of `restoreReservationsOnBoot` (which only governs normal power-cycle boot behavior) -- an explicit backup restore is a deliberate admin action.
+- After every import, the firmware verifies that the restored manufacturer/model/name/pin and reservation data (and ON/OFF state, when `restoreOutputStateOnBoot` is enabled) match the uploaded backup file, logging a warning for any output that doesn't match.
+
 ### 1.12.0
 
 - The "All Outputs" page uses the same shared 1200px max-width page constraint as every other page (reverted the page-specific `width:fit-content`/`min-width:1200px` override from 1.9.5/1.9.6).

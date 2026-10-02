@@ -1,6 +1,7 @@
 #include "BackupRestore.h"
 #include "Config.h"
 #include "Debug.h"
+#include "Reservations.h"
 #include "Runtime.h"
 #include "WebServer.h"
 #include <ArduinoJson.h>
@@ -13,6 +14,13 @@ bool importFailed = false;
 void handleConfigExport() {
   if (!ensureAuthorized())
     return;
+
+  // Ensure the exported backup reflects each output's current reservation,
+  // not just whatever was last written to flash (reservation changes are
+  // only auto-saved when restoreReservationsOnBoot is enabled). An explicit
+  // backup export always captures the live reservation state.
+  syncReservationsIntoConfig();
+  saveConfig();
 
   if (!LittleFS.exists(CONFIG_PATH)) {
     logError(
@@ -74,6 +82,61 @@ void handleConfigImportUpload() {
   }
 }
 
+// Compares the device entries actually restored into cfg/outputReservations
+// after an import against the values present in the uploaded backup JSON,
+// logging a warning for every output whose manufacturer/model/name/pin,
+// reservation, or (when restoreOutputStateOnBoot is enabled) ON/OFF state
+// did not come through the restore exactly as uploaded. Returns true only
+// if every output present in the backup matched.
+static bool verifyImportedConfig(JsonDocument &importedDoc) {
+  JsonArray devices = importedDoc["devices"].as<JsonArray>();
+  if (devices.isNull() || devices.size() == 0) {
+    logWarning(F("Import verification skipped: backup file contained no "
+                 "devices array."));
+    return true;
+  }
+  bool allMatched = true;
+  for (uint8_t i = 0; i < MAX_DEVICES && i < devices.size(); ++i) {
+    JsonObject d = devices[i];
+    String expManufacturer =
+        d["manufacturer"] | String(DEFAULT_DEVICE_MANUFACTURER);
+    String expModel = d["model"] | String(DEFAULT_DEVICE_MODEL);
+    expManufacturer.trim();
+    expModel.trim();
+    if (expManufacturer.isEmpty())
+      expManufacturer = DEFAULT_DEVICE_MANUFACTURER;
+    if (expModel.isEmpty())
+      expModel = DEFAULT_DEVICE_MODEL;
+    String expName = d["name"] | (String(F("Output ")) + String(i + 1));
+    int8_t expPin = static_cast<int8_t>(d["pin"] | -1);
+    bool expReserved = d["reserved"] | false;
+    String expOwner = d["reservedOwner"] | String("");
+
+    bool mismatch = false;
+    if (cfg.devices[i].manufacturer != expManufacturer ||
+        cfg.devices[i].model != expModel || cfg.devices[i].name != expName ||
+        cfg.devices[i].pin != expPin) {
+      mismatch = true;
+    }
+    if (outputReservations[i].reserved != expReserved ||
+        (expReserved && outputReservations[i].owner != expOwner)) {
+      mismatch = true;
+    }
+    if (cfg.restoreOutputStateOnBoot) {
+      bool expState = d["state"] | false;
+      if (cfg.devices[i].state != expState)
+        mismatch = true;
+    }
+    if (mismatch) {
+      allMatched = false;
+      logWarning(String(F("Import verification mismatch for output ")) +
+                 String(i + 1) +
+                 F(": restored data does not match the backup file."));
+    }
+  }
+  return allMatched;
+}
+
 void handleConfigImportDone() {
   if (!ensureAuthorized())
     return;
@@ -111,8 +174,22 @@ void handleConfigImportDone() {
     restartDevice(
         F("Imported configuration could not be loaded after replace."));
   }
+  // An explicit backup restore always restores each output's reservation,
+  // independent of restoreReservationsOnBoot (which only governs normal
+  // power-cycle boot behavior, not a deliberate admin-initiated restore).
+  for (uint8_t i = 0; i < MAX_DEVICES; ++i) {
+    outputReservations[i].reserved = cfg.devices[i].reserved;
+    outputReservations[i].owner = cfg.devices[i].reservedOwner;
+  }
   if (!saveConfig()) {
     restartDevice(F("Failed to normalize and save imported configuration."));
+  }
+  if (verifyImportedConfig(verifyDoc)) {
+    logStatus(F("Configuration import verified: all restored output data "
+                "matches the backup file."));
+  } else {
+    logWarning(F("Configuration import completed, but some restored output "
+                 "data did not match the backup file (see warnings above)."));
   }
   logStatus(F("Configuration import applied successfully."));
   applyRuntimeSettings();

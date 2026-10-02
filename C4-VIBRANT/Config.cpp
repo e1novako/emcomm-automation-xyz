@@ -329,11 +329,15 @@ void maybePersistOutputState() {
 void maybePersistReservations() {
   if (!cfg.restoreReservationsOnBoot)
     return;
+  syncReservationsIntoConfig();
+  saveConfig();
+}
+
+void syncReservationsIntoConfig() {
   for (uint8_t i = 0; i < MAX_DEVICES; ++i) {
     cfg.devices[i].reserved = outputReservations[i].reserved;
     cfg.devices[i].reservedOwner = outputReservations[i].owner;
   }
-  saveConfig();
 }
 
 } // namespace vibrant
