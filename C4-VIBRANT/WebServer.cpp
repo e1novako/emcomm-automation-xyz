@@ -477,11 +477,21 @@ void handleHome() {
       "<script>"
       "document.getElementById('home-loading').style.display='none';"
       "document.getElementById('home-content').style.display='';"
+      // Guarded against overlapping fetches: on a slow/weak link a refresh
+      // can still be in flight when the next interval tick fires, and a
+      // second concurrent connection opened mid-transfer has been observed
+      // to crash the device (extra connection memory on top of an
+      // already-large in-progress response). Skip starting a new fetch
+      // while one is still outstanding.
+      "var homeRefreshInFlight=false;"
       "function refreshHomeContent(){"
+      "if(homeRefreshInFlight)return;"
+      "homeRefreshInFlight=true;"
       "fetch('/partial').then(function(r){return r.text();})"
       ".then(function(html){"
       "document.getElementById('home-content').innerHTML=html;"
-      "}).catch(function(){});"
+      "}).catch(function(){})"
+      ".then(function(){homeRefreshInFlight=false;});"
       "}"
       "setInterval(refreshHomeContent,3000);"
       // Buttons are re-created on every refresh, so submits are intercepted
@@ -1459,11 +1469,20 @@ void handleStickserverFleetGet() {
       "<script>"
       "document.getElementById('fleet-loading').style.display='none';"
       "document.getElementById('fleet-content').style.display='';"
+      "var fleetRefreshInFlight=false;"
       "function refreshFleetContent(){"
+      // Guarded against overlapping fetches: on a slow/weak link a refresh
+      // can still be in flight when the next interval tick fires, and a
+      // second concurrent connection opened mid-transfer has been observed
+      // to crash the device. Skip starting a new fetch while one is still
+      // outstanding.
+      "if(fleetRefreshInFlight)return;"
+      "fleetRefreshInFlight=true;"
       "fetch('/fleet/partial').then(function(r){return r.text();})"
       ".then(function(html){"
       "document.getElementById('fleet-content').innerHTML=html;"
-      "}).catch(function(){});"
+      "}).catch(function(){})"
+      ".then(function(){fleetRefreshInFlight=false;});"
       "}"
       "setInterval(refreshFleetContent,5000);"
       // Output toggle buttons are re-created on every refresh, so submits

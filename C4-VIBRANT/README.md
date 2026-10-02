@@ -145,6 +145,10 @@ Additional security note: HTTP Basic Auth is not encrypted on plain HTTP. Use th
 
 ## Release notes
 
+### 1.8.5
+
+- Fixed another cause of the device rebooting while a browser had the main or All Outputs page open: the page's auto-refresh timer (`/partial` every 3s, `/fleet/partial` every 5s) fired unconditionally, so on a slow/weak Wi-Fi link a second connection to fetch the next refresh could start while the previous one was still being streamed. Having two large responses in flight at once has been observed to crash the device. Both refresh timers now skip starting a new fetch while the previous one is still outstanding.
+
 ### 1.8.4
 
 - Fixed MQTT `hello`/`list` stickserver responses occasionally being published truncated (seen fleet-wide as `invalid_json`/`IncompleteInput` errors on receiving devices). The response JSON was previously serialized into an intermediate Arduino `String`, which can silently truncate on heap exhaustion; it is now streamed directly into PubSubClient's publish buffer via `beginPublish()`/`write()`/`endPublish()`, which also fails cleanly (publishing nothing) if the message does not fit the configured MQTT buffer, instead of risking a partial publish.
