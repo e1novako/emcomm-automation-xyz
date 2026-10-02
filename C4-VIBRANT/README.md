@@ -145,82 +145,22 @@ Additional security note: HTTP Basic Auth is not encrypted on plain HTTP. Use th
 
 ## Release notes
 
-### 1.13.0
-
-- Configuration backups (`/config/export`) now always include each output's current reservation (`reserved`/`reservedOwner`), captured live at export time regardless of the `restoreReservationsOnBoot` flag.
-- Restoring a backup (`/config/import`) now always restores each output's reservation from the backup file, independent of `restoreReservationsOnBoot` (which only governs normal power-cycle boot behavior) -- an explicit backup restore is a deliberate admin action.
-- After every import, the firmware verifies that the restored manufacturer/model/name/pin and reservation data (and ON/OFF state, when `restoreOutputStateOnBoot` is enabled) match the uploaded backup file, logging a warning for any output that doesn't match.
-
-### 1.12.0
-
-- The "All Outputs" page uses the same shared 1200px max-width page constraint as every other page (reverted the page-specific `width:fit-content`/`min-width:1200px` override from 1.9.5/1.9.6).
-- On the "All Outputs" page, stickserver column headers now strip the common `C4-VIBRANT-` hostname prefix, showing just the distinguishing MAC suffix.
-- Output ON/OFF state and reservations can now be persisted to flash and restored after boot/reboot, gated by two new, independent flags on the Network settings page (both disabled by default, matching current behavior when off):
-  - **Restore output ON/OFF state after boot/reboot**: when enabled, toggling an output (main page, "All on"/"All off", or MQTT `power_on`/`power_off`) saves the new state to flash, and that saved state is restored at boot instead of always starting OFF.
-  - **Restore output reservations after boot/reboot**: when enabled, GUI and MQTT reservations/releases are saved to flash, and saved reservations are restored at boot instead of always being cleared.
-  - Transient pulse/sequence steps (Leave Mesh, Factory Reset profiles) do not trigger a flash save; only discrete, user-intentional state/reservation changes do.
-
-### 1.11.0
-
-- The nav menu is now horizontally centered (`.settings-nav{text-align:center;}`) on every page, instead of being left-aligned within the centered page column.
-- Added bulk-action buttons to the "All Outputs" page: "Turn On", "Turn Off", "Leave Mesh", and "Factory Reset" (with the same confirmation prompts as the main page's bulk buttons for the destructive ones). Unlike the main page's bulk buttons, which only affect this device's own outputs, these send one MQTT command per discovered output across every discovered stickserver, via a new `POST /fleet/bulk` endpoint.
-
-### 1.10.0
-
-- Renamed the output table columns on the main page and Devices settings page: "Manufacturer" -> "DUT Manufacturer", "Model" -> "DUT Model", "Name" -> "DUT Name". On the main page, "Output" is now labeled "Status".
-- The Reservation button now shows "n/a" instead of "Not reserved" when an output isn't reserved, and is always clickable: clicking it while showing "n/a" reserves that specific output for the GUI (shown as owner "GUI"), which blocks any MQTT "reserve" request from picking it up (MQTT reserve already skips outputs that are already reserved by anyone). Clicking it again while reserved releases it as before, regardless of whether it was reserved by MQTT or the GUI.
-- Widened the Actions column (and narrowed the DUT Manufacturer/Model/Name columns slightly to compensate) on the main page table so the Leave Mesh and Factory Reset buttons fit on one line instead of wrapping onto two.
-
-### 1.9.6
-
-- Fixed the All Outputs page: the 1.9.5 width override (`body{max-width:100%}`) made the body always fill the full browser width, so the header text and nav menu were left-aligned/off-center instead of centered like every other page. The body now uses `width:fit-content` (floored at `min-width:1200px`, capped at `max-width:100%`), so with little data it's still a centered 1200px box exactly like other pages, and only grows (while staying centered) when the table actually needs more room.
-
-### 1.9.5
-
-- On the "All Outputs" page, the table now has a minimum width of 1200px (same as other pages) but is no longer capped there: once enough stickservers are discovered that the table needs more room, the page body and table grow to use up to 100% of the browser width instead of squeezing columns or scrolling inside a fixed 1200px box.
-
-### 1.9.4
-
-- The navigation menu is now identical on every page (main output control, Settings, Network, Devices, Diagnostics, All Outputs): it always shows "Main output control", "Network, Wi-Fi & MQTT", "Devices & outputs", "Diagnostics & OTA", and "All Outputs", with the active page's button highlighted the same way (`.nav-btn.current`) everywhere, including the main page itself (previously the main page had its own different set of nav links and no highlighted "current" button).
-- Removed the redundant secondary page-title heading (e.g. "Network, Wi-Fi & MQTT") that used to appear under the unified device-name header on settings pages; the highlighted nav button now identifies the current page instead.
-
-### 1.9.3
-
-- All shown page content (header, navigation, tables, and form fields) is now encapsulated in a single 1200px-max-width column (`body{max-width:1200px;margin:20px auto;}`) that is centered on the screen on every page. Tables and form fields now fill that column at 100% width instead of being separately capped/centered at 70%/1200px, so everything on the page lines up within the same centered 1200px boundary.
-
-### 1.9.2
-
-- All tables on every page (main output control, Settings, Network, Devices, Diagnostics, All Outputs) are now sized consistently: 70% of the available width, capped at 1200px max, and horizontally centered via `margin:0 auto`. Previously the main-page table was 60% wide (not centered) and the settings-page tables were full width (not centered).
-
-### 1.9.1
-
-- All pages (main output control, Settings, Network, Devices, Diagnostics, All Outputs) now share the same unified header: the device name "C4-VIBRANT-<MAC>" followed by "Output Control", centered above the page content/table, with "FW: <firmware version>, Uptime: hh:mm:ss" shown centered underneath (uptime ticks live in the browser, matching the previous main-page behavior). Settings sub-pages keep their distinct page title (e.g. "Network, Wi-Fi & MQTT") as a secondary centered heading below the unified header so the active page is still clear.
-
-### 1.9.0
-
-- Removed the `|` separators between navigation menu buttons on every page (main page, Settings, Network, Devices, Diagnostics, All Outputs); the buttons already have enough margin/border styling to read clearly without them.
-- The main output-control page now uses the same partial-refresh pattern as the "All Outputs" page: a new `GET /partial` endpoint returns just the action-status banner, bulk-action buttons, and output table, which the page polls every 3 seconds and swaps in-place instead of a full reload. Clicking any button on the page (output toggle, reservation release, per-output Leave Mesh/Factory Reset, or the bulk actions) now submits via `fetch()` in place and schedules a refresh 1 second later, instead of navigating/reloading the page. This replaces the previous bespoke `/action/status` polling script, which only refreshed the action banner and fell back to a full `window.location.reload()` once an action finished.
-
-### 1.8.3
-
-- Clicking an output toggle button on the "All Outputs" page no longer navigates/reloads the whole page: the click is submitted via `fetch()` in place, and the output section is refreshed 1 second later (via the existing `/fleet/partial` polling mechanism) to give the MQTT command time to take effect before the new state is fetched.
-
-### 1.8.2
-
-- The "All Outputs" page now auto-refreshes its output table every 5 seconds via a new `GET /fleet/partial` endpoint, instead of requiring a manual page reload to see fresh state. Only the status/output-table section is re-fetched and swapped in-place (via JS `fetch()` + `innerHTML`); the page chrome (nav, intro text) is not reloaded.
-
-### 1.8.1
-
-- Discovered stickserver records (and their per-output state, used by the "All Outputs" page) are now timestamped whenever a `hello`/`list` response is parsed, and forgotten after 60 seconds without a refresh (previously 90s, and pruning only ran while actively querying -- it now also runs for passively-discovered records).
-- The "All Outputs" page now updates in real time: responses to `power_on`/`power_off`/`reserve`/`release`/`status`/`join`/`reboot`/`factory_reset` commands observed on the bus (not just `hello`/`list`) refresh the matching output's state immediately instead of waiting for the next periodic `list` poll, for any server already known via a prior `hello`/`list`.
-
 ### 1.8.0
 
-- Split the single "stickserver fleet discovery" toggle into three independent flags on the Network settings page:
-  - `stickserverRespondEnabled` -- respond to peers' `hello`/`list` requests. **Enabled by default.**
-  - `stickserverQueryEnabled` -- actively broadcast this device's own `hello`/`list` requests to discover other stickservers and their outputs. **Disabled by default.**
-  - `stickserverPassiveDiscoveryEnabled` -- passively parse `hello`/`list` responses observed on the bus (ours or peers') to populate the "All Outputs" page. **Disabled by default.**
-  - The "All Outputs" page now requires `stickserverQueryEnabled` or `stickserverPassiveDiscoveryEnabled` (either populates the peer table); directly-addressed action commands (power_on/power_off/toggle/reserve/release/etc.) are unaffected by any of the three flags. Configs saved under the old single `stickserverDiscoveryEnabled` flag are migrated automatically: its value seeds both new discovery flags, while responding defaults to enabled.
+Consolidated release note covering all work since the original 1.8.0 (formerly versioned 1.8.0-1.13.0; those intermediate version numbers have been folded into this single entry).
+
+- Split the single "stickserver fleet discovery" toggle into three independent flags on the Network settings page: `stickserverRespondEnabled` (respond to peers' `hello`/`list` requests, **enabled by default**), `stickserverQueryEnabled` (actively broadcast this device's own `hello`/`list` requests to discover other stickservers, **disabled by default**), and `stickserverPassiveDiscoveryEnabled` (passively parse `hello`/`list` responses observed on the bus to populate the "All Outputs" page, **disabled by default**). Configs saved under the old single `stickserverDiscoveryEnabled` flag are migrated automatically.
+- Discovered stickserver records (and their per-output state) are timestamped when a `hello`/`list` response is parsed, and forgotten after 60 seconds without a refresh. The "All Outputs" page updates in real time as `power_on`/`power_off`/`reserve`/`release`/`status`/`join`/`reboot`/`factory_reset` responses are observed on the bus, not just on the next periodic `list` poll.
+- The "All Outputs" page and the main output-control page both auto-refresh via lightweight partial-reload endpoints (`GET /fleet/partial`, `GET /partial`) that swap in just the status/output-table section via `fetch()`, instead of a full page reload. Clicking any button (toggle, reservation release, per-output Leave Mesh/Factory Reset, bulk actions) submits in place and schedules a refresh 1 second later.
+- Removed the `|` separators between navigation menu buttons on every page.
+- All pages share one unified header: device name "C4-VIBRANT-<MAC> Output Control" centered above the page content, with "FW: <firmware version>, Uptime: hh:mm:ss" centered underneath (uptime ticks live in the browser).
+- All page content (header, navigation, tables, and form fields) is encapsulated in a single 1200px-max-width column, centered on the screen, consistently on every page including the "All Outputs" page.
+- The navigation menu is identical and horizontally centered on every page: "Main output control", "Network, Wi-Fi & MQTT", "Devices & outputs", "Diagnostics & OTA", and "All Outputs", with the active page's button highlighted.
+- Renamed the output table columns: "Manufacturer" -> "DUT Manufacturer", "Model" -> "DUT Model", "Name" -> "DUT Name", and (main page) "Output" -> "Status". The Reservation button shows "n/a" instead of "Not reserved" when unreserved and is always clickable: clicking it while "n/a" reserves that output for the GUI (owner "GUI"), blocking MQTT reservation of it. The Actions column is widened so its buttons no longer wrap onto two lines.
+- Added bulk-action buttons ("Turn On", "Turn Off", "Leave Mesh", "Factory Reset") to the "All Outputs" page, sending one MQTT command per discovered output across every discovered stickserver via `POST /fleet/bulk`.
+- On the "All Outputs" page, stickserver column headers strip the common `C4-VIBRANT-` hostname prefix, showing just the distinguishing MAC suffix.
+- Output ON/OFF state and reservations can be persisted to flash and restored after boot/reboot, gated by two new, independent flags on the Network settings page (both **disabled by default**): **Restore output ON/OFF state after boot/reboot** and **Restore output reservations after boot/reboot**. Transient pulse/sequence steps (Leave Mesh, Factory Reset profiles) never trigger a flash save; only discrete, user-intentional state/reservation changes do.
+- Configuration backups (`/config/export`) always include each output's current reservation (`reserved`/`reservedOwner`), captured live at export time regardless of the `restoreReservationsOnBoot` flag. Restoring a backup (`/config/import`) always restores each output's reservation from the file, independent of `restoreReservationsOnBoot` (a deliberate admin-initiated restore is distinct from normal boot behavior). After every import, the firmware verifies the restored data matches the uploaded backup file and logs a warning for any mismatch.
 
 ### 1.7.0
 

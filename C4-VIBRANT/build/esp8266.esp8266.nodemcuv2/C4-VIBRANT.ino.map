@@ -31374,7 +31374,7 @@ END GROUP
                 0x0000000040106ead                _text_end = ABSOLUTE (.)
                 0x0000000040106ead                _etext = .
 
-.rodata         0x000000003ffe8630     0x3868
+.rodata         0x000000003ffe8630     0x3864
                 0x000000003ffe8630                _rodata_start = ABSOLUTE (.)
  *(.sdk.version)
  .sdk.version   0x000000003ffe8630       0x13 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/NONOSDK22x_190703/libmain.a(app_main.o)
@@ -31480,31 +31480,32 @@ END GROUP
  .rodata._ZN16esp8266webserver24ESP8266WebServerTemplateI10WiFiServerE9urlDecodeERK6String.str1.1
                 0x000000003ffe8b2b        0x5 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/C4-VIBRANT.ino.cpp.o
  .rodata._ZN7vibrantL16SOFTWARE_VERSIONE
-                0x000000003ffe8b30        0x7 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/C4-VIBRANT.ino.cpp.o
+                0x000000003ffe8b30        0x6 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/C4-VIBRANT.ino.cpp.o
  .rodata._ZN7vibrant18setFactoryDefaultsEv.str1.1
-                0x000000003ffe8b37        0x1 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Config.cpp.o
+                0x000000003ffe8b36        0x1 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Config.cpp.o
  .rodata._ZN11ArduinoJson8V743PB226detail20PrettyJsonSerializerINS1_6WriterIN2fs4FileEvEEE6indentEv.str1.1
-                0x000000003ffe8b37        0x3 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Config.cpp.o
+                0x000000003ffe8b36        0x3 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Config.cpp.o
  .rodata._ZN11ArduinoJson8V743PB226detail16JsonDeserializerINS1_6ReaderIN2fs4FileEvEEE17parseQuotedStringEv.str1.1
-                0x000000003ffe8b3a       0x13 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Config.cpp.o
+                0x000000003ffe8b39       0x13 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Config.cpp.o
  .rodata._ZN11ArduinoJson8V743PB226detail13TextFormatterINS1_6WriterI6StringvEEE10writeFloatEda.str1.1
-                0x000000003ffe8b3a        0x5 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Config.cpp.o
+                0x000000003ffe8b39        0x5 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Config.cpp.o
  .rodata._ZN11ArduinoJson8V743PB226detail13TextFormatterINS1_6WriterI6StringvEEE11writeStringEPKcj.str1.1
-                0x000000003ffe8b3a        0x7 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Config.cpp.o
+                0x000000003ffe8b39        0x7 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Config.cpp.o
  .rodata._ZNK11ArduinoJson8V743PB226detail11VariantData6acceptINS1_14JsonSerializerINS1_6WriterI6StringvEEEEEENT_11result_typeERS9_PKNS1_15ResourceManagerE$isra$0.str1.1
-                0x000000003ffe8b3a        0xb /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Config.cpp.o
+                0x000000003ffe8b39        0xb /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Config.cpp.o
  .rodata._ZNK11ArduinoJson8V743PB226detail11VariantData6acceptINS1_20PrettyJsonSerializerINS1_6WriterIN2fs4FileEvEEEEEENT_11result_typeERSA_PKNS1_15ResourceManagerE.str1.1
-                0x000000003ffe8b3a        0xb /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Config.cpp.o
+                0x000000003ffe8b39        0xb /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Config.cpp.o
                                          0x10 (size before relaxing)
  .rodata._ZN11ArduinoJson8V743PB226detail20PrettyJsonSerializerINS1_6WriterIN2fs4FileEvEEE5visitERKNS1_10ObjectDataE.str1.1
-                0x000000003ffe8b45        0x7 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Config.cpp.o
+                0x000000003ffe8b44        0x7 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Config.cpp.o
                                           0xc (size before relaxing)
  .rodata._ZN7vibrant10saveConfigEv.str1.1
-                0x000000003ffe8b4c      0x128 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Config.cpp.o
+                0x000000003ffe8b4b      0x128 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Config.cpp.o
                                         0x16b (size before relaxing)
  .rodata._ZN7vibrant10loadConfigEv.str1.1
-                0x000000003ffe8c74       0x2a /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Config.cpp.o
+                0x000000003ffe8c73       0x2a /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Config.cpp.o
                                          0x2c (size before relaxing)
+ *fill*         0x000000003ffe8c9d        0x1 
  .rodata._ZN7vibrant24MQTT_PAYLOAD_LOG_MAX_LENE
                 0x000000003ffe8c9e        0x2 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Config.cpp.o
                 0x000000003ffe8c9e                _ZN7vibrant24MQTT_PAYLOAD_LOG_MAX_LENE
@@ -31573,443 +31574,442 @@ END GROUP
                 0x000000003ffe8e59       0x15 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Config.cpp.o
                 0x000000003ffe8e59                _ZN7vibrant11CONFIG_PATHE
  .rodata._ZN7vibrantL16SOFTWARE_VERSIONE
-                0x000000003ffe8e6e        0x7 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Debug.cpp.o
+                0x000000003ffe8e6e        0x6 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Debug.cpp.o
  .rodata._ZN7vibrant12mqttCallbackEPcPhj.str1.1
-                0x000000003ffe8e75       0x66 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/MqttClient.cpp.o
+                0x000000003ffe8e74       0x66 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/MqttClient.cpp.o
                                          0x67 (size before relaxing)
  .rodata._ZN7vibrant18deviceModelMatchesERK6StringS2_.str1.1
-                0x000000003ffe8edb       0x62 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/MqttClient.cpp.o
+                0x000000003ffe8eda       0x62 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/MqttClient.cpp.o
                                          0x68 (size before relaxing)
  .rodata._ZN7vibrant15mqttStateStringEi.str1.1
-                0x000000003ffe8f3d        0x8 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/MqttClient.cpp.o
+                0x000000003ffe8f3c        0x8 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/MqttClient.cpp.o
  .rodata._ZN7vibrant13mqttDoConnectEv.str1.1
-                0x000000003ffe8f45       0x19 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/MqttClient.cpp.o
+                0x000000003ffe8f44       0x19 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/MqttClient.cpp.o
  .rodata.str1.1
-                0x000000003ffe8f5e       0x83 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/MqttClient.cpp.o
+                0x000000003ffe8f5d       0x83 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/MqttClient.cpp.o
                                          0x8d (size before relaxing)
- *fill*         0x000000003ffe8fe1        0x3 
  .rodata.CSWTCH$93
-                0x000000003ffe8fe4       0x28 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/MqttClient.cpp.o
+                0x000000003ffe8fe0       0x28 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/MqttClient.cpp.o
  .rodata._ZNSt17_Function_handlerIFvjjEZN7vibrant23applyArduinoOtaSettingsEvEUljjE1_E9_M_invokeERKSt9_Any_dataOjS7_.str1.1
-                0x000000003ffe900c       0x1a /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/OtaService.cpp.o
+                0x000000003ffe9008       0x1a /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/OtaService.cpp.o
  .rodata._ZNSt17_Function_handlerIFv11ota_error_tEZN7vibrant23applyArduinoOtaSettingsEvEUlS0_E2_E9_M_invokeERKSt9_Any_dataOS0_.str1.1
-                0x000000003ffe9026       0x2a /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/OtaService.cpp.o
+                0x000000003ffe9022       0x2a /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/OtaService.cpp.o
  .rodata._ZNSt17_Function_handlerIFvvEZN7vibrant23applyArduinoOtaSettingsEvEUlvE0_E9_M_invokeERKSt9_Any_data.str1.1
-                0x000000003ffe9050       0x2b /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/OtaService.cpp.o
+                0x000000003ffe904c       0x2b /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/OtaService.cpp.o
  .rodata._ZNSt17_Function_handlerIFvvEZN7vibrant23applyArduinoOtaSettingsEvEUlvE_E9_M_invokeERKSt9_Any_data.str1.1
-                0x000000003ffe907b       0x14 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/OtaService.cpp.o
+                0x000000003ffe9077       0x14 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/OtaService.cpp.o
  .rodata._ZN7vibrant23clearOutputReservationsEv.str1.1
-                0x000000003ffe908f        0x1 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Reservations.cpp.o
+                0x000000003ffe908b        0x1 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Reservations.cpp.o
  .rodata._ZN7vibrant18stickserverIdTokenEv.str1.1
-                0x000000003ffe908f       0x14 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Stickserver.cpp.o
+                0x000000003ffe908b       0x14 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Stickserver.cpp.o
                                           0x2 (size before relaxing)
  .rodata._ZN7vibrant26aggregateStickserverStatusEjj.str1.1
-                0x000000003ffe908f        0xd /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Stickserver.cpp.o
+                0x000000003ffe908b        0xd /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Stickserver.cpp.o
                                          0x15 (size before relaxing)
  .rodata._ZN7vibrant20resolveRequestedEuidEN11ArduinoJson8V743PB2216JsonVariantConstER6String.str1.1
-                0x000000003ffe909c       0x5e /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Stickserver.cpp.o
+                0x000000003ffe9098       0x5e /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Stickserver.cpp.o
  .rodata._ZN7vibrant25populateStickserverDeviceEN11ArduinoJson8V743PB2210JsonObjectEh.str1.1
-                0x000000003ffe90fa       0x17 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Stickserver.cpp.o
+                0x000000003ffe90f6       0x17 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Stickserver.cpp.o
                                          0x51 (size before relaxing)
  .rodata._ZN7vibrant24buildStickserverEnvelopeERN11ArduinoJson8V743PB2212JsonDocumentERK6StringiS6_PKc.str1.1
-                0x000000003ffe9111        0xc /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Stickserver.cpp.o
+                0x000000003ffe910d        0xc /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Stickserver.cpp.o
                                          0x13 (size before relaxing)
  .rodata._ZN11ArduinoJson8V743PB226detail16JsonDeserializerINS1_6ReaderIK6StringvEEE17parseQuotedStringEv.str1.1
-                0x000000003ffe911d       0x13 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Stickserver.cpp.o
+                0x000000003ffe9119       0x13 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Stickserver.cpp.o
  .rodata._ZN11ArduinoJson8V743PB226detail13TextFormatterINS1_6WriterI6StringvEEE10writeFloatEda.str1.1
-                0x000000003ffe911d        0x5 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Stickserver.cpp.o
+                0x000000003ffe9119        0x5 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Stickserver.cpp.o
  .rodata._ZNK11ArduinoJson8V743PB226detail11VariantData6acceptINS1_14JsonSerializerINS1_6WriterI6StringvEEEEEENT_11result_typeERS9_PKNS1_15ResourceManagerE.str1.1
-                0x000000003ffe911d        0xb /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Stickserver.cpp.o
+                0x000000003ffe9119        0xb /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Stickserver.cpp.o
  .rodata._ZN7vibrant28maintainStickserverDiscoveryEv.str1.1
-                0x000000003ffe911d        0xb /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Stickserver.cpp.o
+                0x000000003ffe9119        0xb /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Stickserver.cpp.o
                                           0xf (size before relaxing)
  .rodata._ZN7vibrant26publishStickserverResponseERN11ArduinoJson8V743PB2212JsonDocumentE.str1.1
-                0x000000003ffe9128       0x3e /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Stickserver.cpp.o
+                0x000000003ffe9124       0x3e /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Stickserver.cpp.o
  .rodata._ZN7vibrant25publishStickserverFailureERK6StringiS2_S2_S2_S2_.str1.1
-                0x000000003ffe9166       0x15 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Stickserver.cpp.o
+                0x000000003ffe9162       0x15 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Stickserver.cpp.o
  .rodata._ZN7vibrant21applyDiscoveredOutputEhN11ArduinoJson8V743PB2215JsonObjectConstE.str1.1
-                0x000000003ffe917b        0x1 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Stickserver.cpp.o
+                0x000000003ffe9177        0x1 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Stickserver.cpp.o
  .rodata._ZN7vibrant34handleStickserverDiscoveryResponseERK6StringRN11ArduinoJson8V743PB2212JsonDocumentE.str1.1
-                0x000000003ffe917b       0x19 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Stickserver.cpp.o
+                0x000000003ffe9177       0x19 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Stickserver.cpp.o
                                          0x24 (size before relaxing)
  .rodata._ZN7vibrant24handleStickserverMessageERK6StringS2_.str1.1
-                0x000000003ffe9194       0xfe /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Stickserver.cpp.o
+                0x000000003ffe9190       0xfe /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Stickserver.cpp.o
                                         0x109 (size before relaxing)
  .rodata._ZN7vibrant28STICKSERVER_PROTOCOL_VERSIONE
-                0x000000003ffe9292        0x1 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Stickserver.cpp.o
-                0x000000003ffe9292                _ZN7vibrant28STICKSERVER_PROTOCOL_VERSIONE
+                0x000000003ffe928e        0x1 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Stickserver.cpp.o
+                0x000000003ffe928e                _ZN7vibrant28STICKSERVER_PROTOCOL_VERSIONE
  .rodata._ZN7vibrant22STICKSERVER_ROOT_TOPICE
-                0x000000003ffe9293       0x15 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Stickserver.cpp.o
-                0x000000003ffe9293                _ZN7vibrant22STICKSERVER_ROOT_TOPICE
+                0x000000003ffe928f       0x15 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Stickserver.cpp.o
+                0x000000003ffe928f                _ZN7vibrant22STICKSERVER_ROOT_TOPICE
  .rodata.str1.1
-                0x000000003ffe92a8       0x8a /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WebServer.cpp.o
+                0x000000003ffe92a4       0x8a /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WebServer.cpp.o
                                          0xc4 (size before relaxing)
  .rodata._ZN7vibrantL14pageNavigationEPKc.str1.1
-                0x000000003ffe9332       0x3e /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WebServer.cpp.o
+                0x000000003ffe932e       0x3e /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WebServer.cpp.o
                                          0x42 (size before relaxing)
  .rodata._ZN7vibrant18formatUptimeHHMMSSEm.str1.1
-                0x000000003ffe9370       0x12 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WebServer.cpp.o
+                0x000000003ffe936c       0x12 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WebServer.cpp.o
  .rodata._ZN7vibrant9pinOptionEiRKNS_10PinMappingE.str1.1
-                0x000000003ffe9382       0x1a /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WebServer.cpp.o
+                0x000000003ffe937e       0x1a /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WebServer.cpp.o
                                          0x27 (size before relaxing)
  .rodata._ZN7vibrant13parsePinValueERK6StringRi.str1.1
-                0x000000003ffe939c        0x3 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WebServer.cpp.o
+                0x000000003ffe9398        0x3 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WebServer.cpp.o
  .rodata._ZN7vibrantL17settingsPageStartEPKc.str1.1
-                0x000000003ffe939f        0xe /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WebServer.cpp.o
+                0x000000003ffe939b        0xe /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WebServer.cpp.o
  .rodata._ZN16esp8266webserver24ESP8266WebServerTemplateI10WiFiServerE10sendHeaderERK6StringS5_b.str1.1
-                0x000000003ffe93ad        0x3 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WebServer.cpp.o
+                0x000000003ffe93a9        0x3 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WebServer.cpp.o
  .rodata._ZN16esp8266webserver24ESP8266WebServerTemplateI10WiFiServerE19_getRandomHexStringEv.str1.1
-                0x000000003ffe93ad        0x5 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WebServer.cpp.o
+                0x000000003ffe93a9        0x5 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WebServer.cpp.o
  .rodata._ZN7vibrant17registerWebRoutesEv.str1.1
-                0x000000003ffe93b2      0x127 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WebServer.cpp.o
+                0x000000003ffe93ae      0x127 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WebServer.cpp.o
                                         0x138 (size before relaxing)
  .rodata._ZN16esp8266webserver24ESP8266WebServerTemplateI10WiFiServerE11sendContentEP6Streami.str1.1
-                0x000000003ffe94d9        0x6 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WebServer.cpp.o
+                0x000000003ffe94d5        0x6 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WebServer.cpp.o
  .rodata._ZN7vibrant14handleNotFoundEv.str1.1
-                0x000000003ffe94d9        0xa /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WebServer.cpp.o
+                0x000000003ffe94d5        0xa /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WebServer.cpp.o
                                          0x15 (size before relaxing)
  .rodata._ZN7vibrant16beginChunkedHtmlEi.str1.1
-                0x000000003ffe94e3        0xa /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WebServer.cpp.o
+                0x000000003ffe94df        0xa /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WebServer.cpp.o
  .rodata._ZN7vibrant16ensureAuthorizedEv.str1.1
-                0x000000003ffe94ed        0x6 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WebServer.cpp.o
+                0x000000003ffe94e9        0x6 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WebServer.cpp.o
  .rodata._ZN7vibrant18handleRebootDeviceEv.str1.1
-                0x000000003ffe94ed       0xc2 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WebServer.cpp.o
+                0x000000003ffe94e9       0xc2 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WebServer.cpp.o
  .rodata._ZN7vibrant22handleGuiReserveOutputEv.str1.1
-                0x000000003ffe95af       0x19 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WebServer.cpp.o
+                0x000000003ffe95ab       0x19 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WebServer.cpp.o
                                          0x26 (size before relaxing)
  .rodata._ZN7vibrant21handleDiagnosticsPostEv.str1.1
-                0x000000003ffe95c8       0x32 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WebServer.cpp.o
+                0x000000003ffe95c4       0x32 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WebServer.cpp.o
                                          0x52 (size before relaxing)
  .rodata._ZN7vibrant24handleDeviceSettingsPostEv.str1.1
-                0x000000003ffe95fa       0xbb /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WebServer.cpp.o
+                0x000000003ffe95f6       0xbb /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WebServer.cpp.o
                                          0xe6 (size before relaxing)
  .rodata._ZN7vibrant25handleNetworkSettingsPostEv.str1.1
-                0x000000003ffe96b5      0x16f /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WebServer.cpp.o
+                0x000000003ffe96b1      0x16f /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WebServer.cpp.o
                                         0x26e (size before relaxing)
  .rodata._ZN7vibrant18handleLeaveMeshAllEv.str1.1
-                0x000000003ffe9824       0x22 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WebServer.cpp.o
+                0x000000003ffe9820       0x22 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WebServer.cpp.o
  .rodata._ZN7vibrant18handleActionStatusEv.str1.1
-                0x000000003ffe9846       0x59 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WebServer.cpp.o
+                0x000000003ffe9842       0x59 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WebServer.cpp.o
                                          0x77 (size before relaxing)
  .rodata._ZN7vibrant12handleActionEv.str1.1
-                0x000000003ffe989f       0x4a /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WebServer.cpp.o
+                0x000000003ffe989b       0x4a /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WebServer.cpp.o
                                          0x4e (size before relaxing)
  .rodata._ZN7vibrant12handleToggleEv.str1.1
-                0x000000003ffe98e9       0x29 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WebServer.cpp.o
+                0x000000003ffe98e5       0x29 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WebServer.cpp.o
                                          0x31 (size before relaxing)
  .rodata._ZN11ArduinoJson8V743PB226detail13TextFormatterINS1_6WriterI6StringvEEE10writeFloatEda.str1.1
-                0x000000003ffe9912        0x5 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WebServer.cpp.o
+                0x000000003ffe990e        0x5 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WebServer.cpp.o
  .rodata._ZN7vibrant21handleFleetBulkActionEv.str1.1
-                0x000000003ffe9912       0x4f /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WebServer.cpp.o
+                0x000000003ffe990e       0x4f /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WebServer.cpp.o
                                          0x69 (size before relaxing)
  .rodata._ZN7vibrant23handleFleetOutputToggleEv.str1.1
-                0x000000003ffe9961       0x2e /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WebServer.cpp.o
+                0x000000003ffe995d       0x2e /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WebServer.cpp.o
                                          0x34 (size before relaxing)
  .rodata._ZN7vibrant24handleReleaseReservationEv.str1.1
-                0x000000003ffe998f       0x2e /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WebServer.cpp.o
+                0x000000003ffe998b       0x2e /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WebServer.cpp.o
                                           0xe (size before relaxing)
  .rodata._ZN7vibrant23handleDeviceSettingsGetEv$part$0.str1.1
-                0x000000003ffe998f      0x4c7 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WebServer.cpp.o
+                0x000000003ffe998b      0x4c7 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WebServer.cpp.o
                                         0x4d4 (size before relaxing)
  .rodata._ZN7vibrantL18renderFleetContentEv.str1.1
-                0x000000003ffe9e56      0x15a /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WebServer.cpp.o
+                0x000000003ffe9e52      0x15a /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WebServer.cpp.o
                                         0x176 (size before relaxing)
  .rodata._ZN7vibrantL17renderHomeContentEv.str1.1
-                0x000000003ffe9fb0      0x5e7 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WebServer.cpp.o
+                0x000000003ffe9fac      0x5e7 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WebServer.cpp.o
                                         0x6ab (size before relaxing)
  .rodata._ZN7vibrant20handleDiagnosticsGetEv$part$0.str1.1
-                0x000000003ffea597      0x6db /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WebServer.cpp.o
+                0x000000003ffea593      0x6db /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WebServer.cpp.o
  .rodata._ZN7vibrant24handleNetworkSettingsGetEv$part$0.str1.1
-                0x000000003ffeac72      0xd0d /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WebServer.cpp.o
+                0x000000003ffeac6e      0xd0d /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WebServer.cpp.o
  .rodata._ZN7vibrantL16SOFTWARE_VERSIONE
-                0x000000003ffeb97f        0x7 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WebServer.cpp.o
+                0x000000003ffeb97b        0x6 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WebServer.cpp.o
  .rodata._ZN16esp8266webserver24ESP8266WebServerTemplateI10WiFiServerE18authenticateDigestERK6StringS5_.str1.1
-                0x000000003ffeb986        0x1 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WebUpdate.cpp.o
+                0x000000003ffeb981        0x1 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WebUpdate.cpp.o
  .rodata._ZN7vibrant24handleFirmwareUpdateDoneEv.str1.1
-                0x000000003ffeb986        0xa /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WebUpdate.cpp.o
+                0x000000003ffeb981        0xa /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WebUpdate.cpp.o
  .rodata._ZN7vibrant26handleFirmwareUpdateUploadEv.str1.1
-                0x000000003ffeb986        0x6 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WebUpdate.cpp.o
+                0x000000003ffeb981        0x6 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WebUpdate.cpp.o
  .rodata._ZN7vibrant18wifiStatusToStringE11wl_status_t.str1.1
-                0x000000003ffeb986        0x8 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WifiManager.cpp.o
+                0x000000003ffeb981        0x8 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WifiManager.cpp.o
  .rodata._ZN7vibrant18macLastThreeOctetsERK6String.str1.1
-                0x000000003ffeb986        0x7 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WifiManager.cpp.o
+                0x000000003ffeb981        0x7 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WifiManager.cpp.o
                                           0xa (size before relaxing)
  .rodata.str1.1
-                0x000000003ffeb98d       0x31 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WifiManager.cpp.o
+                0x000000003ffeb988       0x31 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WifiManager.cpp.o
                                          0x67 (size before relaxing)
- *fill*         0x000000003ffeb9be        0x2 
+ *fill*         0x000000003ffeb9b9        0x3 
  .rodata.CSWTCH$45
-                0x000000003ffeb9c0       0x20 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WifiManager.cpp.o
+                0x000000003ffeb9bc       0x20 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WifiManager.cpp.o
  .rodata._ZN13littlefs_impl12LittleFSImpl15getCreationTimeEv.str1.1
-                0x000000003ffeb9e0        0x2 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/LittleFS/LittleFS.a(LittleFS.cpp.o)
+                0x000000003ffeb9dc        0x2 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/LittleFS/LittleFS.a(LittleFS.cpp.o)
  .rodata._ZN13littlefs_impl15LittleFSDirImpl8_getAttrEciPv.str1.1
-                0x000000003ffeb9e0        0x7 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/LittleFS/LittleFS.a(LittleFS.cpp.o)
+                0x000000003ffeb9dc        0x7 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/LittleFS/LittleFS.a(LittleFS.cpp.o)
                                           0x8 (size before relaxing)
- *fill*         0x000000003ffeb9e7        0x1 
+ *fill*         0x000000003ffeb9e3        0x1 
  .rodata._ZZNSt19_Sp_make_shared_tag5_S_tiEvE5__tag
-                0x000000003ffeb9e8        0x8 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/LittleFS/LittleFS.a(LittleFS.cpp.o)
-                0x000000003ffeb9e8                _ZZNSt19_Sp_make_shared_tag5_S_tiEvE5__tag
+                0x000000003ffeb9e4        0x8 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/LittleFS/LittleFS.a(LittleFS.cpp.o)
+                0x000000003ffeb9e4                _ZZNSt19_Sp_make_shared_tag5_S_tiEvE5__tag
  .rodata.lfs_dir_find.str1.1
-                0x000000003ffeb9f0        0x3 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/LittleFS/LittleFS.a(lfs.c.o)
+                0x000000003ffeb9ec        0x3 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/LittleFS/LittleFS.a(lfs.c.o)
                                           0x5 (size before relaxing)
  .rodata.lfs_format.str1.1
-                0x000000003ffeb9f3        0x9 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/LittleFS/LittleFS.a(lfs.c.o)
+                0x000000003ffeb9ef        0x9 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/LittleFS/LittleFS.a(lfs.c.o)
  .rodata.lfs_dir_read.str1.1
-                0x000000003ffeb9fc        0x9 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/LittleFS/LittleFS.a(lfs.c.o)
+                0x000000003ffeb9f8        0x9 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/LittleFS/LittleFS.a(lfs.c.o)
                                           0x2 (size before relaxing)
  .rodata.__func__$0
-                0x000000003ffeb9fc        0xd /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/LittleFS/LittleFS.a(lfs.c.o)
+                0x000000003ffeb9f8        0xd /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/LittleFS/LittleFS.a(lfs.c.o)
  .rodata.__func__$1
-                0x000000003ffeba09        0xe /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/LittleFS/LittleFS.a(lfs.c.o)
+                0x000000003ffeba05        0xe /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/LittleFS/LittleFS.a(lfs.c.o)
  .rodata.__func__$2
-                0x000000003ffeba17        0xe /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/LittleFS/LittleFS.a(lfs.c.o)
+                0x000000003ffeba13        0xe /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/LittleFS/LittleFS.a(lfs.c.o)
  .rodata.__func__$3
-                0x000000003ffeba25       0x15 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/LittleFS/LittleFS.a(lfs.c.o)
+                0x000000003ffeba21       0x15 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/LittleFS/LittleFS.a(lfs.c.o)
  .rodata.__func__$4
-                0x000000003ffeba3a       0x12 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/LittleFS/LittleFS.a(lfs.c.o)
+                0x000000003ffeba36       0x12 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/LittleFS/LittleFS.a(lfs.c.o)
  .rodata.__func__$5
-                0x000000003ffeba4c        0xe /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/LittleFS/LittleFS.a(lfs.c.o)
+                0x000000003ffeba48        0xe /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/LittleFS/LittleFS.a(lfs.c.o)
  .rodata.__func__$6
-                0x000000003ffeba5a       0x12 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/LittleFS/LittleFS.a(lfs.c.o)
+                0x000000003ffeba56       0x12 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/LittleFS/LittleFS.a(lfs.c.o)
  .rodata.__func__$7
-                0x000000003ffeba6c        0xf /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/LittleFS/LittleFS.a(lfs.c.o)
+                0x000000003ffeba68        0xf /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/LittleFS/LittleFS.a(lfs.c.o)
  .rodata.__func__$8
-                0x000000003ffeba7b       0x11 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/LittleFS/LittleFS.a(lfs.c.o)
+                0x000000003ffeba77       0x11 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/LittleFS/LittleFS.a(lfs.c.o)
  .rodata.__func__$9
-                0x000000003ffeba8c        0xe /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/LittleFS/LittleFS.a(lfs.c.o)
+                0x000000003ffeba88        0xe /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/LittleFS/LittleFS.a(lfs.c.o)
  .rodata.__func__$10
-                0x000000003ffeba9a        0xe /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/LittleFS/LittleFS.a(lfs.c.o)
+                0x000000003ffeba96        0xe /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/LittleFS/LittleFS.a(lfs.c.o)
  .rodata.__func__$11
-                0x000000003ffebaa8        0xf /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/LittleFS/LittleFS.a(lfs.c.o)
- *fill*         0x000000003ffebab7        0x1 
+                0x000000003ffebaa4        0xf /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/LittleFS/LittleFS.a(lfs.c.o)
+ *fill*         0x000000003ffebab3        0x1 
  .rodata.defaults$13
-                0x000000003ffebab8        0xc /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/LittleFS/LittleFS.a(lfs.c.o)
+                0x000000003ffebab4        0xc /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/LittleFS/LittleFS.a(lfs.c.o)
  .rodata.__func__$14
-                0x000000003ffebac4        0xe /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/LittleFS/LittleFS.a(lfs.c.o)
+                0x000000003ffebac0        0xe /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/LittleFS/LittleFS.a(lfs.c.o)
  .rodata.__func__$15
-                0x000000003ffebad2       0x10 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/LittleFS/LittleFS.a(lfs.c.o)
+                0x000000003ffebace       0x10 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/LittleFS/LittleFS.a(lfs.c.o)
  .rodata.__func__$16
-                0x000000003ffebae2        0xc /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/LittleFS/LittleFS.a(lfs.c.o)
+                0x000000003ffebade        0xc /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/LittleFS/LittleFS.a(lfs.c.o)
  .rodata.__func__$17
-                0x000000003ffebaee       0x11 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/LittleFS/LittleFS.a(lfs.c.o)
+                0x000000003ffebaea       0x11 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/LittleFS/LittleFS.a(lfs.c.o)
  .rodata.__func__$18
-                0x000000003ffebaff       0x19 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/LittleFS/LittleFS.a(lfs.c.o)
+                0x000000003ffebafb       0x19 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/LittleFS/LittleFS.a(lfs.c.o)
  .rodata.__func__$19
-                0x000000003ffebb18       0x13 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/LittleFS/LittleFS.a(lfs.c.o)
+                0x000000003ffebb14       0x13 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/LittleFS/LittleFS.a(lfs.c.o)
  .rodata.__func__$20
-                0x000000003ffebb2b        0xd /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/LittleFS/LittleFS.a(lfs.c.o)
+                0x000000003ffebb27        0xd /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/LittleFS/LittleFS.a(lfs.c.o)
  .rodata.__func__$21
-                0x000000003ffebb38        0xc /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/LittleFS/LittleFS.a(lfs.c.o)
+                0x000000003ffebb34        0xc /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/LittleFS/LittleFS.a(lfs.c.o)
  .rodata.__func__$22
-                0x000000003ffebb44        0xd /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/LittleFS/LittleFS.a(lfs.c.o)
+                0x000000003ffebb40        0xd /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/LittleFS/LittleFS.a(lfs.c.o)
  .rodata.__func__$23
-                0x000000003ffebb51       0x18 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/LittleFS/LittleFS.a(lfs.c.o)
+                0x000000003ffebb4d       0x18 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/LittleFS/LittleFS.a(lfs.c.o)
  .rodata.__func__$24
-                0x000000003ffebb69        0xc /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/LittleFS/LittleFS.a(lfs.c.o)
+                0x000000003ffebb65        0xc /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/LittleFS/LittleFS.a(lfs.c.o)
  .rodata.__func__$25
-                0x000000003ffebb75        0x9 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/LittleFS/LittleFS.a(lfs.c.o)
- *fill*         0x000000003ffebb7e        0x2 
+                0x000000003ffebb71        0x9 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/LittleFS/LittleFS.a(lfs.c.o)
+ *fill*         0x000000003ffebb7a        0x2 
  .rodata.rtable$0
-                0x000000003ffebb80       0x40 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/LittleFS/LittleFS.a(lfs_util.c.o)
+                0x000000003ffebb7c       0x40 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/LittleFS/LittleFS.a(lfs_util.c.o)
  .rodata._ZN18ESP8266WiFiAPClass16softAPmacAddressEv.str1.1
-                0x000000003ffebbc0       0x1e /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/ESP8266WiFi/ESP8266WiFi.a(ESP8266WiFiAP.cpp.o)
+                0x000000003ffebbbc       0x1e /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/ESP8266WiFi/ESP8266WiFi.a(ESP8266WiFiAP.cpp.o)
  .rodata.CSWTCH$68
-                0x000000003ffebbde        0x6 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/ESP8266WiFi/ESP8266WiFi.a(ESP8266WiFiSTA.cpp.o)
+                0x000000003ffebbda        0x6 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/ESP8266WiFi/ESP8266WiFi.a(ESP8266WiFiSTA.cpp.o)
  .rodata._ZN20ESP8266WiFiScanClass8BSSIDstrEh.str1.1
-                0x000000003ffebbe4       0x1f /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/ESP8266WiFi/ESP8266WiFi.a(ESP8266WiFiScan.cpp.o)
+                0x000000003ffebbe0       0x1f /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/ESP8266WiFi/ESP8266WiFi.a(ESP8266WiFiScan.cpp.o)
  .rodata._ZN15ArduinoOTAClass5_onRxEv.str1.1
-                0x000000003ffebbe4       0x1e /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/ArduinoOTA/ArduinoOTA.cpp.o
+                0x000000003ffebbe0       0x1e /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/ArduinoOTA/ArduinoOTA.cpp.o
  .rodata._ZN15ArduinoOTAClass5beginEb.str1.1
-                0x000000003ffebc02        0xd /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/ArduinoOTA/ArduinoOTA.cpp.o
+                0x000000003ffebbfe        0xd /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/ArduinoOTA/ArduinoOTA.cpp.o
  .rodata._ZN15ArduinoOTAClass10_runUpdateEv.str1.1
-                0x000000003ffebc0f        0x9 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/ArduinoOTA/ArduinoOTA.cpp.o
+                0x000000003ffebc0b        0x9 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/ArduinoOTA/ArduinoOTA.cpp.o
  .rodata._ZN7esp826618MDNSImplementation13MDNSResponder13enableArduinoEtb.str1.1
-                0x000000003ffebc18       0x41 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/ESP8266mDNS/ESP8266mDNS.a(LEAmDNS.cpp.o)
+                0x000000003ffebc14       0x41 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/ESP8266mDNS/ESP8266mDNS.a(LEAmDNS.cpp.o)
                                          0x44 (size before relaxing)
  .rodata._ZNK7esp826618MDNSImplementation13MDNSResponder19_buildDomainForHostEPKcRNS1_16stcMDNS_RRDomainE.str1.1
-                0x000000003ffebc59       0x41 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/ESP8266mDNS/ESP8266mDNS.a(LEAmDNS_Transfer.cpp.o)
+                0x000000003ffebc55       0x41 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/ESP8266mDNS/ESP8266mDNS.a(LEAmDNS_Transfer.cpp.o)
                                           0x6 (size before relaxing)
  .rodata._ZNK7esp826618MDNSImplementation13MDNSResponder20_buildDomainForDNSSDERNS1_16stcMDNS_RRDomainE.str1.1
-                0x000000003ffebc59       0x14 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/ESP8266mDNS/ESP8266mDNS.a(LEAmDNS_Transfer.cpp.o)
+                0x000000003ffebc55       0x14 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/ESP8266mDNS/ESP8266mDNS.a(LEAmDNS_Transfer.cpp.o)
  .rodata._ZNK7esp826618MDNSImplementation13MDNSResponder25_buildDomainForReverseIP4E9IPAddressRNS1_16stcMDNS_RRDomainE.str1.1
-                0x000000003ffebc6d        0xd /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/ESP8266mDNS/ESP8266mDNS.a(LEAmDNS_Transfer.cpp.o)
+                0x000000003ffebc69        0xd /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/ESP8266mDNS/ESP8266mDNS.a(LEAmDNS_Transfer.cpp.o)
  .rodata._ZN7esp826618MDNSImplementation13MDNSResponder20_writeMDNSAnswer_TXTERNS1_14stcMDNSServiceERNS1_20stcMDNSSendParameterE.str1.1
-                0x000000003ffebc7a        0x2 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/ESP8266mDNS/ESP8266mDNS.a(LEAmDNS_Transfer.cpp.o)
+                0x000000003ffebc76        0x2 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/ESP8266mDNS/ESP8266mDNS.a(LEAmDNS_Transfer.cpp.o)
  .rodata.CSWTCH$125
-                0x000000003ffebc7c       0x28 /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(Esp.cpp.o)
+                0x000000003ffebc78       0x28 /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(Esp.cpp.o)
  .rodata._ZN10DhcpServer11MagicCookieE
-                0x000000003ffebca4        0x4 /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(LwipDhcpServer.cpp.o)
-                0x000000003ffebca4                _ZN10DhcpServer11MagicCookieE
+                0x000000003ffebca0        0x4 /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(LwipDhcpServer.cpp.o)
+                0x000000003ffebca0                _ZN10DhcpServer11MagicCookieE
  .rodata._ZNK10MD5Builder8getCharsEPc.str1.1
-                0x000000003ffebca8        0x5 /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(MD5Builder.cpp.o)
+                0x000000003ffebca4        0x5 /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(MD5Builder.cpp.o)
  .rodata._ZN5Print7printlnEv.str1.1
-                0x000000003ffebcad        0x3 /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(Print.cpp.o)
+                0x000000003ffebca9        0x3 /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(Print.cpp.o)
  .rodata.dtostrf.str1.1
-                0x000000003ffebcad        0x8 /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(core_esp8266_noniso.cpp.o)
+                0x000000003ffebca9        0x8 /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(core_esp8266_noniso.cpp.o)
  .rodata.CSWTCH$10
-                0x000000003ffebcb5       0x10 /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(core_esp8266_flash_quirks.cpp.o)
- *fill*         0x000000003ffebcc5        0x3 
+                0x000000003ffebcb1       0x10 /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(core_esp8266_flash_quirks.cpp.o)
+ *fill*         0x000000003ffebcc1        0x3 
  .rodata.str1.4
-                0x000000003ffebcc8        0xb /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/NONOSDK22x_190703/libpp.a(pm.o)
- *fill*         0x000000003ffebcd3        0x1 
+                0x000000003ffebcc4        0xb /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/NONOSDK22x_190703/libpp.a(pm.o)
+ *fill*         0x000000003ffebccf        0x1 
  .rodata.str1.4
-                0x000000003ffebcd4        0x4 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/NONOSDK22x_190703/libpp.a(pm_for_bcn_only_mode.o)
+                0x000000003ffebcd0        0x4 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/NONOSDK22x_190703/libpp.a(pm_for_bcn_only_mode.o)
                                           0xc (size before relaxing)
  .rodata.str1.4
-                0x000000003ffebcd8        0x8 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/NONOSDK22x_190703/libpp.a(pp.o)
+                0x000000003ffebcd4        0x8 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/NONOSDK22x_190703/libpp.a(pp.o)
                                          0x10 (size before relaxing)
  .rodata.str1.4
-                0x000000003ffebce0        0x4 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/NONOSDK22x_190703/libpp.a(wdev.o)
+                0x000000003ffebcdc        0x4 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/NONOSDK22x_190703/libpp.a(wdev.o)
                                           0xc (size before relaxing)
  .rodata.str1.4
-                0x000000003ffebce4        0x4 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/NONOSDK22x_190703/libpp.a(lmac.o)
+                0x000000003ffebce0        0x4 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/NONOSDK22x_190703/libpp.a(lmac.o)
                                           0xc (size before relaxing)
  .rodata.str1.4
-                0x000000003ffebce8        0x3 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/NONOSDK22x_190703/libnet80211.a(ieee80211_hostap.o)
+                0x000000003ffebce4        0x3 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/NONOSDK22x_190703/libnet80211.a(ieee80211_hostap.o)
                                           0x8 (size before relaxing)
  .rodata.str1.4
-                0x000000003ffebceb        0x4 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/NONOSDK22x_190703/libnet80211.a(ieee80211_sta.o)
+                0x000000003ffebce7        0x4 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/NONOSDK22x_190703/libnet80211.a(ieee80211_sta.o)
  .rodata.str1.4
-                0x000000003ffebceb        0x4 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/NONOSDK22x_190703/libnet80211.a(ieee80211_ie_vendor.o)
+                0x000000003ffebce7        0x4 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/NONOSDK22x_190703/libnet80211.a(ieee80211_ie_vendor.o)
  .rodata.str1.1
-                0x000000003ffebceb       0x41 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(lwip-esp.o)
+                0x000000003ffebce7       0x41 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(lwip-esp.o)
  .rodata.dhcp_cleanup.str1.1
-                0x000000003ffebd2c       0x13 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(lwip-esp.o)
+                0x000000003ffebd28       0x13 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(lwip-esp.o)
  .rodata.dhcp_release.str1.1
-                0x000000003ffebd3f       0x13 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(lwip-esp.o)
+                0x000000003ffebd3b       0x13 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(lwip-esp.o)
  .rodata.CSWTCH$34
-                0x000000003ffebd52       0x10 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(lwip-esp.o)
+                0x000000003ffebd4e       0x10 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(lwip-esp.o)
  .rodata.CSWTCH$31
-                0x000000003ffebd62       0x11 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(lwip-esp.o)
+                0x000000003ffebd5e       0x11 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(lwip-esp.o)
  .rodata.ethbroadcast
-                0x000000003ffebd73        0x6 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(lwip-esp.o)
-                0x000000003ffebd73                ethbroadcast
+                0x000000003ffebd6f        0x6 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(lwip-esp.o)
+                0x000000003ffebd6f                ethbroadcast
  .rodata.ethzero
-                0x000000003ffebd79        0x6 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(ethernet.o)
-                0x000000003ffebd79                ethzero
+                0x000000003ffebd75        0x6 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(ethernet.o)
+                0x000000003ffebd75                ethzero
  .rodata.ethbroadcast_LWIP2
-                0x000000003ffebd7f        0x6 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(ethernet.o)
-                0x000000003ffebd7f                ethbroadcast_LWIP2
+                0x000000003ffebd7b        0x6 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(ethernet.o)
+                0x000000003ffebd7b                ethbroadcast_LWIP2
  .rodata.dns_gethostbyname_addrtype.str1.1
-                0x000000003ffebd85        0x7 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(dns.o)
+                0x000000003ffebd81        0x7 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(dns.o)
  .rodata.dns_mquery_v4group
-                0x000000003ffebd8c        0x4 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(dns.o)
-                0x000000003ffebd8c                dns_mquery_v4group
+                0x000000003ffebd88        0x4 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(dns.o)
+                0x000000003ffebd88                dns_mquery_v4group
  .rodata.memp_pools
-                0x000000003ffebd90       0x2c /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(memp.o)
-                0x000000003ffebd90                memp_pools
+                0x000000003ffebd8c       0x2c /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(memp.o)
+                0x000000003ffebd8c                memp_pools
  .rodata.memp_PBUF_POOL
-                0x000000003ffebdbc        0x2 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(memp.o)
-                0x000000003ffebdbc                memp_PBUF_POOL
+                0x000000003ffebdb8        0x2 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(memp.o)
+                0x000000003ffebdb8                memp_PBUF_POOL
  .rodata.memp_PBUF
-                0x000000003ffebdbe        0x2 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(memp.o)
-                0x000000003ffebdbe                memp_PBUF
+                0x000000003ffebdba        0x2 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(memp.o)
+                0x000000003ffebdba                memp_PBUF
  .rodata.memp_SYS_TIMEOUT
-                0x000000003ffebdc0        0x2 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(memp.o)
-                0x000000003ffebdc0                memp_SYS_TIMEOUT
+                0x000000003ffebdbc        0x2 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(memp.o)
+                0x000000003ffebdbc                memp_SYS_TIMEOUT
  .rodata.memp_IGMP_GROUP
-                0x000000003ffebdc2        0x2 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(memp.o)
-                0x000000003ffebdc2                memp_IGMP_GROUP
+                0x000000003ffebdbe        0x2 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(memp.o)
+                0x000000003ffebdbe                memp_IGMP_GROUP
  .rodata.memp_ARP_QUEUE
-                0x000000003ffebdc4        0x2 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(memp.o)
-                0x000000003ffebdc4                memp_ARP_QUEUE
+                0x000000003ffebdc0        0x2 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(memp.o)
+                0x000000003ffebdc0                memp_ARP_QUEUE
  .rodata.memp_REASSDATA
-                0x000000003ffebdc6        0x2 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(memp.o)
-                0x000000003ffebdc6                memp_REASSDATA
+                0x000000003ffebdc2        0x2 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(memp.o)
+                0x000000003ffebdc2                memp_REASSDATA
  .rodata.memp_TCP_SEG
-                0x000000003ffebdc8        0x2 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(memp.o)
-                0x000000003ffebdc8                memp_TCP_SEG
+                0x000000003ffebdc4        0x2 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(memp.o)
+                0x000000003ffebdc4                memp_TCP_SEG
  .rodata.memp_TCP_PCB_LISTEN
-                0x000000003ffebdca        0x2 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(memp.o)
-                0x000000003ffebdca                memp_TCP_PCB_LISTEN
+                0x000000003ffebdc6        0x2 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(memp.o)
+                0x000000003ffebdc6                memp_TCP_PCB_LISTEN
  .rodata.memp_TCP_PCB
-                0x000000003ffebdcc        0x2 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(memp.o)
-                0x000000003ffebdcc                memp_TCP_PCB
+                0x000000003ffebdc8        0x2 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(memp.o)
+                0x000000003ffebdc8                memp_TCP_PCB
  .rodata.memp_UDP_PCB
-                0x000000003ffebdce        0x2 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(memp.o)
-                0x000000003ffebdce                memp_UDP_PCB
+                0x000000003ffebdca        0x2 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(memp.o)
+                0x000000003ffebdca                memp_UDP_PCB
  .rodata.memp_RAW_PCB
-                0x000000003ffebdd0        0x2 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(memp.o)
-                0x000000003ffebdd0                memp_RAW_PCB
- *fill*         0x000000003ffebdd2        0x2 
+                0x000000003ffebdcc        0x2 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(memp.o)
+                0x000000003ffebdcc                memp_RAW_PCB
+ *fill*         0x000000003ffebdce        0x2 
  .rodata.tcp_pcb_lists
-                0x000000003ffebdd4       0x10 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(tcp.o)
-                0x000000003ffebdd4                tcp_pcb_lists
+                0x000000003ffebdd0       0x10 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(tcp.o)
+                0x000000003ffebdd0                tcp_pcb_lists
  .rodata.tcp_persist_backoff
-                0x000000003ffebde4        0x7 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(tcp.o)
+                0x000000003ffebde0        0x7 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(tcp.o)
  .rodata.tcp_backoff
-                0x000000003ffebdeb        0xd /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(tcp.o)
+                0x000000003ffebde7        0xd /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(tcp.o)
  .rodata.dhcp_discover_request_options
-                0x000000003ffebdf8        0x5 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(dhcp.o)
- *fill*         0x000000003ffebdfd        0x3 
+                0x000000003ffebdf4        0x5 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(dhcp.o)
+ *fill*         0x000000003ffebdf9        0x3 
  .rodata.ip_addr_broadcast
-                0x000000003ffebe00        0x4 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(ip4_addr.o)
-                0x000000003ffebe00                ip_addr_broadcast
+                0x000000003ffebdfc        0x4 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(ip4_addr.o)
+                0x000000003ffebdfc                ip_addr_broadcast
  .rodata.ip_addr_any
-                0x000000003ffebe04        0x4 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(ip4_addr.o)
-                0x000000003ffebe04                ip_addr_any
+                0x000000003ffebe00        0x4 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(ip4_addr.o)
+                0x000000003ffebe00                ip_addr_any
  .rodata.memp_PPP_PCB
-                0x000000003ffebe08        0x2 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(ppp.o)
-                0x000000003ffebe08                memp_PPP_PCB
+                0x000000003ffebe04        0x2 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(ppp.o)
+                0x000000003ffebe04                memp_PPP_PCB
  .rodata.memp_PPPOS_PCB
-                0x000000003ffebe0a        0x2 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(pppos.o)
-                0x000000003ffebe0a                memp_PPPOS_PCB
+                0x000000003ffebe06        0x2 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(pppos.o)
+                0x000000003ffebe06                memp_PPPOS_PCB
  .rodata.str1.4
-                0x000000003ffebe0c        0x4 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/NONOSDK22x_190703/libmain.a(app_main.o)
+                0x000000003ffebe08        0x4 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/NONOSDK22x_190703/libmain.a(app_main.o)
                                           0xc (size before relaxing)
  .rodata.str1.4
-                0x000000003ffebe10        0x4 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/NONOSDK22x_190703/libmain.a(ets_timer.o)
+                0x000000003ffebe0c        0x4 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/NONOSDK22x_190703/libmain.a(ets_timer.o)
                                           0xc (size before relaxing)
  .rodata._ZSt7nothrow
-                0x000000003ffebe14        0x1 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/libstdc++.a(new_handler.o)
-                0x000000003ffebe14                _ZSt7nothrow
+                0x000000003ffebe10        0x1 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/libstdc++.a(new_handler.o)
+                0x000000003ffebe10                _ZSt7nothrow
  .rodata.str1.1
-                0x000000003ffebe15        0x8 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-nano-vfprintf_float.o)
+                0x000000003ffebe11        0x8 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-nano-vfprintf_float.o)
                                          0x12 (size before relaxing)
  .rodata.str1.1
-                0x000000003ffebe1d        0x5 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-nano-vfscanf_float.o)
+                0x000000003ffebe19        0x5 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-nano-vfscanf_float.o)
                                           0x6 (size before relaxing)
  .rodata.str1.1
-                0x000000003ffebe22       0x1e /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-rand.o)
+                0x000000003ffebe1e       0x1e /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-rand.o)
  .rodata.str1.1
-                0x000000003ffebe40       0x1e /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-strtod.o)
+                0x000000003ffebe3c       0x1e /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-strtod.o)
                                           0xd (size before relaxing)
  .rodata.str1.1
-                0x000000003ffebe40       0x25 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-dtoa.o)
+                0x000000003ffebe3c       0x25 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-dtoa.o)
                                          0x3e (size before relaxing)
  .rodata.str1.1
-                0x000000003ffebe65        0xf /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-gdtoa-gethex.o)
+                0x000000003ffebe61        0xf /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-gdtoa-gethex.o)
                                          0x20 (size before relaxing)
  .rodata.str1.1
-                0x000000003ffebe74        0x3 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-lnumeric.o)
+                0x000000003ffebe70        0x3 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-lnumeric.o)
  .rodata.str1.1
-                0x000000003ffebe74        0x8 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-locale.o)
+                0x000000003ffebe70        0x8 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-locale.o)
                                           0xb (size before relaxing)
  .rodata.str1.1
-                0x000000003ffebe7c        0x8 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-mprec.o)
+                0x000000003ffebe78        0x8 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-mprec.o)
                                          0x30 (size before relaxing)
  .rodata.str1.1
-                0x000000003ffebe84       0x11 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-nano-svfprintf.o)
+                0x000000003ffebe80       0x11 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-nano-svfprintf.o)
  .rodata.str1.1
-                0x000000003ffebe95       0x11 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-nano-vfprintf.o)
+                0x000000003ffebe91       0x11 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-nano-vfprintf.o)
  *(.gnu.linkonce.r.*)
  *(.rodata1)
-                0x000000003ffebe95                __XT_EXCEPTION_TABLE__ = ABSOLUTE (.)
+                0x000000003ffebe91                __XT_EXCEPTION_TABLE__ = ABSOLUTE (.)
  *(.xt_except_table)
  *(.gcc_except_table)
  *(.gnu.linkonce.e.*)
  *(.gnu.version_r)
  *(.eh_frame)
-                0x000000003ffebea8                . = ALIGN (0x4)
- *fill*         0x000000003ffebe95        0x3 
-                0x000000003ffebe98                __XT_EXCEPTION_DESCS__ = ABSOLUTE (.)
+                0x000000003ffebea4                . = ALIGN (0x4)
+ *fill*         0x000000003ffebe91        0x3 
+                0x000000003ffebe94                __XT_EXCEPTION_DESCS__ = ABSOLUTE (.)
  *(.xt_except_desc)
  *(.gnu.linkonce.h.*)
-                0x000000003ffebe98                __XT_EXCEPTION_DESCS_END__ = ABSOLUTE (.)
+                0x000000003ffebe94                __XT_EXCEPTION_DESCS_END__ = ABSOLUTE (.)
  *(.xt_except_desc_end)
  *(.dynamic)
  *(.gnu.version_d)
-                0x000000003ffebe98                _rodata_end = ABSOLUTE (.)
+                0x000000003ffebe94                _rodata_end = ABSOLUTE (.)
 
 .bss            0x000000003ffebe98     0x8d08
                 0x000000003ffebe98                . = ALIGN (0x8)
@@ -33145,202 +33145,202 @@ OUTPUT(/data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/
  .debug_frame   0x0000000000017334      0x364 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/libgcc.a(unwind-dw2-fde.o)
  .debug_frame   0x0000000000017698       0x3c /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(aes_unwrap.cpp.o)
 
-.debug_info     0x0000000000000000   0x3acf08
+.debug_info     0x0000000000000000   0x3acf19
  .debug_info    0x0000000000000000     0x96e2 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Actions.cpp.o
  .debug_info    0x00000000000096e2    0x2e1ca /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/BackupRestore.cpp.o
  .debug_info    0x00000000000378ac     0x4531 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/BootDiagnostics.cpp.o
- .debug_info    0x000000000003bddd    0x22e6c /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/C4-VIBRANT.ino.cpp.o
- .debug_info    0x000000000005ec49    0x39386 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Config.cpp.o
- .debug_info    0x0000000000097fcf     0xb41a /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Debug.cpp.o
- .debug_info    0x00000000000a33e9     0xdac1 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/MqttClient.cpp.o
- .debug_info    0x00000000000b0eaa     0xb8ad /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/OtaService.cpp.o
- .debug_info    0x00000000000bc757     0x4af2 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Outputs.cpp.o
- .debug_info    0x00000000000c1249     0x4244 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Reservations.cpp.o
- .debug_info    0x00000000000c548d     0x763e /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Runtime.cpp.o
- .debug_info    0x00000000000ccacb    0x3932f /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Stickserver.cpp.o
- .debug_info    0x0000000000105dfa    0x493fc /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WebServer.cpp.o
- .debug_info    0x000000000014f1f6    0x1be2a /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WebUpdate.cpp.o
- .debug_info    0x000000000016b020     0xb428 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WifiManager.cpp.o
- .debug_info    0x0000000000176448    0x1dbfa /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/LittleFS/LittleFS.a(LittleFS.cpp.o)
- .debug_info    0x0000000000194042     0xcc47 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/LittleFS/LittleFS.a(lfs.c.o)
- .debug_info    0x00000000001a0c89      0x16f /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/LittleFS/LittleFS.a(lfs_util.c.o)
- .debug_info    0x00000000001a0df8     0xa211 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/ESP8266WiFi/ESP8266WiFi.a(ESP8266WiFi.cpp.o)
- .debug_info    0x00000000001ab009     0xace6 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/ESP8266WiFi/ESP8266WiFi.a(ESP8266WiFiAP.cpp.o)
- .debug_info    0x00000000001b5cef    0x2a46d /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/ESP8266WiFi/ESP8266WiFi.a(ESP8266WiFiGeneric.cpp.o)
- .debug_info    0x00000000001e015c     0xc16d /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/ESP8266WiFi/ESP8266WiFi.a(ESP8266WiFiSTA.cpp.o)
- .debug_info    0x00000000001ec2c9     0xb195 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/ESP8266WiFi/ESP8266WiFi.a(ESP8266WiFiScan.cpp.o)
- .debug_info    0x00000000001f745e    0x1754c /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/ESP8266WiFi/ESP8266WiFi.a(WiFiClient.cpp.o)
- .debug_info    0x000000000020e9aa     0x9d5c /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/ESP8266WiFi/ESP8266WiFi.a(WiFiServer.cpp.o)
- .debug_info    0x0000000000218706     0x8657 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/PubSubClient/PubSubClient.cpp.o
- .debug_info    0x0000000000220d5d     0x264e /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/ESP8266WebServer/ESP8266WebServer.a(mimetable.cpp.o)
- .debug_info    0x00000000002233ab    0x18cfd /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/ArduinoOTA/ArduinoOTA.cpp.o
- .debug_info    0x000000000023c0a8     0x76c0 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/ESP8266mDNS/ESP8266mDNS.a(ESP8266mDNS.cpp.o)
- .debug_info    0x0000000000243768    0x1d6cb /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/ESP8266mDNS/ESP8266mDNS.a(LEAmDNS.cpp.o)
- .debug_info    0x0000000000260e33    0x14b12 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/ESP8266mDNS/ESP8266mDNS.a(LEAmDNS_Control.cpp.o)
- .debug_info    0x0000000000275945    0x13615 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/ESP8266mDNS/ESP8266mDNS.a(LEAmDNS_Helpers.cpp.o)
- .debug_info    0x0000000000288f5a    0x134c1 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/ESP8266mDNS/ESP8266mDNS.a(LEAmDNS_Structs.cpp.o)
- .debug_info    0x000000000029c41b    0x14468 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/ESP8266mDNS/ESP8266mDNS.a(LEAmDNS_Transfer.cpp.o)
- .debug_info    0x00000000002b0883     0x4423 /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(Esp-frag.cpp.o)
- .debug_info    0x00000000002b4ca6     0xa724 /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(Esp.cpp.o)
- .debug_info    0x00000000002bf3ca     0xf633 /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(FS.cpp.o)
- .debug_info    0x00000000002ce9fd     0x4abf /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(HardwareSerial.cpp.o)
- .debug_info    0x00000000002d34bc     0x6b56 /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(IPAddress.cpp.o)
- .debug_info    0x00000000002da012     0x1d66 /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(LwipDhcpServer-NonOS.cpp.o)
- .debug_info    0x00000000002dbd78     0x3f8d /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(LwipDhcpServer.cpp.o)
- .debug_info    0x00000000002dfd05     0x2fd1 /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(LwipIntf.cpp.o)
- .debug_info    0x00000000002e2cd6     0x4f21 /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(LwipIntfCB.cpp.o)
- .debug_info    0x00000000002e7bf7     0x72e7 /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(MD5Builder.cpp.o)
- .debug_info    0x00000000002eeede     0x6b0d /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(Print.cpp.o)
- .debug_info    0x00000000002f59eb     0x5702 /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(Schedule.cpp.o)
- .debug_info    0x00000000002fb0ed     0x592a /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(Stream.cpp.o)
- .debug_info    0x0000000000300a17     0x83d5 /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(StreamSend.cpp.o)
- .debug_info    0x0000000000308dec     0xadcb /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(Updater.cpp.o)
- .debug_info    0x0000000000313bb7     0xaa79 /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(WString.cpp.o)
- .debug_info    0x000000000031e630     0x2dce /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(abi.cpp.o)
- .debug_info    0x00000000003213fe     0x4188 /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(base64.cpp.o)
- .debug_info    0x0000000000325586       0x22 /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(cont.S.o)
- .debug_info    0x00000000003255a8      0x368 /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(cont_util.cpp.o)
- .debug_info    0x0000000000325910      0xc5f /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(core_esp8266_eboot_command.cpp.o)
- .debug_info    0x000000000032656f     0x533f /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(core_esp8266_main.cpp.o)
- .debug_info    0x000000000032b8ae     0x22b9 /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(core_esp8266_noniso.cpp.o)
- .debug_info    0x000000000032db67      0xa4e /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(core_esp8266_phy.cpp.o)
- .debug_info    0x000000000032e5b5     0x19c4 /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(core_esp8266_postmortem.cpp.o)
- .debug_info    0x000000000032ff79     0x2d9b /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(core_esp8266_wiring.cpp.o)
- .debug_info    0x0000000000332d14     0x31f6 /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(core_esp8266_wiring_digital.cpp.o)
- .debug_info    0x0000000000335f0a      0xb7b /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(crc32.cpp.o)
- .debug_info    0x0000000000336a85     0x445a /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(flash_hal.cpp.o)
- .debug_info    0x000000000033aedf       0xa3 /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(gdb_hooks.cpp.o)
- .debug_info    0x000000000033af82     0x18df /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(heap.cpp.o)
- .debug_info    0x000000000033c861      0x41b /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(cencode.cpp.o)
- .debug_info    0x000000000033cc7c     0x2b65 /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(libc_replacements.cpp.o)
- .debug_info    0x000000000033f7e1     0x85b0 /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(time.cpp.o)
- .debug_info    0x0000000000347d91     0x4178 /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(uart.cpp.o)
- .debug_info    0x000000000034bf09     0x3941 /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(umm_malloc.cpp.o)
- .debug_info    0x000000000034f84a      0xaf0 /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(StackThunk.cpp.o)
- .debug_info    0x000000000035033a      0x16c /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(core_esp8266_features.cpp.o)
- .debug_info    0x00000000003504a6      0x37b /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(core_esp8266_flash_quirks.cpp.o)
- .debug_info    0x0000000000350821      0xcf7 /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(core_esp8266_spi_utils.cpp.o)
- .debug_info    0x0000000000351518     0x2b6e /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(core_esp8266_timer.cpp.o)
- .debug_info    0x0000000000354086     0x58d3 /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(core_esp8266_waveform_pwm.cpp.o)
- .debug_info    0x0000000000359959      0xa78 /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(sqrt32.cpp.o)
- .debug_info    0x000000000035a3d1     0x135a /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(lwip-esp.o)
- .debug_info    0x000000000035b72b     0x16ac /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(lwip-git.o)
- .debug_info    0x000000000035cdd7      0x871 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(ethernet.o)
- .debug_info    0x000000000035d648      0x42d /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(def.o)
- .debug_info    0x000000000035da75     0x1687 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(dns.o)
- .debug_info    0x000000000035f0fc      0x16b /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(init.o)
- .debug_info    0x000000000035f267      0x578 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(ip.o)
- .debug_info    0x000000000035f7df      0x27f /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(mem.o)
- .debug_info    0x000000000035fa5e      0x616 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(memp.o)
- .debug_info    0x0000000000360074     0x1273 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(netif.o)
- .debug_info    0x00000000003612e7     0x2471 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(pbuf.o)
- .debug_info    0x0000000000363758      0xf54 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(raw.o)
- .debug_info    0x00000000003646ac     0x2a86 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(tcp.o)
- .debug_info    0x0000000000367132     0x239a /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(tcp_in.o)
- .debug_info    0x00000000003694cc     0x25ee /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(tcp_out.o)
- .debug_info    0x000000000036baba      0xe62 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(timeouts.o)
- .debug_info    0x000000000036c91c     0x12ca /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(udp.o)
- .debug_info    0x000000000036dbe6      0xd62 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(autoip.o)
- .debug_info    0x000000000036e948     0x32e8 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(dhcp.o)
- .debug_info    0x0000000000371c30     0x168d /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(etharp.o)
- .debug_info    0x00000000003732bd      0xb69 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(icmp.o)
- .debug_info    0x0000000000373e26     0x10c1 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(igmp.o)
- .debug_info    0x0000000000374ee7     0x30e5 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(ip4.o)
- .debug_info    0x0000000000377fcc      0x818 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(ip4_addr.o)
- .debug_info    0x00000000003787e4     0x11d5 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(ip4_frag.o)
- .debug_info    0x00000000003799b9     0x1293 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(sntp.o)
- .debug_info    0x000000000037ac4c     0x230a /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(ppp.o)
- .debug_info    0x000000000037cf56     0x22eb /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(pppos.o)
- .debug_info    0x000000000037f241      0x85a /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(inet_chksum.o)
- .debug_info    0x000000000037fa9b      0x24e /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(magic.o)
- .debug_info    0x000000000037fce9      0x389 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/libstdc++.a(del_ops.o)
- .debug_info    0x0000000000380072      0x375 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/libstdc++.a(del_opv.o)
- .debug_info    0x00000000003803e7      0x389 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/libstdc++.a(del_opvs.o)
- .debug_info    0x0000000000380770     0x11eb /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/libstdc++.a(eh_terminate.o)
- .debug_info    0x000000000038195b      0x86c /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/libstdc++.a(new_handler.o)
- .debug_info    0x00000000003821c7      0x443 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/libstdc++.a(list.o)
- .debug_info    0x000000000038260a      0x5e5 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/libstdc++.a(functional.o)
- .debug_info    0x0000000000382bef     0x1ec9 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/libstdc++.a(shared_ptr.o)
- .debug_info    0x0000000000384ab8      0x88a /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/libstdc++.a(del_op.o)
- .debug_info    0x0000000000385342      0x902 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/libstdc++.a(eh_term_handler.o)
- .debug_info    0x0000000000385c44      0x92a /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-atoi.o)
- .debug_info    0x000000000038656e      0x92a /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-atol.o)
- .debug_info    0x0000000000386e98      0x163 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-isalnum.o)
- .debug_info    0x0000000000386ffb      0x163 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-isspace.o)
- .debug_info    0x000000000038715e      0x163 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-isxdigit.o)
- .debug_info    0x00000000003872c1      0x188 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-itoa.o)
- .debug_info    0x0000000000387449      0x115 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-memchr.o)
- .debug_info    0x000000000038755e     0x150d /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-nano-vfprintf_float.o)
- .debug_info    0x0000000000388a6b     0x10d0 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-nano-vfprintf_i.o)
- .debug_info    0x0000000000389b3b      0xefb /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-nano-vfscanf_float.o)
- .debug_info    0x000000000038aa36      0x9d8 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-rand.o)
- .debug_info    0x000000000038b40e       0xce /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-sf_nan.o)
- .debug_info    0x000000000038b4dc      0xa55 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-snprintf.o)
- .debug_info    0x000000000038bf31      0xa20 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-sprintf.o)
- .debug_info    0x000000000038c951      0x23c /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-strcasecmp.o)
- .debug_info    0x000000000038cb8d       0xfa /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-strchr.o)
- .debug_info    0x000000000038cc87      0x1ad /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-strcpy.o)
- .debug_info    0x000000000038ce34       0xec /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-strcspn.o)
- .debug_info    0x000000000038cf20      0x8c0 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-strdup.o)
- .debug_info    0x000000000038d7e0      0x94d /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-strdup_r.o)
- .debug_info    0x000000000038e12d      0x25a /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-strncasecmp.o)
- .debug_info    0x000000000038e387       0xe2 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-strnlen.o)
- .debug_info    0x000000000038e469      0x107 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-strrchr.o)
- .debug_info    0x000000000038e570       0xec /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-strspn.o)
- .debug_info    0x000000000038e65c     0x1de7 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-strtod.o)
- .debug_info    0x0000000000390443      0xfca /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-strtol.o)
- .debug_info    0x000000000039140d      0x163 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-tolower.o)
- .debug_info    0x0000000000391570      0x163 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-toupper.o)
- .debug_info    0x00000000003916d3      0x296 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-utoa.o)
- .debug_info    0x0000000000391969      0xa22 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-vsnprintf.o)
- .debug_info    0x000000000039238b       0x8f /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lock.o)
- .debug_info    0x000000000039241a      0x314 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(stdio_pgmspace.o)
- .debug_info    0x000000000039272e      0xae0 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(string_pgmspace.o)
- .debug_info    0x000000000039320e       0xb8 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-ctype_.o)
- .debug_info    0x00000000003932c6     0x1900 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-dtoa.o)
- .debug_info    0x0000000000394bc6      0x890 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-errno.o)
- .debug_info    0x0000000000395456       0x26 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-fast_strcpy.o)
- .debug_info    0x000000000039547c       0x26 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-fast_strncpy.o)
- .debug_info    0x00000000003954a2     0x10c7 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-findfp.o)
- .debug_info    0x0000000000396569      0x9dc /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-fwalk.o)
- .debug_info    0x0000000000396f45     0x138a /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-gdtoa-gethex.o)
- .debug_info    0x00000000003982cf      0x395 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-gdtoa-hexnan.o)
- .debug_info    0x0000000000398664      0x945 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-impure.o)
- .debug_info    0x0000000000398fa9      0xbc2 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-lnumeric.o)
- .debug_info    0x0000000000399b6b      0xcd9 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-locale.o)
- .debug_info    0x000000000039a844      0xbba /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-localeconv.o)
- .debug_info    0x000000000039b3fe      0xc4a /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-mbtowc_r.o)
- .debug_info    0x000000000039c048     0x1f61 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-mprec.o)
- .debug_info    0x000000000039dfa9     0x137f /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-nano-svfprintf.o)
- .debug_info    0x000000000039f328     0x14c1 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-nano-vfprintf.o)
- .debug_info    0x00000000003a07e9       0xd2 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-s_nan.o)
- .debug_info    0x00000000003a08bb      0xba4 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-stdio.o)
- .debug_info    0x00000000003a145f      0x9cf /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-vprintf.o)
- .debug_info    0x00000000003a1e2e      0x9ef /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-vsprintf.o)
- .debug_info    0x00000000003a281d      0xa81 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-wbuf.o)
- .debug_info    0x00000000003a329e      0xc06 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-wctomb_r.o)
- .debug_info    0x00000000003a3ea4      0x9e4 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-wsetup.o)
- .debug_info    0x00000000003a4888      0xb18 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-fclose.o)
- .debug_info    0x00000000003a53a0      0xbd1 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-fflush.o)
- .debug_info    0x00000000003a5f71      0xc21 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-fputwc.o)
- .debug_info    0x00000000003a6b92      0xc0d /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-fvwrite.o)
- .debug_info    0x00000000003a779f      0xca2 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-makebuf.o)
- .debug_info    0x00000000003a8441      0xc3d /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-wcrtomb.o)
- .debug_info    0x00000000003a907e      0xae7 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(isatty.o)
- .debug_info    0x00000000003a9b65       0x26 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/libgcc.a(_modsi3.o)
- .debug_info    0x00000000003a9b8b       0x26 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/libgcc.a(_ashrdi3.o)
- .debug_info    0x00000000003a9bb1       0x26 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/libgcc.a(_bswapsi2.o)
- .debug_info    0x00000000003a9bd7       0x26 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/libgcc.a(_divsf3.o)
- .debug_info    0x00000000003a9bfd       0x26 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/libgcc.a(_cmpsf2.o)
- .debug_info    0x00000000003a9c23       0x26 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/libgcc.a(_fixsfsi.o)
- .debug_info    0x00000000003a9c49       0x26 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/libgcc.a(_floatdisf.o)
- .debug_info    0x00000000003a9c6f       0x26 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/libgcc.a(_cmpdf2.o)
- .debug_info    0x00000000003a9c95       0x26 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/libgcc.a(_fixdfdi.o)
- .debug_info    0x00000000003a9cbb       0x26 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/libgcc.a(_floatdidf.o)
- .debug_info    0x00000000003a9ce1       0xbf /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/libgcc.a(_popcountsi2.o)
- .debug_info    0x00000000003a9da0      0x2db /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/libgcc.a(_moddi3.o)
- .debug_info    0x00000000003aa07b     0x23c7 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/libgcc.a(unwind-dw2-fde.o)
- .debug_info    0x00000000003ac442      0xac6 /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(aes_unwrap.cpp.o)
+ .debug_info    0x000000000003bddd    0x22e6b /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/C4-VIBRANT.ino.cpp.o
+ .debug_info    0x000000000005ec48    0x39386 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Config.cpp.o
+ .debug_info    0x0000000000097fce     0xb42e /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Debug.cpp.o
+ .debug_info    0x00000000000a33fc     0xdac1 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/MqttClient.cpp.o
+ .debug_info    0x00000000000b0ebd     0xb8ad /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/OtaService.cpp.o
+ .debug_info    0x00000000000bc76a     0x4af2 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Outputs.cpp.o
+ .debug_info    0x00000000000c125c     0x4244 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Reservations.cpp.o
+ .debug_info    0x00000000000c54a0     0x763e /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Runtime.cpp.o
+ .debug_info    0x00000000000ccade    0x3932f /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Stickserver.cpp.o
+ .debug_info    0x0000000000105e0d    0x493fa /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WebServer.cpp.o
+ .debug_info    0x000000000014f207    0x1be2a /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WebUpdate.cpp.o
+ .debug_info    0x000000000016b031     0xb428 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WifiManager.cpp.o
+ .debug_info    0x0000000000176459    0x1dbfa /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/LittleFS/LittleFS.a(LittleFS.cpp.o)
+ .debug_info    0x0000000000194053     0xcc47 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/LittleFS/LittleFS.a(lfs.c.o)
+ .debug_info    0x00000000001a0c9a      0x16f /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/LittleFS/LittleFS.a(lfs_util.c.o)
+ .debug_info    0x00000000001a0e09     0xa211 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/ESP8266WiFi/ESP8266WiFi.a(ESP8266WiFi.cpp.o)
+ .debug_info    0x00000000001ab01a     0xace6 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/ESP8266WiFi/ESP8266WiFi.a(ESP8266WiFiAP.cpp.o)
+ .debug_info    0x00000000001b5d00    0x2a46d /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/ESP8266WiFi/ESP8266WiFi.a(ESP8266WiFiGeneric.cpp.o)
+ .debug_info    0x00000000001e016d     0xc16d /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/ESP8266WiFi/ESP8266WiFi.a(ESP8266WiFiSTA.cpp.o)
+ .debug_info    0x00000000001ec2da     0xb195 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/ESP8266WiFi/ESP8266WiFi.a(ESP8266WiFiScan.cpp.o)
+ .debug_info    0x00000000001f746f    0x1754c /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/ESP8266WiFi/ESP8266WiFi.a(WiFiClient.cpp.o)
+ .debug_info    0x000000000020e9bb     0x9d5c /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/ESP8266WiFi/ESP8266WiFi.a(WiFiServer.cpp.o)
+ .debug_info    0x0000000000218717     0x8657 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/PubSubClient/PubSubClient.cpp.o
+ .debug_info    0x0000000000220d6e     0x264e /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/ESP8266WebServer/ESP8266WebServer.a(mimetable.cpp.o)
+ .debug_info    0x00000000002233bc    0x18cfd /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/ArduinoOTA/ArduinoOTA.cpp.o
+ .debug_info    0x000000000023c0b9     0x76c0 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/ESP8266mDNS/ESP8266mDNS.a(ESP8266mDNS.cpp.o)
+ .debug_info    0x0000000000243779    0x1d6cb /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/ESP8266mDNS/ESP8266mDNS.a(LEAmDNS.cpp.o)
+ .debug_info    0x0000000000260e44    0x14b12 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/ESP8266mDNS/ESP8266mDNS.a(LEAmDNS_Control.cpp.o)
+ .debug_info    0x0000000000275956    0x13615 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/ESP8266mDNS/ESP8266mDNS.a(LEAmDNS_Helpers.cpp.o)
+ .debug_info    0x0000000000288f6b    0x134c1 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/ESP8266mDNS/ESP8266mDNS.a(LEAmDNS_Structs.cpp.o)
+ .debug_info    0x000000000029c42c    0x14468 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/ESP8266mDNS/ESP8266mDNS.a(LEAmDNS_Transfer.cpp.o)
+ .debug_info    0x00000000002b0894     0x4423 /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(Esp-frag.cpp.o)
+ .debug_info    0x00000000002b4cb7     0xa724 /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(Esp.cpp.o)
+ .debug_info    0x00000000002bf3db     0xf633 /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(FS.cpp.o)
+ .debug_info    0x00000000002cea0e     0x4abf /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(HardwareSerial.cpp.o)
+ .debug_info    0x00000000002d34cd     0x6b56 /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(IPAddress.cpp.o)
+ .debug_info    0x00000000002da023     0x1d66 /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(LwipDhcpServer-NonOS.cpp.o)
+ .debug_info    0x00000000002dbd89     0x3f8d /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(LwipDhcpServer.cpp.o)
+ .debug_info    0x00000000002dfd16     0x2fd1 /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(LwipIntf.cpp.o)
+ .debug_info    0x00000000002e2ce7     0x4f21 /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(LwipIntfCB.cpp.o)
+ .debug_info    0x00000000002e7c08     0x72e7 /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(MD5Builder.cpp.o)
+ .debug_info    0x00000000002eeeef     0x6b0d /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(Print.cpp.o)
+ .debug_info    0x00000000002f59fc     0x5702 /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(Schedule.cpp.o)
+ .debug_info    0x00000000002fb0fe     0x592a /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(Stream.cpp.o)
+ .debug_info    0x0000000000300a28     0x83d5 /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(StreamSend.cpp.o)
+ .debug_info    0x0000000000308dfd     0xadcb /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(Updater.cpp.o)
+ .debug_info    0x0000000000313bc8     0xaa79 /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(WString.cpp.o)
+ .debug_info    0x000000000031e641     0x2dce /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(abi.cpp.o)
+ .debug_info    0x000000000032140f     0x4188 /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(base64.cpp.o)
+ .debug_info    0x0000000000325597       0x22 /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(cont.S.o)
+ .debug_info    0x00000000003255b9      0x368 /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(cont_util.cpp.o)
+ .debug_info    0x0000000000325921      0xc5f /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(core_esp8266_eboot_command.cpp.o)
+ .debug_info    0x0000000000326580     0x533f /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(core_esp8266_main.cpp.o)
+ .debug_info    0x000000000032b8bf     0x22b9 /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(core_esp8266_noniso.cpp.o)
+ .debug_info    0x000000000032db78      0xa4e /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(core_esp8266_phy.cpp.o)
+ .debug_info    0x000000000032e5c6     0x19c4 /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(core_esp8266_postmortem.cpp.o)
+ .debug_info    0x000000000032ff8a     0x2d9b /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(core_esp8266_wiring.cpp.o)
+ .debug_info    0x0000000000332d25     0x31f6 /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(core_esp8266_wiring_digital.cpp.o)
+ .debug_info    0x0000000000335f1b      0xb7b /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(crc32.cpp.o)
+ .debug_info    0x0000000000336a96     0x445a /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(flash_hal.cpp.o)
+ .debug_info    0x000000000033aef0       0xa3 /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(gdb_hooks.cpp.o)
+ .debug_info    0x000000000033af93     0x18df /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(heap.cpp.o)
+ .debug_info    0x000000000033c872      0x41b /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(cencode.cpp.o)
+ .debug_info    0x000000000033cc8d     0x2b65 /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(libc_replacements.cpp.o)
+ .debug_info    0x000000000033f7f2     0x85b0 /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(time.cpp.o)
+ .debug_info    0x0000000000347da2     0x4178 /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(uart.cpp.o)
+ .debug_info    0x000000000034bf1a     0x3941 /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(umm_malloc.cpp.o)
+ .debug_info    0x000000000034f85b      0xaf0 /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(StackThunk.cpp.o)
+ .debug_info    0x000000000035034b      0x16c /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(core_esp8266_features.cpp.o)
+ .debug_info    0x00000000003504b7      0x37b /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(core_esp8266_flash_quirks.cpp.o)
+ .debug_info    0x0000000000350832      0xcf7 /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(core_esp8266_spi_utils.cpp.o)
+ .debug_info    0x0000000000351529     0x2b6e /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(core_esp8266_timer.cpp.o)
+ .debug_info    0x0000000000354097     0x58d3 /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(core_esp8266_waveform_pwm.cpp.o)
+ .debug_info    0x000000000035996a      0xa78 /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(sqrt32.cpp.o)
+ .debug_info    0x000000000035a3e2     0x135a /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(lwip-esp.o)
+ .debug_info    0x000000000035b73c     0x16ac /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(lwip-git.o)
+ .debug_info    0x000000000035cde8      0x871 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(ethernet.o)
+ .debug_info    0x000000000035d659      0x42d /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(def.o)
+ .debug_info    0x000000000035da86     0x1687 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(dns.o)
+ .debug_info    0x000000000035f10d      0x16b /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(init.o)
+ .debug_info    0x000000000035f278      0x578 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(ip.o)
+ .debug_info    0x000000000035f7f0      0x27f /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(mem.o)
+ .debug_info    0x000000000035fa6f      0x616 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(memp.o)
+ .debug_info    0x0000000000360085     0x1273 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(netif.o)
+ .debug_info    0x00000000003612f8     0x2471 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(pbuf.o)
+ .debug_info    0x0000000000363769      0xf54 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(raw.o)
+ .debug_info    0x00000000003646bd     0x2a86 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(tcp.o)
+ .debug_info    0x0000000000367143     0x239a /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(tcp_in.o)
+ .debug_info    0x00000000003694dd     0x25ee /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(tcp_out.o)
+ .debug_info    0x000000000036bacb      0xe62 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(timeouts.o)
+ .debug_info    0x000000000036c92d     0x12ca /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(udp.o)
+ .debug_info    0x000000000036dbf7      0xd62 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(autoip.o)
+ .debug_info    0x000000000036e959     0x32e8 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(dhcp.o)
+ .debug_info    0x0000000000371c41     0x168d /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(etharp.o)
+ .debug_info    0x00000000003732ce      0xb69 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(icmp.o)
+ .debug_info    0x0000000000373e37     0x10c1 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(igmp.o)
+ .debug_info    0x0000000000374ef8     0x30e5 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(ip4.o)
+ .debug_info    0x0000000000377fdd      0x818 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(ip4_addr.o)
+ .debug_info    0x00000000003787f5     0x11d5 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(ip4_frag.o)
+ .debug_info    0x00000000003799ca     0x1293 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(sntp.o)
+ .debug_info    0x000000000037ac5d     0x230a /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(ppp.o)
+ .debug_info    0x000000000037cf67     0x22eb /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(pppos.o)
+ .debug_info    0x000000000037f252      0x85a /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(inet_chksum.o)
+ .debug_info    0x000000000037faac      0x24e /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/liblwip2-536-feat.a(magic.o)
+ .debug_info    0x000000000037fcfa      0x389 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/libstdc++.a(del_ops.o)
+ .debug_info    0x0000000000380083      0x375 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/libstdc++.a(del_opv.o)
+ .debug_info    0x00000000003803f8      0x389 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/libstdc++.a(del_opvs.o)
+ .debug_info    0x0000000000380781     0x11eb /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/libstdc++.a(eh_terminate.o)
+ .debug_info    0x000000000038196c      0x86c /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/libstdc++.a(new_handler.o)
+ .debug_info    0x00000000003821d8      0x443 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/libstdc++.a(list.o)
+ .debug_info    0x000000000038261b      0x5e5 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/libstdc++.a(functional.o)
+ .debug_info    0x0000000000382c00     0x1ec9 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/libstdc++.a(shared_ptr.o)
+ .debug_info    0x0000000000384ac9      0x88a /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/libstdc++.a(del_op.o)
+ .debug_info    0x0000000000385353      0x902 /data/home/tony/.arduino15/packages/esp8266/hardware/esp8266/3.1.2/tools/sdk/lib/libstdc++.a(eh_term_handler.o)
+ .debug_info    0x0000000000385c55      0x92a /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-atoi.o)
+ .debug_info    0x000000000038657f      0x92a /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-atol.o)
+ .debug_info    0x0000000000386ea9      0x163 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-isalnum.o)
+ .debug_info    0x000000000038700c      0x163 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-isspace.o)
+ .debug_info    0x000000000038716f      0x163 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-isxdigit.o)
+ .debug_info    0x00000000003872d2      0x188 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-itoa.o)
+ .debug_info    0x000000000038745a      0x115 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-memchr.o)
+ .debug_info    0x000000000038756f     0x150d /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-nano-vfprintf_float.o)
+ .debug_info    0x0000000000388a7c     0x10d0 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-nano-vfprintf_i.o)
+ .debug_info    0x0000000000389b4c      0xefb /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-nano-vfscanf_float.o)
+ .debug_info    0x000000000038aa47      0x9d8 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-rand.o)
+ .debug_info    0x000000000038b41f       0xce /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-sf_nan.o)
+ .debug_info    0x000000000038b4ed      0xa55 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-snprintf.o)
+ .debug_info    0x000000000038bf42      0xa20 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-sprintf.o)
+ .debug_info    0x000000000038c962      0x23c /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-strcasecmp.o)
+ .debug_info    0x000000000038cb9e       0xfa /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-strchr.o)
+ .debug_info    0x000000000038cc98      0x1ad /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-strcpy.o)
+ .debug_info    0x000000000038ce45       0xec /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-strcspn.o)
+ .debug_info    0x000000000038cf31      0x8c0 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-strdup.o)
+ .debug_info    0x000000000038d7f1      0x94d /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-strdup_r.o)
+ .debug_info    0x000000000038e13e      0x25a /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-strncasecmp.o)
+ .debug_info    0x000000000038e398       0xe2 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-strnlen.o)
+ .debug_info    0x000000000038e47a      0x107 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-strrchr.o)
+ .debug_info    0x000000000038e581       0xec /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-strspn.o)
+ .debug_info    0x000000000038e66d     0x1de7 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-strtod.o)
+ .debug_info    0x0000000000390454      0xfca /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-strtol.o)
+ .debug_info    0x000000000039141e      0x163 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-tolower.o)
+ .debug_info    0x0000000000391581      0x163 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-toupper.o)
+ .debug_info    0x00000000003916e4      0x296 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-utoa.o)
+ .debug_info    0x000000000039197a      0xa22 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-vsnprintf.o)
+ .debug_info    0x000000000039239c       0x8f /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lock.o)
+ .debug_info    0x000000000039242b      0x314 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(stdio_pgmspace.o)
+ .debug_info    0x000000000039273f      0xae0 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(string_pgmspace.o)
+ .debug_info    0x000000000039321f       0xb8 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-ctype_.o)
+ .debug_info    0x00000000003932d7     0x1900 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-dtoa.o)
+ .debug_info    0x0000000000394bd7      0x890 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-errno.o)
+ .debug_info    0x0000000000395467       0x26 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-fast_strcpy.o)
+ .debug_info    0x000000000039548d       0x26 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-fast_strncpy.o)
+ .debug_info    0x00000000003954b3     0x10c7 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-findfp.o)
+ .debug_info    0x000000000039657a      0x9dc /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-fwalk.o)
+ .debug_info    0x0000000000396f56     0x138a /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-gdtoa-gethex.o)
+ .debug_info    0x00000000003982e0      0x395 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-gdtoa-hexnan.o)
+ .debug_info    0x0000000000398675      0x945 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-impure.o)
+ .debug_info    0x0000000000398fba      0xbc2 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-lnumeric.o)
+ .debug_info    0x0000000000399b7c      0xcd9 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-locale.o)
+ .debug_info    0x000000000039a855      0xbba /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-localeconv.o)
+ .debug_info    0x000000000039b40f      0xc4a /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-mbtowc_r.o)
+ .debug_info    0x000000000039c059     0x1f61 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-mprec.o)
+ .debug_info    0x000000000039dfba     0x137f /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-nano-svfprintf.o)
+ .debug_info    0x000000000039f339     0x14c1 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-nano-vfprintf.o)
+ .debug_info    0x00000000003a07fa       0xd2 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-s_nan.o)
+ .debug_info    0x00000000003a08cc      0xba4 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-stdio.o)
+ .debug_info    0x00000000003a1470      0x9cf /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-vprintf.o)
+ .debug_info    0x00000000003a1e3f      0x9ef /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-vsprintf.o)
+ .debug_info    0x00000000003a282e      0xa81 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-wbuf.o)
+ .debug_info    0x00000000003a32af      0xc06 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-wctomb_r.o)
+ .debug_info    0x00000000003a3eb5      0x9e4 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-wsetup.o)
+ .debug_info    0x00000000003a4899      0xb18 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-fclose.o)
+ .debug_info    0x00000000003a53b1      0xbd1 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-fflush.o)
+ .debug_info    0x00000000003a5f82      0xc21 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-fputwc.o)
+ .debug_info    0x00000000003a6ba3      0xc0d /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-fvwrite.o)
+ .debug_info    0x00000000003a77b0      0xca2 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-makebuf.o)
+ .debug_info    0x00000000003a8452      0xc3d /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(lib_a-wcrtomb.o)
+ .debug_info    0x00000000003a908f      0xae7 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/../../../../xtensa-lx106-elf/lib/libc.a(isatty.o)
+ .debug_info    0x00000000003a9b76       0x26 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/libgcc.a(_modsi3.o)
+ .debug_info    0x00000000003a9b9c       0x26 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/libgcc.a(_ashrdi3.o)
+ .debug_info    0x00000000003a9bc2       0x26 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/libgcc.a(_bswapsi2.o)
+ .debug_info    0x00000000003a9be8       0x26 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/libgcc.a(_divsf3.o)
+ .debug_info    0x00000000003a9c0e       0x26 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/libgcc.a(_cmpsf2.o)
+ .debug_info    0x00000000003a9c34       0x26 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/libgcc.a(_fixsfsi.o)
+ .debug_info    0x00000000003a9c5a       0x26 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/libgcc.a(_floatdisf.o)
+ .debug_info    0x00000000003a9c80       0x26 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/libgcc.a(_cmpdf2.o)
+ .debug_info    0x00000000003a9ca6       0x26 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/libgcc.a(_fixdfdi.o)
+ .debug_info    0x00000000003a9ccc       0x26 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/libgcc.a(_floatdidf.o)
+ .debug_info    0x00000000003a9cf2       0xbf /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/libgcc.a(_popcountsi2.o)
+ .debug_info    0x00000000003a9db1      0x2db /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/libgcc.a(_moddi3.o)
+ .debug_info    0x00000000003aa08c     0x23c7 /data/home/tony/.arduino15/packages/esp8266/tools/xtensa-lx106-elf-gcc/3.1.0-gcc10.3-e5f9fec/bin/../lib/gcc/xtensa-lx106-elf/10.3.0/libgcc.a(unwind-dw2-fde.o)
+ .debug_info    0x00000000003ac453      0xac6 /data/home/tony/.cache/arduino/cores/esp8266_esp8266_nodemcuv2_e61b5768023219a08a9d3c8f4e7d3f78/core.a(aes_unwrap.cpp.o)
 
 .debug_abbrev   0x0000000000000000    0x443b9
  .debug_abbrev  0x0000000000000000      0xdc9 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Actions.cpp.o
@@ -34448,31 +34448,31 @@ OUTPUT(/data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/
                                       0x2a49d (size before relaxing)
  .debug_str     0x0000000000029dcf      0x2c5 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/BootDiagnostics.cpp.o
                                        0x2ba1 (size before relaxing)
- .debug_str     0x000000000002a094     0xb42a /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/C4-VIBRANT.ino.cpp.o
-                                      0x1ded2 (size before relaxing)
- .debug_str     0x00000000000354be     0xac47 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Config.cpp.o
+ .debug_str     0x000000000002a094     0xb405 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/C4-VIBRANT.ino.cpp.o
+                                      0x1dedd (size before relaxing)
+ .debug_str     0x0000000000035499     0xac47 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Config.cpp.o
                                       0x31fab (size before relaxing)
- .debug_str     0x0000000000040105      0x17a /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Debug.cpp.o
-                                       0xa8d0 (size before relaxing)
- .debug_str     0x000000000004027f     0x119d /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/MqttClient.cpp.o
+ .debug_str     0x00000000000400e0      0x17a /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Debug.cpp.o
+                                       0xa8db (size before relaxing)
+ .debug_str     0x000000000004025a     0x119d /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/MqttClient.cpp.o
                                        0xb50c (size before relaxing)
- .debug_str     0x000000000004141c      0xc5b /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/OtaService.cpp.o
+ .debug_str     0x00000000000413f7      0xc5b /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/OtaService.cpp.o
                                        0x86ca (size before relaxing)
- .debug_str     0x0000000000042077      0x1b5 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Outputs.cpp.o
+ .debug_str     0x0000000000042052      0x1b5 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Outputs.cpp.o
                                        0x304a (size before relaxing)
- .debug_str     0x000000000004222c      0x1dc /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Reservations.cpp.o
+ .debug_str     0x0000000000042207      0x1dc /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Reservations.cpp.o
                                        0x2b88 (size before relaxing)
- .debug_str     0x0000000000042408       0x5c /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Runtime.cpp.o
+ .debug_str     0x00000000000423e3       0x5c /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Runtime.cpp.o
                                        0x6887 (size before relaxing)
- .debug_str     0x0000000000042464     0x83a7 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Stickserver.cpp.o
+ .debug_str     0x000000000004243f     0x83a7 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/Stickserver.cpp.o
                                       0x25d29 (size before relaxing)
- .debug_str     0x000000000004a80b     0x42d5 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WebServer.cpp.o
-                                      0x2bbfb (size before relaxing)
- .debug_str     0x000000000004eae0      0x98a /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WebUpdate.cpp.o
+ .debug_str     0x000000000004a7e6     0x42d5 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WebServer.cpp.o
+                                      0x2bc06 (size before relaxing)
+ .debug_str     0x000000000004eabb      0x98a /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WebUpdate.cpp.o
                                       0x181bc (size before relaxing)
- .debug_str     0x000000000004f46a      0x231 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WifiManager.cpp.o
+ .debug_str     0x000000000004f445      0x231 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/sketch/WifiManager.cpp.o
                                        0xa124 (size before relaxing)
- .debug_str     0x000000000004f69b    0x10d19 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/LittleFS/LittleFS.a(LittleFS.cpp.o)
+ .debug_str     0x000000000004f676    0x10d3e /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/LittleFS/LittleFS.a(LittleFS.cpp.o)
                                       0x1aa3d (size before relaxing)
  .debug_str     0x00000000000603b4      0xcc4 /data/home/tony/.cache/arduino/sketches/FB7A54A5DBA6315B796E2357BA1E8DCF/libraries/LittleFS/LittleFS.a(lfs.c.o)
                                        0x15df (size before relaxing)
