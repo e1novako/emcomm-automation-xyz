@@ -145,6 +145,10 @@ Additional security note: HTTP Basic Auth is not encrypted on plain HTTP. Use th
 
 ## Release notes
 
+### 1.9.5
+
+- On the "All Outputs" page, the table now has a minimum width of 1200px (same as other pages) but is no longer capped there: once enough stickservers are discovered that the table needs more room, the page body and table grow to use up to 100% of the browser width instead of squeezing columns or scrolling inside a fixed 1200px box.
+
 ### 1.9.4
 
 - The navigation menu is now identical on every page (main output control, Settings, Network, Devices, Diagnostics, All Outputs): it always shows "Main output control", "Network, Wi-Fi & MQTT", "Devices & outputs", "Diagnostics & OTA", and "All Outputs", with the active page's button highlighted the same way (`.nav-btn.current`) everywhere, including the main page itself (previously the main page had its own different set of nav links and no highlighted "current" button).

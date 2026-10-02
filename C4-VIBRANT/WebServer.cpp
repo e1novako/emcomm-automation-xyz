@@ -1312,6 +1312,14 @@ void handleStickserverFleetGet() {
     return;
   beginChunkedHtml(200);
   String piece = settingsPageStart("fleet");
+  // This page's table has one column per discovered stickserver, so it can
+  // easily need more than the shared 1200px page width once several
+  // servers are discovered. Override the shared body/table sizing just for
+  // this page: let the body grow to the full page width if needed, while
+  // keeping the table itself no narrower than 1200px (and centered via
+  // margin:auto) when there isn't enough data to need the extra room.
+  piece += F("<style>body{max-width:100%;}#fleet-table{width:auto;"
+             "min-width:1200px;max-width:100%;margin:0 auto;}</style>");
   piece += F(
       "<p class='page-intro'>Discovered stickserver instances and their "
       "outputs, gathered passively over MQTT (hello/list). Each column is "
