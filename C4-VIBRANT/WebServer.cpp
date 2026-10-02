@@ -26,6 +26,7 @@ ESP8266WebServer server(80);
 void registerWebRoutes() {
   logStatus(F("Registering web routes..."));
   server.on("/", HTTP_GET, handleHome);
+  server.on("/partial", HTTP_GET, handleHomePartial);
   server.on("/toggle", HTTP_POST, handleToggle);
   server.on("/action", HTTP_POST, handleAction);
   server.on("/action/cancel", HTTP_POST, handleCancelAction);
@@ -248,39 +249,19 @@ bool ensureAuthorized() {
   return false;
 }
 
-void handleHome() {
+// Renders only the dynamic, auto-refreshed part of the main page (the
+// action-status banner, bulk-action buttons, and the output table) by
+// writing chunks directly. Shared by the full-page handler (initial load)
+// and the lightweight /partial endpoint that the page polls periodically so
+// only this section needs to be refreshed, instead of the whole page --
+// mirrors the same pattern used by the "All Outputs" page's
+// renderFleetContent()/'/fleet/partial'.
+static void renderHomeContent() {
   bool actionRunning = isActionRunning();
-  beginChunkedHtml(200);
 
-  String piece = FPSTR(HOME_PAGE_HEADER);
-  piece += SOFTWARE_VERSION;
-  piece += F("</p><p>Uptime: <span id='uptime-value'>");
-  piece += formatUptimeHHMMSS(millis() / 1000UL);
-  piece += F("</span></p><script>(function(){var s=");
-  piece += String(millis() / 1000UL);
-  piece += F(";function pad(n){return (n<10?'0':'')+n;}function "
-             "fmt(t){var h=Math.floor(t/3600);var "
-             "m=Math.floor((t%3600)/60);var sec=t%60;return "
-             "pad(h)+':'+pad(m)+':'+pad(sec);}function tick(){var "
-             "el=document.getElementById('uptime-value');if(el)"
-             "el.textContent=fmt(s);s++;}tick();setInterval(tick,1000);})();"
-             "</script>");
-  piece += F("<p><a class='nav-btn' href='/settings'>Settings</a> | "
-             "<a class='nav-btn' href='/settings/network'>Network</a> | "
-             "<a class='nav-btn' href='/settings/devices'>Devices</a> | "
-             "<a class='nav-btn' href='/settings/diagnostics'>Diagnostics "
-             "&amp; OTA</a> | "
-             "<a class='nav-btn' href='/fleet'>All Outputs</a></p>");
-  if (usingFactoryPassword()) {
-    piece += passwordWarningHtml();
-  }
-  writeChunk(piece);
-
-  // Initial action-status banner rendered server-side; JS polling keeps it
-  // updated. The phase-detail string is also formatted by the JS updater; they
-  // share the same visual format but run in different contexts (C++/server vs
-  // JS/browser).
-  piece = "<div id='action-status'>";
+  // Action-status banner rendered server-side on every refresh (full page
+  // load or partial poll) so it always reflects current state.
+  String piece = "<div id='action-status'>";
   if (actionRunning) {
     String phaseDetail = isInCyclePhase()
                              ? String(F(" (cycles remaining: ")) +
@@ -414,7 +395,89 @@ void handleHome() {
     writeChunk(piece);
   }
 
-  writeChunk(F("</table></body></html>"));
+  writeChunk(F("</table>"));
+}
+
+void handleHome() {
+  beginChunkedHtml(200);
+
+  String piece = FPSTR(HOME_PAGE_HEADER);
+  piece += SOFTWARE_VERSION;
+  piece += F("</p><p>Uptime: <span id='uptime-value'>");
+  piece += formatUptimeHHMMSS(millis() / 1000UL);
+  piece += F("</span></p><script>(function(){var s=");
+  piece += String(millis() / 1000UL);
+  piece += F(";function pad(n){return (n<10?'0':'')+n;}function "
+             "fmt(t){var h=Math.floor(t/3600);var "
+             "m=Math.floor((t%3600)/60);var sec=t%60;return "
+             "pad(h)+':'+pad(m)+':'+pad(sec);}function tick(){var "
+             "el=document.getElementById('uptime-value');if(el)"
+             "el.textContent=fmt(s);s++;}tick();setInterval(tick,1000);})();"
+             "</script>");
+  piece += F("<p><a class='nav-btn' href='/settings'>Settings</a>"
+             "<a class='nav-btn' href='/settings/network'>Network</a>"
+             "<a class='nav-btn' href='/settings/devices'>Devices</a>"
+             "<a class='nav-btn' href='/settings/diagnostics'>Diagnostics "
+             "&amp; OTA</a>"
+             "<a class='nav-btn' href='/fleet'>All Outputs</a></p>");
+  if (usingFactoryPassword()) {
+    piece += passwordWarningHtml();
+  }
+  // This page is streamed as many small HTTP chunks; on a slow/weak WiFi
+  // link the browser can render a table with table-layout:fixed
+  // progressively as chunks arrive, so a user looking at it mid-load would
+  // see rows/cells that simply haven't arrived yet -- which looks exactly
+  // like missing/corrupted data but is actually just an incomplete page
+  // load. Keep the content hidden behind a loading message until the whole
+  // thing has arrived, then reveal it with a trailing inline script so the
+  // user only ever sees the complete content. This only matters for this
+  // direct, streamed initial load -- the periodic /partial refresh below is
+  // fetched in full by the browser before it is ever shown, so it doesn't
+  // need the same treatment.
+  piece += F("<p id='home-loading'>Loading output status&hellip;</p>"
+             "<div id='home-content' style='display:none'>");
+  writeChunk(piece);
+  renderHomeContent();
+  writeChunk(F(
+      "</div>"
+      "<script>"
+      "document.getElementById('home-loading').style.display='none';"
+      "document.getElementById('home-content').style.display='';"
+      "function refreshHomeContent(){"
+      "fetch('/partial').then(function(r){return r.text();})"
+      ".then(function(html){"
+      "document.getElementById('home-content').innerHTML=html;"
+      "}).catch(function(){});"
+      "}"
+      "setInterval(refreshHomeContent,3000);"
+      // Buttons are re-created on every refresh, so submits are intercepted
+      // via delegation on a stable ancestor rather than binding to the
+      // buttons themselves. Submitting via fetch (instead of a normal
+      // navigation) lets the page stay in place and schedule a refresh 1
+      // second later, giving the action/MQTT command time to take effect
+      // before the section re-fetches. If an inline onsubmit confirm()
+      // dialog already cancelled the submission (e.g. bulk Leave Mesh/
+      // Factory Reset), defaultPrevented is already true and this is
+      // skipped.
+      "document.getElementById('home-content').addEventListener('submit',"
+      "function(e){"
+      "if(e.defaultPrevented)return;"
+      "e.preventDefault();"
+      "fetch(e.target.action,{method:'POST',body:new FormData(e.target)})"
+      ".catch(function(){})"
+      ".then(function(){setTimeout(refreshHomeContent,1000);});"
+      "});"
+      "</script></body></html>"));
+  endChunkedHtml();
+}
+
+// Lightweight endpoint returning only the dynamic action-status/output-table
+// HTML fragment (no page chrome), polled periodically by the main page's
+// inline script so only that section needs to refresh, not the whole page.
+// Matches the main page's own access level (no auth required to view).
+void handleHomePartial() {
+  beginChunkedHtml(200);
+  renderHomeContent();
   endChunkedHtml();
 }
 
@@ -594,15 +657,13 @@ void handleLeaveMeshAll() {
 
 static String settingsNavigation(const char *activePage) {
   String html = F("<nav class='settings-nav' aria-label='Settings pages'>"
-                   "<a class='nav-btn' href='/'>Main output control</a> | ");
+                   "<a class='nav-btn' href='/'>Main output control</a>");
   const char *paths[] = {"/settings/network", "/settings/devices",
                          "/settings/diagnostics", "/fleet"};
   const char *labels[] = {"Network, Wi-Fi & MQTT", "Devices & outputs",
                           "Diagnostics & OTA", "All Outputs"};
   const char *pages[] = {"network", "devices", "diagnostics", "fleet"};
   for (uint8_t i = 0; i < 4; ++i) {
-    if (i > 0)
-      html += F(" | ");
     html += "<a class='nav-btn";
     if (String(activePage) == pages[i])
       html += " current";

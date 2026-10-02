@@ -22,21 +22,8 @@ static const char HOME_PAGE_HEADER[] PROGMEM =
     "checkbox']{width:18px;height:18px;}.action-"
     "banner{background:#fff3cd;border:1px solid "
     "#ffc107;padding:10px;margin:10px "
-    "0;border-radius:4px;}</style><script>\nvar _wasRunning=false;\nfunction "
-    "pollStatus(){\n  fetch('/action/status').then(function(r){return "
-    "r.json();})\n  .then(function(d){\n    var "
-    "div=document.getElementById('action-status');\n    if(d.running){\n      "
-    "var detail=d.cyclesRemaining>0?' (cycles remaining: "
-    "'+d.cyclesRemaining+')':'';\n      div.innerHTML='<div "
-    "class=\"action-banner\"><strong>Action running on '+(d.allOutputs?'all "
-    "outputs':'output '+(d.idx+1))+': '+d.phase+detail+'</strong>'      +' "
-    "&nbsp; <form method=\"post\" action=\"/action/cancel\" "
-    "style=\"display:inline;\"><button "
-    "type=\"submit\">Cancel</button></form></div>';\n    } else {\n      "
-    "div.innerHTML='';\n      if(_wasRunning){window.location.reload();}\n    "
-    "}\n    _wasRunning=d.running;\n  "
-    "}).catch(function(){});\n}\nsetInterval(pollStatus,3000);\n</script></"
-    "head><body><h1>VIBRANT Output Control</h1><p>Version: ";
+    "0;border-radius:4px;}</style>"
+    "</head><body><h1>VIBRANT Output Control</h1><p>Version: ";
 static const char SETTINGS_PAGE_HEADER[] PROGMEM =
     "<!doctype html><html><head><meta charset='utf-8'><title>VIBRANT "
     "Settings</"

@@ -145,6 +145,11 @@ Additional security note: HTTP Basic Auth is not encrypted on plain HTTP. Use th
 
 ## Release notes
 
+### 1.9.0
+
+- Removed the `|` separators between navigation menu buttons on every page (main page, Settings, Network, Devices, Diagnostics, All Outputs); the buttons already have enough margin/border styling to read clearly without them.
+- The main output-control page now uses the same partial-refresh pattern as the "All Outputs" page: a new `GET /partial` endpoint returns just the action-status banner, bulk-action buttons, and output table, which the page polls every 3 seconds and swaps in-place instead of a full reload. Clicking any button on the page (output toggle, reservation release, per-output Leave Mesh/Factory Reset, or the bulk actions) now submits via `fetch()` in place and schedules a refresh 1 second later, instead of navigating/reloading the page. This replaces the previous bespoke `/action/status` polling script, which only refreshed the action banner and fell back to a full `window.location.reload()` once an action finished.
+
 ### 1.8.3
 
 - Clicking an output toggle button on the "All Outputs" page no longer navigates/reloads the whole page: the click is submitted via `fetch()` in place, and the output section is refreshed 1 second later (via the existing `/fleet/partial` polling mechanism) to give the MQTT command time to take effect before the new state is fetched.

@@ -15,6 +15,7 @@ bool usingFactoryPassword();
 String passwordWarningHtml();
 bool ensureAuthorized();
 void handleHome();
+void handleHomePartial();
 void handleToggle();
 void handleAction();
 void handleCancelAction();
