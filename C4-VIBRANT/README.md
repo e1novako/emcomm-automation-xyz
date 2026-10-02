@@ -145,6 +145,11 @@ Additional security note: HTTP Basic Auth is not encrypted on plain HTTP. Use th
 
 ## Release notes
 
+### 1.9.4
+
+- The navigation menu is now identical on every page (main output control, Settings, Network, Devices, Diagnostics, All Outputs): it always shows "Main output control", "Network, Wi-Fi & MQTT", "Devices & outputs", "Diagnostics & OTA", and "All Outputs", with the active page's button highlighted the same way (`.nav-btn.current`) everywhere, including the main page itself (previously the main page had its own different set of nav links and no highlighted "current" button).
+- Removed the redundant secondary page-title heading (e.g. "Network, Wi-Fi & MQTT") that used to appear under the unified device-name header on settings pages; the highlighted nav button now identifies the current page instead.
+
 ### 1.9.3
 
 - All shown page content (header, navigation, tables, and form fields) is now encapsulated in a single 1200px-max-width column (`body{max-width:1200px;margin:20px auto;}`) that is centered on the screen on every page. Tables and form fields now fill that column at 100% width instead of being separately capped/centered at 70%/1200px, so everything on the page lines up within the same centered 1200px boundary.

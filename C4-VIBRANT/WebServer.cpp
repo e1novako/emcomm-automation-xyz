@@ -114,6 +114,13 @@ static String pageHeaderHtml() {
   return html;
 }
 
+// Forward declaration: the shared nav bar (with "Main output control" plus
+// Network/Devices/Diagnostics/All Outputs) is defined further down near the
+// settings page helpers, but handleHome() needs it too so every page shows
+// the exact same navigation, including a highlighted "current" button for
+// whichever page is active.
+static String pageNavigation(const char *activePage);
+
 namespace {
 // Streaming helpers: callers build and send one small piece of HTML at a
 // time (e.g. one table row) instead of accumulating a whole page in RAM, so
@@ -428,12 +435,7 @@ void handleHome() {
 
   String piece = FPSTR(HOME_PAGE_HEADER);
   piece += pageHeaderHtml();
-  piece += F("<p><a class='nav-btn' href='/settings'>Settings</a>"
-             "<a class='nav-btn' href='/settings/network'>Network</a>"
-             "<a class='nav-btn' href='/settings/devices'>Devices</a>"
-             "<a class='nav-btn' href='/settings/diagnostics'>Diagnostics "
-             "&amp; OTA</a>"
-             "<a class='nav-btn' href='/fleet'>All Outputs</a></p>");
+  piece += pageNavigation("home");
   if (usingFactoryPassword()) {
     piece += passwordWarningHtml();
   }
@@ -669,15 +671,16 @@ void handleLeaveMeshAll() {
   server.send(303);
 }
 
-static String settingsNavigation(const char *activePage) {
-  String html = F("<nav class='settings-nav' aria-label='Settings pages'>"
-                   "<a class='nav-btn' href='/'>Main output control</a>");
-  const char *paths[] = {"/settings/network", "/settings/devices",
+static String pageNavigation(const char *activePage) {
+  String html = F("<nav class='settings-nav' aria-label='Page navigation'>");
+  const char *paths[] = {"/", "/settings/network", "/settings/devices",
                          "/settings/diagnostics", "/fleet"};
-  const char *labels[] = {"Network, Wi-Fi & MQTT", "Devices & outputs",
-                          "Diagnostics & OTA", "All Outputs"};
-  const char *pages[] = {"network", "devices", "diagnostics", "fleet"};
-  for (uint8_t i = 0; i < 4; ++i) {
+  const char *labels[] = {"Main output control", "Network, Wi-Fi & MQTT",
+                          "Devices & outputs", "Diagnostics & OTA",
+                          "All Outputs"};
+  const char *pages[] = {"home", "network", "devices", "diagnostics",
+                         "fleet"};
+  for (uint8_t i = 0; i < 5; ++i) {
     html += "<a class='nav-btn";
     if (String(activePage) == pages[i])
       html += " current";
@@ -690,12 +693,11 @@ static String settingsNavigation(const char *activePage) {
   return html;
 }
 
-static String settingsPageStart(const char *title, const char *activePage) {
+static String settingsPageStart(const char *activePage) {
   String html = FPSTR(SETTINGS_PAGE_HEADER);
   html += "</head><body>";
   html += pageHeaderHtml();
-  html += "<h2 class='page-header'>" + String(title) + "</h2>";
-  html += settingsNavigation(activePage);
+  html += pageNavigation(activePage);
   if (usingFactoryPassword())
     html += passwordWarningHtml();
   return html;
@@ -720,7 +722,7 @@ static void logSettingsDebug(const char *pageName) {
 void handleSettingsGet() {
   if (!ensureAuthorized())
     return;
-  String html = settingsPageStart("Settings", "");
+  String html = settingsPageStart("");
   html += F("<p class='page-intro'>Choose a settings page to configure the "
             "network, outputs, or diagnostics and firmware updates.</p>"
             "<ul><li><a href='/settings/network'>Network, Wi-Fi &amp; "
@@ -733,7 +735,7 @@ void handleSettingsGet() {
 void handleNetworkSettingsGet() {
   if (!ensureAuthorized())
     return;
-  String html = settingsPageStart("Network, Wi-Fi & MQTT", "network");
+  String html = settingsPageStart("network");
   html += "<p class='page-intro'>Network and broker changes are saved without "
           "altering device or diagnostics settings.</p>"
           "<form method='post' action='/settings/network'>"
@@ -937,7 +939,7 @@ void handleDeviceSettingsGet() {
   if (!ensureAuthorized())
     return;
   beginChunkedHtml(200);
-  String piece = settingsPageStart("Devices & output configuration", "devices");
+  String piece = settingsPageStart("devices");
   piece += FPSTR(SETTINGS_PAGE_SCRIPT);
   piece += "<p>Each active output must use a different GPIO. TX/RX disable "
            "serial communication; GPIO0 (FLASH) and GPIO15 affect boot.</p>"
@@ -1072,7 +1074,7 @@ void handleDeviceSettingsPost() {
 void handleDiagnosticsGet() {
   if (!ensureAuthorized())
     return;
-  String html = settingsPageStart("Diagnostics & OTA", "diagnostics");
+  String html = settingsPageStart("diagnostics");
   html += "<p class='page-intro'>Control verbose serial diagnostics and update "
           "the firmware.</p><form method='post' "
           "action='/settings/diagnostics'><fieldset><legend>Diagnostics and "
@@ -1309,7 +1311,7 @@ void handleStickserverFleetGet() {
   if (!ensureAuthorized())
     return;
   beginChunkedHtml(200);
-  String piece = settingsPageStart("All Outputs", "fleet");
+  String piece = settingsPageStart("fleet");
   piece += F(
       "<p class='page-intro'>Discovered stickserver instances and their "
       "outputs, gathered passively over MQTT (hello/list). Each column is "
