@@ -145,6 +145,10 @@ Additional security note: HTTP Basic Auth is not encrypted on plain HTTP. Use th
 
 ## Release notes
 
+### 1.8.3
+
+- Clicking an output toggle button on the "All Outputs" page no longer navigates/reloads the whole page: the click is submitted via `fetch()` in place, and the output section is refreshed 1 second later (via the existing `/fleet/partial` polling mechanism) to give the MQTT command time to take effect before the new state is fetched.
+
 ### 1.8.2
 
 - The "All Outputs" page now auto-refreshes its output table every 5 seconds via a new `GET /fleet/partial` endpoint, instead of requiring a manual page reload to see fresh state. Only the status/output-table section is re-fetched and swapped in-place (via JS `fetch()` + `innerHTML`); the page chrome (nav, intro text) is not reloaded.

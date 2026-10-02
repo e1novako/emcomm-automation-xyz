@@ -1266,6 +1266,19 @@ void handleStickserverFleetGet() {
       "}).catch(function(){});"
       "}"
       "setInterval(refreshFleetContent,5000);"
+      // Output toggle buttons are re-created on every refresh, so submits
+      // are intercepted via delegation on a stable ancestor rather than
+      // binding to the buttons themselves. Submitting via fetch (instead of
+      // a normal navigation) lets the page stay in place and schedule a
+      // refresh 1 second later, giving the MQTT command time to take effect
+      // and be reflected by the time the table is re-fetched.
+      "document.getElementById('fleet-content').addEventListener('submit',"
+      "function(e){"
+      "e.preventDefault();"
+      "fetch(e.target.action,{method:'POST',body:new FormData(e.target)})"
+      ".catch(function(){})"
+      ".then(function(){setTimeout(refreshFleetContent,1000);});"
+      "});"
       "</script></body></html>"));
   endChunkedHtml();
 }
