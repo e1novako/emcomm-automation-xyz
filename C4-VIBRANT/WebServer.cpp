@@ -191,6 +191,11 @@ void beginChunkedHtml(int code) {
   // disable Nagle to reduce the chance of buffer backlog in the first place.
   server.client().setTimeout(8000);
   server.client().setNoDelay(true);
+  // Without this, browsers can serve a stale cached copy of a GET page
+  // (most importantly /partial and /fleet/partial) instead of re-fetching,
+  // so an action that changed server-side state (e.g. "Turn OFF all")
+  // silently appears to do nothing on the next periodic refresh.
+  server.sendHeader("Cache-Control", "no-store");
   gChunkedActive = server.chunkedResponseModeStart(code, "text/html");
 }
 

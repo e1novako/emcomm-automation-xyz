@@ -145,6 +145,10 @@ Additional security note: HTTP Basic Auth is not encrypted on plain HTTP. Use th
 
 ## Release notes
 
+### 1.8.1
+
+- Fixed "Turn ON all"/"Turn OFF all" (and other bulk/per-output actions) appearing to silently do nothing on some browsers: the `/partial` and `/fleet/partial` auto-refresh endpoints (and all other chunked HTML pages) now send `Cache-Control: no-store`, so a browser can no longer serve a stale cached copy of the output-status page after an action changed server-side state.
+
 ### 1.8.0
 
 Consolidated release note covering all work since the original 1.8.0 (formerly versioned 1.8.0-1.13.0; those intermediate version numbers have been folded into this single entry).
