@@ -23,7 +23,8 @@ static const char HOME_PAGE_HEADER[] PROGMEM =
     "checkbox']{width:18px;height:18px;}.action-"
     "banner{background:#fff3cd;border:1px solid "
     "#ffc107;padding:10px;margin:10px "
-    "0;border-radius:4px;}.page-header{text-align:center;}</style>"
+    "0;border-radius:4px;}.page-header{text-align:center;}.settings-nav{"
+    "text-align:center;}</style>"
     "</head><body>";
 static const char SETTINGS_PAGE_HEADER[] PROGMEM =
     "<!doctype html><html><head><meta charset='utf-8'><title>VIBRANT "
@@ -38,7 +39,8 @@ static const char SETTINGS_PAGE_HEADER[] PROGMEM =
     "#999;border-radius:999px;min-width:64px;padding:8px "
     "16px;margin:2px;font-weight:bold;cursor:pointer;background:#e0e0e0;"
     "color:#222;}.output-on{background:#fff2b2;color:#222;}.output-off{"
-    "background:#d3d3d3;color:#222;}.bulk-actions{margin:10px 0;}.settings-nav a{"
+    "background:#d3d3d3;color:#222;}.bulk-actions{margin:10px 0;}.settings-nav{"
+    "text-align:center;}.settings-nav a{"
     "display:inline-block;margin:4px 8px 12px 0;}.settings-nav .current{"
     "font-weight:bold;}.page-intro{color:#555;}.nav-btn{display:inline-block;"
     "border:1px solid #999;border-radius:999px;padding:6px "

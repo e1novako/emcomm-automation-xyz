@@ -145,6 +145,11 @@ Additional security note: HTTP Basic Auth is not encrypted on plain HTTP. Use th
 
 ## Release notes
 
+### 1.11.0
+
+- The nav menu is now horizontally centered (`.settings-nav{text-align:center;}`) on every page, instead of being left-aligned within the centered page column.
+- Added bulk-action buttons to the "All Outputs" page: "Turn On", "Turn Off", "Leave Mesh", and "Factory Reset" (with the same confirmation prompts as the main page's bulk buttons for the destructive ones). Unlike the main page's bulk buttons, which only affect this device's own outputs, these send one MQTT command per discovered output across every discovered stickserver, via a new `POST /fleet/bulk` endpoint.
+
 ### 1.10.0
 
 - Renamed the output table columns on the main page and Devices settings page: "Manufacturer" -> "DUT Manufacturer", "Model" -> "DUT Model", "Name" -> "DUT Name". On the main page, "Output" is now labeled "Status".

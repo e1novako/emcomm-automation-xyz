@@ -35,6 +35,7 @@ void handleRebootDevice();
 void handleStickserverFleetGet();
 void handleStickserverFleetPartial();
 void handleFleetOutputToggle();
+void handleFleetBulkAction();
 void handleReleaseReservation();
 void handleGuiReserveOutput();
 void handleNotFound();

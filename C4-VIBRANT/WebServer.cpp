@@ -48,6 +48,7 @@ void registerWebRoutes() {
   server.on("/fleet", HTTP_GET, handleStickserverFleetGet);
   server.on("/fleet/partial", HTTP_GET, handleStickserverFleetPartial);
   server.on("/fleet/toggle", HTTP_POST, handleFleetOutputToggle);
+  server.on("/fleet/bulk", HTTP_POST, handleFleetBulkAction);
   server.on("/config/export", HTTP_GET, handleConfigExport);
   server.on("/config/import", HTTP_POST, handleConfigImportDone,
             handleConfigImportUpload);
@@ -1256,6 +1257,31 @@ static void renderFleetContent() {
     return;
   }
 
+  // Bulk actions send one MQTT command per discovered output (across every
+  // discovered stickserver, not just this device's own outputs), mirroring
+  // the main page's "All on/off/Leave Mesh/Factory Reset" buttons but for
+  // the whole fleet.
+  writeChunk(
+      F("<div class='bulk-actions'>"
+        "<form method='post' action='/fleet/bulk' "
+        "style='display:inline;margin:0;'><input type='hidden' name='cmd' "
+        "value='power_on'><button type='submit'>Turn On</button></form>"
+        "<form method='post' action='/fleet/bulk' "
+        "style='display:inline;margin:0;'><input type='hidden' name='cmd' "
+        "value='power_off'><button type='submit'>Turn Off</button></form>"
+        "<form method='post' action='/fleet/bulk' "
+        "style='display:inline;margin:0;' onsubmit=\"return "
+        "confirm('Run leave mesh signal on ALL discovered "
+        "outputs?');\"><input type='hidden' name='cmd' "
+        "value='leave_mesh'><button type='submit'>Leave Mesh</button></form>"
+        "<form method='post' action='/fleet/bulk' "
+        "style='display:inline;margin:0;' onsubmit=\"return "
+        "confirm('Run factory reset signal on ALL discovered "
+        "outputs?');\"><input type='hidden' name='cmd' "
+        "value='factory_reset'><button type='submit'>Factory "
+        "Reset</button></form>"
+        "</div>"));
+
   // Sort columns by ascending IP address (numeric, not lexicographic, so
   // e.g. .9 sorts before .10). Servers with no known IP (third-party
   // stickservers that don't report one) sort after all known-IP servers,
@@ -1454,6 +1480,55 @@ void handleFleetOutputToggle() {
   String payload;
   serializeJson(req, payload);
   mqttClient.publish(topic.c_str(), payload.c_str());
+  server.sendHeader("Location", "/fleet");
+  server.send(303);
+}
+
+void handleFleetBulkAction() {
+  if (!ensureAuthorized())
+    return;
+  if (!server.hasArg("cmd")) {
+    server.send(400, "text/plain", "Missing cmd");
+    return;
+  }
+  String cmd = server.arg("cmd");
+  if (cmd != "power_on" && cmd != "power_off" && cmd != "leave_mesh" &&
+      cmd != "factory_reset") {
+    server.send(400, "text/plain", "Invalid cmd");
+    return;
+  }
+  if (!cfg.mqttEnabled || !mqttClient.connected()) {
+    server.send(503, "text/plain", "MQTT is not connected");
+    return;
+  }
+  logStatus(String(F("Fleet bulk action (")) + cmd +
+            F(") requested for all discovered outputs via web UI."));
+  // Send one command per discovered output, across every discovered
+  // stickserver (not just this device's own outputs). Each stickserver
+  // only needs the single command published to its own instance topic;
+  // yield() between publishes keeps the loop responsive if there turn out
+  // to be many discovered outputs.
+  uint16_t sent = 0;
+  for (uint8_t i = 0; i < MAX_DISCOVERED_SERVERS; ++i) {
+    if (!discoveredServers[i].active)
+      continue;
+    const DiscoveredServer &s = discoveredServers[i];
+    for (uint8_t j = 0; j < s.outputCount; ++j) {
+      if (!s.outputs[j].valid)
+        continue;
+      JsonDocument req;
+      req["cmd"] = cmd;
+      req["ver"] = STICKSERVER_PROTOCOL_VERSION;
+      req["mid"] =
+          String(F("fleet-bulk-")) + String(millis()) + "-" + String(sent);
+      req["euid"] = s.outputs[j].euid;
+      String payload;
+      serializeJson(req, payload);
+      mqttClient.publish(s.instanceTopic.c_str(), payload.c_str());
+      ++sent;
+      yield();
+    }
+  }
   server.sendHeader("Location", "/fleet");
   server.send(303);
 }
