@@ -145,6 +145,10 @@ Additional security note: HTTP Basic Auth is not encrypted on plain HTTP. Use th
 
 ## Release notes
 
+### 1.9.3
+
+- All shown page content (header, navigation, tables, and form fields) is now encapsulated in a single 1200px-max-width column (`body{max-width:1200px;margin:20px auto;}`) that is centered on the screen on every page. Tables and form fields now fill that column at 100% width instead of being separately capped/centered at 70%/1200px, so everything on the page lines up within the same centered 1200px boundary.
+
 ### 1.9.2
 
 - All tables on every page (main output control, Settings, Network, Devices, Diagnostics, All Outputs) are now sized consistently: 70% of the available width, capped at 1200px max, and horizontally centered via `margin:0 auto`. Previously the main-page table was 60% wide (not centered) and the settings-page tables were full width (not centered).
