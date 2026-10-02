@@ -5,6 +5,7 @@ namespace vibrant {
 extern ESP8266WebServer server;
 void registerWebRoutes();
 String htmlEscape(const String &);
+String jsonEscape(const String &);
 String formatUptimeHHMMSS(unsigned long);
 void sendChunkedHtml(int, const String &);
 String pinOption(int, const PinMapping &);
@@ -33,7 +34,7 @@ void handleDiagnosticsGet();
 void handleDiagnosticsPost();
 void handleRebootDevice();
 void handleStickserverFleetGet();
-void handleStickserverFleetPartial();
+void handleStickserverFleetData();
 void handleFleetOutputToggle();
 void handleFleetBulkAction();
 void handleReleaseReservation();

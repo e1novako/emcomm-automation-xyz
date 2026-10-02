@@ -46,7 +46,7 @@ void registerWebRoutes() {
   server.on("/reservation/release", HTTP_POST, handleReleaseReservation);
   server.on("/reservation/reserve", HTTP_POST, handleGuiReserveOutput);
   server.on("/fleet", HTTP_GET, handleStickserverFleetGet);
-  server.on("/fleet/partial", HTTP_GET, handleStickserverFleetPartial);
+  server.on("/fleet/data", HTTP_GET, handleStickserverFleetData);
   server.on("/fleet/toggle", HTTP_POST, handleFleetOutputToggle);
   server.on("/fleet/bulk", HTTP_POST, handleFleetBulkAction);
   server.on("/config/export", HTTP_GET, handleConfigExport);
@@ -78,6 +78,33 @@ String htmlEscape(const String &value) {
       out += F("&#39;");
     else
       out += c;
+  }
+  return out;
+}
+
+// Escapes a string for safe embedding as a JSON string value (used when
+// streaming JSON by hand instead of via ArduinoJson, e.g. /fleet/data).
+String jsonEscape(const String &value) {
+  String out;
+  out.reserve(value.length() + 8);
+  for (size_t i = 0; i < value.length(); ++i) {
+    unsigned char c = (unsigned char)value[i];
+    if (c == '"' || c == '\\') {
+      out += '\\';
+      out += (char)c;
+    } else if (c == '\n')
+      out += F("\\n");
+    else if (c == '\r')
+      out += F("\\r");
+    else if (c == '\t')
+      out += F("\\t");
+    else if (c < 0x20) {
+      char buf[8];
+      snprintf(buf, sizeof(buf), "\\u%04x", c);
+      out += buf;
+    } else {
+      out += (char)c;
+    }
   }
   return out;
 }
@@ -131,6 +158,7 @@ namespace {
 // is safe.
 bool gChunkedActive = false;
 String gChunkedFallback;
+const char *gChunkedContentType = "text/html";
 
 // Writes exactly `len` bytes to `client`, retrying (with a short delay) as
 // long as the socket is connected and progress is still possible. This is
@@ -180,10 +208,14 @@ void writeRaw(const char *data, size_t len) {
 }
 } // namespace
 
-// Starts a chunked HTML response. Must be paired with one or more calls to
-// writeChunk() followed by endChunkedHtml().
-void beginChunkedHtml(int code) {
+// Starts a chunked response. Must be paired with one or more calls to
+// writeChunk() followed by endChunkedHtml(). contentType defaults to
+// "text/html"; pass "application/json" for streamed JSON endpoints (e.g.
+// /fleet/data) so a large payload never needs to be held in RAM at once
+// either.
+void beginChunkedHtml(int code, const char *contentType = "text/html") {
   gChunkedFallback = "";
+  gChunkedContentType = contentType;
   // ESP8266WebServer's default 1s write timeout is too tight for a busy page
   // with many sequential chunk writes (e.g. the "All Outputs" table); under
   // momentary congestion a write can time out short without retrying,
@@ -192,11 +224,11 @@ void beginChunkedHtml(int code) {
   server.client().setTimeout(8000);
   server.client().setNoDelay(true);
   // Without this, browsers can serve a stale cached copy of a GET page
-  // (most importantly /partial and /fleet/partial) instead of re-fetching,
-  // so an action that changed server-side state (e.g. "Turn OFF all")
-  // silently appears to do nothing on the next periodic refresh.
+  // (most importantly /partial and /fleet/data) instead of re-fetching, so
+  // an action that changed server-side state (e.g. "Turn OFF all") silently
+  // appears to do nothing on the next periodic refresh.
   server.sendHeader("Cache-Control", "no-store");
-  gChunkedActive = server.chunkedResponseModeStart(code, "text/html");
+  gChunkedActive = server.chunkedResponseModeStart(code, contentType);
 }
 
 // Sends one piece of HTML immediately as its own independent chunk. If the
@@ -215,7 +247,7 @@ void endChunkedHtml() {
     server.chunkedResponseFinalize();
     gChunkedActive = false;
   } else {
-    server.send(200, "text/html", gChunkedFallback);
+    server.send(200, gChunkedContentType, gChunkedFallback);
     gChunkedFallback = "";
   }
 }
@@ -292,9 +324,7 @@ bool ensureAuthorized() {
 // action-status banner, bulk-action buttons, and the output table) by
 // writing chunks directly. Shared by the full-page handler (initial load)
 // and the lightweight /partial endpoint that the page polls periodically so
-// only this section needs to be refreshed, instead of the whole page --
-// mirrors the same pattern used by the "All Outputs" page's
-// renderFleetContent()/'/fleet/partial'.
+// only this section needs to be refreshed, instead of the whole page.
 static void renderHomeContent() {
   bool actionRunning = isActionRunning();
 
@@ -1269,25 +1299,24 @@ void handleRebootDevice() {
   ESP.restart();
 }
 
-// Renders only the dynamic, auto-refreshed part of the "All Outputs" page
-// (status messages or the live output table) by writing chunks directly.
-// Shared by the full-page handler (initial load) and the lightweight
-// /fleet/partial endpoint that the page polls periodically so only this
-// section needs to be refreshed, instead of the whole page.
-static void renderFleetContent() {
+// Streams the full "All Outputs" state as JSON: which stickservers are
+// discovered, their outputs, and each output's current on/off state. The
+// /fleet page is a static shell (built once) whose JS fetches this endpoint
+// on load and on every periodic refresh, building/rebuilding the output
+// table entirely client-side from this data -- this replaced an earlier
+// design where the ESP8266 itself re-rendered the whole HTML table (with a
+// <form> per output button) on every refresh, which was repeatedly
+// implicated in reboots under heap/WiFi pressure on large tables. Shipping
+// plain data instead of markup means the device does much less work per
+// refresh, and the browser (not the ESP8266) is responsible for
+// consistently redrawing the table every time.
+static void renderFleetDataJson() {
   if (!cfg.mqttEnabled || !mqttClient.connected()) {
-    writeChunk(F("<p style='color:#b00020;'><strong>MQTT is not connected.</"
-                 "strong> Enable and configure MQTT on the Network settings "
-                 "page to discover stickservers.</p>"));
+    writeChunk(F("{\"ok\":false,\"reason\":\"mqtt\"}"));
     return;
   }
-
   if (!cfg.stickserverQueryEnabled && !cfg.stickserverPassiveDiscoveryEnabled) {
-    writeChunk(F(
-        "<p style='color:#b00020;'><strong>Stickserver discovery is "
-        "disabled.</strong> Enable &quot;Query for stickservers&quot; "
-        "or &quot;Passively parse hello/list responses&quot; on the "
-        "Network settings page to populate this page.</p>"));
+    writeChunk(F("{\"ok\":false,\"reason\":\"disabled\"}"));
     return;
   }
 
@@ -1295,45 +1324,16 @@ static void renderFleetContent() {
   // discovered the same way as any other, via its own hello/list replies).
   uint8_t activeIdx[MAX_DISCOVERED_SERVERS];
   uint8_t activeCount = 0;
-  uint8_t maxRows = 0;
   for (uint8_t i = 0; i < MAX_DISCOVERED_SERVERS; ++i) {
     if (!discoveredServers[i].active)
       continue;
     activeIdx[activeCount++] = i;
-    if (discoveredServers[i].outputCount > maxRows)
-      maxRows = discoveredServers[i].outputCount;
   }
 
   if (activeCount == 0) {
-    writeChunk(F("<p>No stickservers discovered yet. This page refreshes "
-                 "automatically in the background; wait a few seconds.</p>"));
+    writeChunk(F("{\"ok\":true,\"servers\":[]}"));
     return;
   }
-
-  // Bulk actions send one MQTT command per discovered output (across every
-  // discovered stickserver, not just this device's own outputs), mirroring
-  // the main page's "All on/off/Leave Mesh/Factory Reset" buttons but for
-  // the whole fleet.
-  writeChunk(
-      F("<div class='bulk-actions'>"
-        "<form method='post' action='/fleet/bulk' "
-        "style='display:inline;margin:0;'><input type='hidden' name='cmd' "
-        "value='power_on'><button type='submit'>Turn On</button></form>"
-        "<form method='post' action='/fleet/bulk' "
-        "style='display:inline;margin:0;'><input type='hidden' name='cmd' "
-        "value='power_off'><button type='submit'>Turn Off</button></form>"
-        "<form method='post' action='/fleet/bulk' "
-        "style='display:inline;margin:0;' onsubmit=\"return "
-        "confirm('Run leave mesh signal on ALL discovered "
-        "outputs?');\"><input type='hidden' name='cmd' "
-        "value='leave_mesh'><button type='submit'>Leave Mesh</button></form>"
-        "<form method='post' action='/fleet/bulk' "
-        "style='display:inline;margin:0;' onsubmit=\"return "
-        "confirm('Run factory reset signal on ALL discovered "
-        "outputs?');\"><input type='hidden' name='cmd' "
-        "value='factory_reset'><button type='submit'>Factory "
-        "Reset</button></form>"
-        "</div>"));
 
   // Sort columns by ascending IP address (numeric, not lexicographic, so
   // e.g. .9 sorts before .10). Servers with no known IP (third-party
@@ -1369,7 +1369,7 @@ static void renderFleetContent() {
     }
   }
 
-  String piece = F("<table id='fleet-table'><tr>");
+  writeChunk(F("{\"ok\":true,\"servers\":["));
   for (uint8_t c = 0; c < activeCount; ++c) {
     const DiscoveredServer &s = discoveredServers[activeIdx[c]];
     String label = s.hostname.isEmpty() ? s.instanceTopic : s.hostname;
@@ -1379,138 +1379,169 @@ static void renderFleetContent() {
     // untouched.
     if (!s.hostname.isEmpty() && label.startsWith(F("C4-VIBRANT-")))
       label.remove(0, 11);
-    if (!s.ipAddress.isEmpty()) {
-      piece += "<th><a href=\"http://" + htmlEscape(s.ipAddress) +
-               "\" target=\"_blank\" rel=\"noopener\">" + htmlEscape(label) +
-               "</a></th>";
-    } else {
-      piece += "<th>" + htmlEscape(label) + "</th>";
-    }
-  }
-  piece += F("</tr>");
-  writeChunk(piece);
 
-  // Each row is flushed independently so the table never needs to be held
-  // in RAM all at once, even with many discovered stickservers/outputs.
-  // Within a row, each cell is also built and sent as its own small chunk
-  // (rather than concatenating a whole row, which can be several KB for 16
-  // columns) to keep peak String allocation size small -- large repeated
-  // String concatenations are more likely to hit heap fragmentation on this
-  // memory-constrained device, which can silently truncate content.
-  for (uint8_t row = 0; row < maxRows; ++row) {
-    writeChunk(F("<tr>"));
-    for (uint8_t c = 0; c < activeCount; ++c) {
-      const DiscoveredServer &s = discoveredServers[activeIdx[c]];
-      piece = "<td>";
-      piece.reserve(400);
-      if (row < s.outputCount && s.outputs[row].valid) {
-        const DiscoveredOutputEntry &o = s.outputs[row];
-        String label = o.name.isEmpty()
-                           ? String(F("Output ")) + String(row + 1)
-                           : o.name;
-        // Clicking the button toggles this specific output over MQTT; the
-        // command sent (power_on/power_off) is derived from the last known
-        // state so the click always acts as a toggle.
-        piece += "<form method='post' action='/fleet/toggle' "
-                 "style='margin:0;display:inline;'>"
-                 "<input type='hidden' name='topic' value='" +
-                 htmlEscape(s.instanceTopic) +
-                 "'><input type='hidden' name='euid' value='" +
-                 htmlEscape(o.euid) +
-                 "'><input type='hidden' name='cmd' value='" +
-                 String(o.state ? "power_off" : "power_on") +
-                 "'><button type='submit' class='output-toggle " +
-                 String(o.state ? "output-on" : "output-off") + "'>" +
-                 htmlEscape(label) + "</button></form>";
-      }
-      piece += "</td>";
+    String piece = c == 0 ? "{" : ",{";
+    piece.reserve(300);
+    piece += "\"label\":\"" + jsonEscape(label) + "\",\"ip\":\"" +
+             jsonEscape(s.ipAddress) + "\",\"topic\":\"" +
+             jsonEscape(s.instanceTopic) + "\",\"outputs\":[";
+    writeChunk(piece);
+
+    for (uint8_t row = 0; row < s.outputCount; ++row) {
+      const DiscoveredOutputEntry &o = s.outputs[row];
+      if (!o.valid)
+        continue;
+      String label2 = o.name.isEmpty() ? String(F("Output ")) + String(row + 1)
+                                        : o.name;
+      piece = row == 0 ? "{" : ",{";
+      piece.reserve(200);
+      piece += "\"euid\":\"" + jsonEscape(o.euid) + "\",\"name\":\"" +
+               jsonEscape(label2) + "\",\"on\":" +
+               String(o.state ? "true" : "false") + "}";
       writeChunk(piece);
-      // Feed the watchdog and let the WiFi/TCP stack run between cells.
+      // Feed the watchdog and let the WiFi/TCP stack run between outputs.
       // With many discovered stickservers (each with up to MAX_DEVICES
-      // outputs) this table can be hundreds of cells, each its own
-      // blocking network write; without yielding here a slow/congested
-      // link can starve background WiFi servicing long enough to trip the
-      // watchdog and reboot the device mid-page.
+      // outputs) this can be hundreds of entries, each its own blocking
+      // network write; without yielding here a slow/congested link can
+      // starve background WiFi servicing long enough to trip the watchdog
+      // and reboot the device mid-response.
       yield();
     }
-    writeChunk(F("</tr>"));
+    writeChunk(F("]}"));
   }
-  writeChunk(F("</table>"));
+  writeChunk(F("]}"));
 }
 
 void handleStickserverFleetGet() {
   if (!ensureAuthorized())
     return;
-  beginChunkedHtml(200);
   String piece = settingsPageStart("fleet");
   piece += F(
       "<p class='page-intro'>Discovered stickserver instances and their "
       "outputs, gathered passively over MQTT (hello/list). Each column is "
       "one stickserver; each row is one output slot. Buttons reflect live "
       "MQTT state: gray = off, yellow = on. Click a button to toggle that "
-      "output over MQTT. This section refreshes itself automatically.</p>");
-  // This page is streamed as many small HTTP chunks; on a slow/weak WiFi
-  // link the browser can render a table with table-layout:fixed
-  // progressively as chunks arrive, so a user looking at it mid-load would
-  // see rows/cells that simply haven't arrived yet -- which looks exactly
-  // like missing/corrupted data but is actually just an incomplete page
-  // load. Keep the content hidden behind a loading message until the whole
-  // thing has arrived, then reveal it with a trailing inline script so the
-  // user only ever sees the complete content. This only matters for this
-  // direct, streamed initial load -- the periodic /fleet/partial refresh
-  // below is fetched in full by the browser before it is ever shown, so it
-  // doesn't need the same treatment.
-  piece += F("<p id='fleet-loading'>Loading discovered outputs&hellip;</p>"
-             "<div id='fleet-content' style='display:none'>");
-  writeChunk(piece);
-  renderFleetContent();
-  writeChunk(F(
+      "output over MQTT. This section refreshes itself automatically.</p>"
+      "<div class='bulk-actions'>"
+      "<button type='button' data-cmd='power_on'>Turn On</button>"
+      "<button type='button' data-cmd='power_off'>Turn Off</button>"
+      "<button type='button' data-cmd='leave_mesh' data-confirm='Run leave "
+      "mesh signal on ALL discovered outputs?'>Leave Mesh</button>"
+      "<button type='button' data-cmd='factory_reset' data-confirm='Run "
+      "factory reset signal on ALL discovered outputs?'>Factory "
+      "Reset</button>"
       "</div>"
-      "<script>"
-      "document.getElementById('fleet-loading').style.display='none';"
-      "document.getElementById('fleet-content').style.display='';"
-      "var fleetRefreshInFlight=false;"
-      "function refreshFleetContent(){"
+      "<div id='fleet-content'><p>Loading discovered outputs&hellip;</p>"
+      "</div>"
+      "<script>(function(){"
+      "var contentEl=document.getElementById('fleet-content');"
+      "var refreshInFlight=false;"
+      "function esc(s){return String(s).replace(/[&<>\"']/g,function(c){"
+      "return "
+      "{'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',\"'\":'&#39;'}[c];"
+      "});}"
+      "function renderTable(servers){"
+      "if(servers.length===0){"
+      "contentEl.innerHTML='<p>No stickservers discovered yet. This page "
+      "refreshes automatically in the background; wait a few "
+      "seconds.</p>';return;}"
+      "var maxRows=0;"
+      "servers.forEach(function(s){if(s.outputs.length>maxRows)"
+      "maxRows=s.outputs.length;});"
+      "var html=\"<table id='fleet-table'><tr>\";"
+      "servers.forEach(function(s){"
+      "if(s.ip){html+=\"<th><a href='http://\"+esc(s.ip)+\"' "
+      "target='_blank' rel='noopener'>\"+esc(s.label)+'</a></th>';}"
+      "else{html+='<th>'+esc(s.label)+'</th>';}"
+      "});"
+      "html+='</tr>';"
+      "for(var r=0;r<maxRows;r++){"
+      "html+='<tr>';"
+      "servers.forEach(function(s){"
+      "var o=s.outputs[r];"
+      "html+='<td>';"
+      "if(o){"
+      "html+=\"<button type='button' class='output-toggle "
+      "\"+(o.on?'output-on':'output-off')+\"' data-topic='\"+esc(s.topic)+"
+      "\"' data-euid='\"+esc(o.euid)+\"' "
+      "data-cmd='\"+(o.on?'power_off':'power_on')+\"'>\"+esc(o.name)+"
+      "'</button>';"
+      "}"
+      "html+='</td>';"
+      "});"
+      "html+='</tr>';"
+      "}"
+      "html+='</table>';"
+      "contentEl.innerHTML=html;"
+      "}"
+      "function applyData(data){"
+      "if(!data.ok){"
+      "if(data.reason==='mqtt'){"
+      "contentEl.innerHTML=\"<p style='color:#b00020;'><strong>MQTT is not "
+      "connected.</strong> Enable and configure MQTT on the Network "
+      "settings page to discover stickservers.</p>\";"
+      "}else{"
+      "contentEl.innerHTML=\"<p style='color:#b00020;'><strong>Stickserver "
+      "discovery is disabled.</strong> Enable &quot;Query for "
+      "stickservers&quot; or &quot;Passively parse hello/list "
+      "responses&quot; on the Network settings page to populate this "
+      "page.</p>\";"
+      "}"
+      "return;"
+      "}"
+      "renderTable(data.servers);"
+      "}"
       // Guarded against overlapping fetches: on a slow/weak link a refresh
       // can still be in flight when the next interval tick fires, and a
       // second concurrent connection opened mid-transfer has been observed
       // to crash the device. Skip starting a new fetch while one is still
       // outstanding.
-      "if(fleetRefreshInFlight)return;"
-      "fleetRefreshInFlight=true;"
-      "fetch('/fleet/partial').then(function(r){return r.text();})"
-      ".then(function(html){"
-      "document.getElementById('fleet-content').innerHTML=html;"
-      "}).catch(function(){})"
-      ".then(function(){fleetRefreshInFlight=false;});"
+      "function refreshFleetContent(){"
+      "if(refreshInFlight)return;"
+      "refreshInFlight=true;"
+      "fetch('/fleet/data').then(function(r){return r.json();})"
+      ".then(applyData).catch(function(){})"
+      ".then(function(){refreshInFlight=false;});"
       "}"
+      "refreshFleetContent();"
       "setInterval(refreshFleetContent,5000);"
-      // Output toggle buttons are re-created on every refresh, so submits
-      // are intercepted via delegation on a stable ancestor rather than
-      // binding to the buttons themselves. Submitting via fetch (instead of
-      // a normal navigation) lets the page stay in place and schedule a
-      // refresh 1 second later, giving the MQTT command time to take effect
-      // and be reflected by the time the table is re-fetched.
-      "document.getElementById('fleet-content').addEventListener('submit',"
-      "function(e){"
-      "e.preventDefault();"
-      "fetch(e.target.action,{method:'POST',body:new FormData(e.target)})"
-      ".catch(function(){})"
+      // Per-output toggle buttons are rebuilt from scratch on every
+      // refresh, so clicks are handled via delegation on the stable
+      // container instead of binding to each button.
+      "contentEl.addEventListener('click',function(e){"
+      "var btn=e.target.closest('button.output-toggle');"
+      "if(!btn)return;"
+      "var body=new URLSearchParams();"
+      "body.set('topic',btn.getAttribute('data-topic'));"
+      "body.set('euid',btn.getAttribute('data-euid'));"
+      "body.set('cmd',btn.getAttribute('data-cmd'));"
+      "fetch('/fleet/toggle',{method:'POST',body:body}).catch(function(){})"
       ".then(function(){setTimeout(refreshFleetContent,1000);});"
       "});"
-      "</script></body></html>"));
-  endChunkedHtml();
+      "document.querySelectorAll('.bulk-actions "
+      "button').forEach(function(btn){"
+      "btn.addEventListener('click',function(){"
+      "var confirmMsg=btn.getAttribute('data-confirm');"
+      "if(confirmMsg&&!confirm(confirmMsg))return;"
+      "var body=new URLSearchParams();"
+      "body.set('cmd',btn.getAttribute('data-cmd'));"
+      "fetch('/fleet/bulk',{method:'POST',body:body}).catch(function(){})"
+      ".then(function(){setTimeout(refreshFleetContent,1000);});"
+      "});"
+      "});"
+      "})();</script></body></html>");
+  sendChunkedHtml(200, piece);
 }
 
-// Lightweight endpoint returning only the dynamic output-table/status HTML
-// fragment (no page chrome), polled periodically by the /fleet page's
-// inline script so only the output section needs to refresh, not the
-// whole page.
-void handleStickserverFleetPartial() {
+// Lightweight REST endpoint returning the full "All Outputs" state as JSON
+// (see renderFleetDataJson()). Polled periodically by the /fleet page's
+// inline script, which builds/rebuilds the output table client-side from
+// this data so the device never has to re-render HTML markup per refresh.
+void handleStickserverFleetData() {
   if (!ensureAuthorized())
     return;
-  beginChunkedHtml(200);
-  renderFleetContent();
+  beginChunkedHtml(200, "application/json");
+  renderFleetDataJson();
   endChunkedHtml();
 }
 
@@ -1544,8 +1575,11 @@ void handleFleetOutputToggle() {
   String payload;
   serializeJson(req, payload);
   mqttClient.publish(topic.c_str(), payload.c_str());
-  server.sendHeader("Location", "/fleet");
-  server.send(303);
+  // Called via fetch() from the "All Outputs" page's JS, not a native form
+  // submission, so a plain ack is returned instead of a redirect -- a 303
+  // to /fleet would otherwise be followed silently by fetch() and waste a
+  // full extra request/response for a body the caller never looks at.
+  server.send(200, "text/plain", "ok");
 }
 
 void handleFleetBulkAction() {
@@ -1593,8 +1627,10 @@ void handleFleetBulkAction() {
       yield();
     }
   }
-  server.sendHeader("Location", "/fleet");
-  server.send(303);
+  // Called via fetch() from the "All Outputs" page's JS, not a native form
+  // submission, so a plain ack is returned instead of a redirect (see
+  // handleFleetOutputToggle() for why).
+  server.send(200, "text/plain", "ok");
 }
 
 void handleNotFound() { server.send(404, "text/plain", "Not found"); }
