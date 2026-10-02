@@ -716,11 +716,21 @@ void handleNetworkSettingsGet() {
       "name='mqttPasswordClear' value='1'"
       " onchange=\"if(this.checked)document.getElementById('mqttPassword')."
       "value='';\"> Clear MQTT password (remove broker authentication)</label>"
-      "<label><input type='checkbox' name='stickserverDiscoveryEnabled' "
+      "<label><input type='checkbox' name='stickserverRespondEnabled' "
       "value='1'" +
-      String(cfg.stickserverDiscoveryEnabled ? " checked" : "") +
-      "> Enable stickserver fleet discovery (hello/list broadcasts; "
-      "required for the All Outputs page and being visible to peers)</label>"
+      String(cfg.stickserverRespondEnabled ? " checked" : "") +
+      "> Respond to stickserver hello/list requests (lets peers discover "
+      "and control this device)</label>"
+      "<label><input type='checkbox' name='stickserverQueryEnabled' "
+      "value='1'" +
+      String(cfg.stickserverQueryEnabled ? " checked" : "") +
+      "> Query for stickservers (broadcast hello/list requests to actively "
+      "discover other stickservers and their outputs)</label>"
+      "<label><input type='checkbox' "
+      "name='stickserverPassiveDiscoveryEnabled' value='1'" +
+      String(cfg.stickserverPassiveDiscoveryEnabled ? " checked" : "") +
+      "> Passively parse hello/list responses observed on the bus "
+      "(required for the All Outputs page)</label>"
       "<p style='font-size:0.9em;color:#555;'>Device control is handled "
       "exclusively via the Stickserver protocol, which subscribes to "
       "<code>" +
@@ -830,9 +840,15 @@ void handleNetworkSettingsPost() {
     if (!newMqttPassword.isEmpty())
       cfg.mqttPassword = newMqttPassword;
   }
-  cfg.stickserverDiscoveryEnabled =
-      server.hasArg("stickserverDiscoveryEnabled") &&
-      server.arg("stickserverDiscoveryEnabled") == "1";
+  cfg.stickserverRespondEnabled =
+      server.hasArg("stickserverRespondEnabled") &&
+      server.arg("stickserverRespondEnabled") == "1";
+  cfg.stickserverQueryEnabled =
+      server.hasArg("stickserverQueryEnabled") &&
+      server.arg("stickserverQueryEnabled") == "1";
+  cfg.stickserverPassiveDiscoveryEnabled =
+      server.hasArg("stickserverPassiveDiscoveryEnabled") &&
+      server.arg("stickserverPassiveDiscoveryEnabled") == "1";
 
   logSettingsDebug("network");
   finishSettingsSave("Network settings updated from web UI.",
@@ -1101,10 +1117,12 @@ void handleStickserverFleetGet() {
     return;
   }
 
-  if (!cfg.stickserverDiscoveryEnabled) {
+  if (!cfg.stickserverQueryEnabled && !cfg.stickserverPassiveDiscoveryEnabled) {
     piece += F("<p style='color:#b00020;'><strong>Stickserver discovery is "
-               "disabled.</strong> Enable it on the Network settings page "
-               "to populate this page.</p></body></html>");
+               "disabled.</strong> Enable &quot;Query for stickservers&quot; "
+               "or &quot;Passively parse hello/list responses&quot; on the "
+               "Network settings page to populate this page.</p></body></"
+               "html>");
     writeChunk(piece);
     endChunkedHtml();
     return;

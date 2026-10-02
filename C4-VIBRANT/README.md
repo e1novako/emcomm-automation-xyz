@@ -145,6 +145,14 @@ Additional security note: HTTP Basic Auth is not encrypted on plain HTTP. Use th
 
 ## Release notes
 
+### 1.8.0
+
+- Split the single "stickserver fleet discovery" toggle into three independent flags on the Network settings page:
+  - `stickserverRespondEnabled` -- respond to peers' `hello`/`list` requests. **Enabled by default.**
+  - `stickserverQueryEnabled` -- actively broadcast this device's own `hello`/`list` requests to discover other stickservers and their outputs. **Disabled by default.**
+  - `stickserverPassiveDiscoveryEnabled` -- passively parse `hello`/`list` responses observed on the bus (ours or peers') to populate the "All Outputs" page. **Disabled by default.**
+  - The "All Outputs" page now requires `stickserverQueryEnabled` or `stickserverPassiveDiscoveryEnabled` (either populates the peer table); directly-addressed action commands (power_on/power_off/toggle/reserve/release/etc.) are unaffected by any of the three flags. Configs saved under the old single `stickserverDiscoveryEnabled` flag are migrated automatically: its value seeds both new discovery flags, while responding defaults to enabled.
+
 ### 1.7.0
 
 - Added a "stickserver fleet discovery" toggle on the Network settings page (`stickserverDiscoveryEnabled`), **disabled by default**. When disabled, a device neither broadcasts `hello`/`list` discovery requests nor responds to peers' `hello`/`list` requests, and does not build its "All Outputs" peer table from observed responses -- it still handles directly-addressed action commands (power_on/power_off/toggle/reserve/release/etc.) normally. This is an explicit opt-in for the MQTT discovery/All-Outputs feature, since most deployments only need direct device control and discovery was a source of continuous background MQTT broadcast traffic.

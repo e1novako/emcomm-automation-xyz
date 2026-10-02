@@ -124,7 +124,9 @@ void setFactoryDefaults() {
   cfg.mqttPassword = "";
   cfg.arduinoOtaEnabled = true;
   cfg.debugSerial = false;
-  cfg.stickserverDiscoveryEnabled = false;
+  cfg.stickserverRespondEnabled = true;
+  cfg.stickserverQueryEnabled = false;
+  cfg.stickserverPassiveDiscoveryEnabled = false;
   clearOutputReservations();
 
   logStatus(F("Factory defaults loaded."));
@@ -147,7 +149,10 @@ bool saveConfig() {
   doc["mqttPassword"] = cfg.mqttPassword;
   doc["arduinoOtaEnabled"] = cfg.arduinoOtaEnabled;
   doc["debugSerial"] = cfg.debugSerial;
-  doc["stickserverDiscoveryEnabled"] = cfg.stickserverDiscoveryEnabled;
+  doc["stickserverRespondEnabled"] = cfg.stickserverRespondEnabled;
+  doc["stickserverQueryEnabled"] = cfg.stickserverQueryEnabled;
+  doc["stickserverPassiveDiscoveryEnabled"] =
+      cfg.stickserverPassiveDiscoveryEnabled;
 
   JsonArray devices = doc["devices"].to<JsonArray>();
   for (uint8_t i = 0; i < MAX_DEVICES; ++i) {
@@ -266,7 +271,16 @@ bool loadConfig() {
     cfg.mqttPort = DEFAULT_MQTT_PORT;
   cfg.arduinoOtaEnabled = doc["arduinoOtaEnabled"] | true;
   cfg.debugSerial = doc["debugSerial"] | false;
-  cfg.stickserverDiscoveryEnabled = doc["stickserverDiscoveryEnabled"] | false;
+  // Back-compat: configs saved before the single stickserverDiscoveryEnabled
+  // flag was split default the two new discovery flags to its old value
+  // (and keep responding enabled, matching the new default) when the new
+  // keys aren't present yet.
+  bool legacyDiscoveryEnabled = doc["stickserverDiscoveryEnabled"] | false;
+  cfg.stickserverRespondEnabled = doc["stickserverRespondEnabled"] | true;
+  cfg.stickserverQueryEnabled =
+      doc["stickserverQueryEnabled"] | legacyDiscoveryEnabled;
+  cfg.stickserverPassiveDiscoveryEnabled =
+      doc["stickserverPassiveDiscoveryEnabled"] | legacyDiscoveryEnabled;
 
   logStatus(F("Configuration loaded successfully."));
   return true;

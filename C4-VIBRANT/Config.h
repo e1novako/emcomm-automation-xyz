@@ -19,11 +19,20 @@ struct DeviceConfig {
   uint16_t mqttPort;
   String mqttUser, mqttPassword;
   bool arduinoOtaEnabled, debugSerial;
-  // Stickserver fleet discovery (hello/list broadcasts + responding to
-  // peers' discovery requests). Disabled by default: discovery is the
-  // source of ongoing MQTT broadcast traffic across the fleet, and most
-  // deployments don't need the "All Outputs" multi-device view.
-  bool stickserverDiscoveryEnabled;
+  // Stickserver fleet discovery is split into three independent flags:
+  //  - stickserverRespondEnabled: answer peers' hello/list requests with
+  //    this device's own info. Enabled by default so this device is
+  //    discoverable/controllable by the rest of the fleet.
+  //  - stickserverQueryEnabled: actively broadcast our own hello/list
+  //    requests to discover other stickservers and their outputs.
+  //    Disabled by default: this is the source of ongoing MQTT broadcast
+  //    traffic across the fleet.
+  //  - stickserverPassiveDiscoveryEnabled: passively parse hello/list
+  //    responses observed on the bus (ours or peers') to populate the
+  //    "All Outputs" multi-device view. Disabled by default.
+  bool stickserverRespondEnabled;
+  bool stickserverQueryEnabled;
+  bool stickserverPassiveDiscoveryEnabled;
 };
 struct PinMapping {
   int8_t gpio;

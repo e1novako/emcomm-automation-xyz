@@ -260,7 +260,11 @@ void applyDiscoveredOutputs(uint8_t idx, JsonArrayConst devices) {
 
 void handleStickserverDiscoveryResponse(const String &topicStr,
                                         JsonDocument &response) {
-  if (!cfg.stickserverDiscoveryEnabled)
+  // Parse hello/list responses if either this device is actively querying
+  // (it needs to process the results of its own requests) or passive
+  // discovery is enabled (building the All Outputs page from traffic that
+  // was not necessarily requested by us).
+  if (!cfg.stickserverQueryEnabled && !cfg.stickserverPassiveDiscoveryEnabled)
     return;
   String rsp = response["rsp"] | String("");
   String status = response["status"] | String("");
@@ -314,7 +318,7 @@ void handleStickserverDiscoveryResponse(const String &topicStr,
 unsigned long lastHelloCommandSeenMs = 0;
 
 void maintainStickserverDiscovery() {
-  if (!cfg.stickserverDiscoveryEnabled || !cfg.mqttEnabled ||
+  if (!cfg.stickserverQueryEnabled || !cfg.mqttEnabled ||
       !mqttClient.connected())
     return;
   unsigned long now = millis();
@@ -400,7 +404,7 @@ void handleStickserverMessage(const String &topicStr,
   // either way). Mirrors the fleet-wide hello suppression.
   if (topicStr != STICKSERVER_ROOT_TOPIC &&
       topicStr != stickserverInstanceTopic()) {
-    if (cfg.stickserverDiscoveryEnabled &&
+    if (cfg.stickserverQueryEnabled &&
         request["cmd"].is<const char *>() &&
         String(request["cmd"].as<const char *>()) == F("list")) {
       for (uint8_t i = 0; i < MAX_DISCOVERED_SERVERS; ++i) {
@@ -451,16 +455,15 @@ void handleStickserverMessage(const String &topicStr,
   }
 
   if (cmd == F("hello")) {
-    if (!cfg.stickserverDiscoveryEnabled) {
-      // Discovery disabled: don't respond and don't reset the fleet-wide
-      // cooldown, so this device neither advertises itself nor
-      // participates in the hello broadcast suppression bookkeeping.
+    // A hello command was just observed on the bus (ours or a peer's);
+    // reset the shared fleet-wide cooldown so no actively-querying device
+    // re-broadcasts one again too soon -- see maintainStickserverDiscovery().
+    if (cfg.stickserverQueryEnabled)
+      lastHelloCommandSeenMs = millis();
+    if (!cfg.stickserverRespondEnabled) {
+      // Responses disabled: don't advertise this device to the fleet.
       return;
     }
-    // A hello command was just observed on the bus (ours or a peer's);
-    // reset the shared fleet-wide cooldown so no device re-broadcasts one
-    // again too soon -- see maintainStickserverDiscovery().
-    lastHelloCommandSeenMs = millis();
     JsonDocument response;
     buildStickserverEnvelope(response, cmd, ver, mid, "ok");
     response["id"] = cfg.hostname;
@@ -481,8 +484,8 @@ void handleStickserverMessage(const String &topicStr,
   }
 
   if (cmd == F("list")) {
-    if (!cfg.stickserverDiscoveryEnabled) {
-      // Discovery disabled: don't respond to list requests either.
+    if (!cfg.stickserverRespondEnabled) {
+      // Responses disabled: don't respond to list requests either.
       return;
     }
     JsonDocument response;
