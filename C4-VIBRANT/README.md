@@ -145,6 +145,10 @@ Additional security note: HTTP Basic Auth is not encrypted on plain HTTP. Use th
 
 ## Release notes
 
+### 1.8.2
+
+- The "All Outputs" page now auto-refreshes its output table every 5 seconds via a new `GET /fleet/partial` endpoint, instead of requiring a manual page reload to see fresh state. Only the status/output-table section is re-fetched and swapped in-place (via JS `fetch()` + `innerHTML`); the page chrome (nav, intro text) is not reloaded.
+
 ### 1.8.1
 
 - Discovered stickserver records (and their per-output state, used by the "All Outputs" page) are now timestamped whenever a `hello`/`list` response is parsed, and forgotten after 60 seconds without a refresh (previously 90s, and pruning only ran while actively querying -- it now also runs for passively-discovered records).

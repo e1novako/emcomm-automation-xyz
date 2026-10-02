@@ -44,6 +44,7 @@ void registerWebRoutes() {
   server.on("/device/reboot", HTTP_POST, handleRebootDevice);
   server.on("/reservation/release", HTTP_POST, handleReleaseReservation);
   server.on("/fleet", HTTP_GET, handleStickserverFleetGet);
+  server.on("/fleet/partial", HTTP_GET, handleStickserverFleetPartial);
   server.on("/fleet/toggle", HTTP_POST, handleFleetOutputToggle);
   server.on("/config/export", HTTP_GET, handleConfigExport);
   server.on("/config/import", HTTP_POST, handleConfigImportDone,
@@ -1096,35 +1097,25 @@ void handleRebootDevice() {
   ESP.restart();
 }
 
-void handleStickserverFleetGet() {
-  if (!ensureAuthorized())
-    return;
-  beginChunkedHtml(200);
-  String piece = settingsPageStart("All Outputs", "fleet");
-  piece += F(
-      "<p class='page-intro'>Discovered stickserver instances and their "
-      "outputs, gathered passively over MQTT (hello/list). Each column is "
-      "one stickserver; each row is one output slot. Buttons reflect live "
-      "MQTT state: gray = off, yellow = on. Click a button to toggle that "
-      "output over MQTT.</p>");
-
+// Renders only the dynamic, auto-refreshed part of the "All Outputs" page
+// (status messages or the live output table) by writing chunks directly.
+// Shared by the full-page handler (initial load) and the lightweight
+// /fleet/partial endpoint that the page polls periodically so only this
+// section needs to be refreshed, instead of the whole page.
+static void renderFleetContent() {
   if (!cfg.mqttEnabled || !mqttClient.connected()) {
-    piece += F("<p style='color:#b00020;'><strong>MQTT is not connected.</"
-               "strong> Enable and configure MQTT on the Network settings "
-               "page to discover stickservers.</p></body></html>");
-    writeChunk(piece);
-    endChunkedHtml();
+    writeChunk(F("<p style='color:#b00020;'><strong>MQTT is not connected.</"
+                 "strong> Enable and configure MQTT on the Network settings "
+                 "page to discover stickservers.</p>"));
     return;
   }
 
   if (!cfg.stickserverQueryEnabled && !cfg.stickserverPassiveDiscoveryEnabled) {
-    piece += F("<p style='color:#b00020;'><strong>Stickserver discovery is "
-               "disabled.</strong> Enable &quot;Query for stickservers&quot; "
-               "or &quot;Passively parse hello/list responses&quot; on the "
-               "Network settings page to populate this page.</p></body></"
-               "html>");
-    writeChunk(piece);
-    endChunkedHtml();
+    writeChunk(F(
+        "<p style='color:#b00020;'><strong>Stickserver discovery is "
+        "disabled.</strong> Enable &quot;Query for stickservers&quot; "
+        "or &quot;Passively parse hello/list responses&quot; on the "
+        "Network settings page to populate this page.</p>"));
     return;
   }
 
@@ -1142,11 +1133,8 @@ void handleStickserverFleetGet() {
   }
 
   if (activeCount == 0) {
-    piece += F("<p>No stickservers discovered yet. This page refreshes "
-               "discovery automatically in the background; reload in a few "
-               "seconds.</p></body></html>");
-    writeChunk(piece);
-    endChunkedHtml();
+    writeChunk(F("<p>No stickservers discovered yet. This page refreshes "
+                 "automatically in the background; wait a few seconds.</p>"));
     return;
   }
 
@@ -1184,16 +1172,7 @@ void handleStickserverFleetGet() {
     }
   }
 
-  // This page is streamed as many small HTTP chunks; on a slow/weak WiFi
-  // link the browser can render a table with table-layout:fixed
-  // progressively as chunks arrive, so a user looking at it mid-load would
-  // see rows/cells that simply haven't arrived yet -- which looks exactly
-  // like missing/corrupted data but is actually just an incomplete page
-  // load. Keep the table hidden behind a loading message until the whole
-  // thing has arrived, then reveal it with a trailing inline script so the
-  // user only ever sees the complete table.
-  piece += F("<p id='fleet-loading'>Loading discovered outputs&hellip;</p>"
-             "<table id='fleet-table' style='display:none'><tr>");
+  String piece = F("<table id='fleet-table'><tr>");
   for (uint8_t c = 0; c < activeCount; ++c) {
     const DiscoveredServer &s = discoveredServers[activeIdx[c]];
     String label = s.hostname.isEmpty() ? s.instanceTopic : s.hostname;
@@ -1246,13 +1225,60 @@ void handleStickserverFleetGet() {
     }
     writeChunk(F("</tr>"));
   }
+  writeChunk(F("</table>"));
+}
 
+void handleStickserverFleetGet() {
+  if (!ensureAuthorized())
+    return;
+  beginChunkedHtml(200);
+  String piece = settingsPageStart("All Outputs", "fleet");
+  piece += F(
+      "<p class='page-intro'>Discovered stickserver instances and their "
+      "outputs, gathered passively over MQTT (hello/list). Each column is "
+      "one stickserver; each row is one output slot. Buttons reflect live "
+      "MQTT state: gray = off, yellow = on. Click a button to toggle that "
+      "output over MQTT. This section refreshes itself automatically.</p>");
+  // This page is streamed as many small HTTP chunks; on a slow/weak WiFi
+  // link the browser can render a table with table-layout:fixed
+  // progressively as chunks arrive, so a user looking at it mid-load would
+  // see rows/cells that simply haven't arrived yet -- which looks exactly
+  // like missing/corrupted data but is actually just an incomplete page
+  // load. Keep the content hidden behind a loading message until the whole
+  // thing has arrived, then reveal it with a trailing inline script so the
+  // user only ever sees the complete content. This only matters for this
+  // direct, streamed initial load -- the periodic /fleet/partial refresh
+  // below is fetched in full by the browser before it is ever shown, so it
+  // doesn't need the same treatment.
+  piece += F("<p id='fleet-loading'>Loading discovered outputs&hellip;</p>"
+             "<div id='fleet-content' style='display:none'>");
+  writeChunk(piece);
+  renderFleetContent();
   writeChunk(F(
-      "</table>"
+      "</div>"
       "<script>"
       "document.getElementById('fleet-loading').style.display='none';"
-      "document.getElementById('fleet-table').style.display='';"
+      "document.getElementById('fleet-content').style.display='';"
+      "function refreshFleetContent(){"
+      "fetch('/fleet/partial').then(function(r){return r.text();})"
+      ".then(function(html){"
+      "document.getElementById('fleet-content').innerHTML=html;"
+      "}).catch(function(){});"
+      "}"
+      "setInterval(refreshFleetContent,5000);"
       "</script></body></html>"));
+  endChunkedHtml();
+}
+
+// Lightweight endpoint returning only the dynamic output-table/status HTML
+// fragment (no page chrome), polled periodically by the /fleet page's
+// inline script so only the output section needs to refresh, not the
+// whole page.
+void handleStickserverFleetPartial() {
+  if (!ensureAuthorized())
+    return;
+  beginChunkedHtml(200);
+  renderFleetContent();
   endChunkedHtml();
 }
 
