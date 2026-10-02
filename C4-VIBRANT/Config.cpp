@@ -124,6 +124,7 @@ void setFactoryDefaults() {
   cfg.mqttPassword = "";
   cfg.arduinoOtaEnabled = true;
   cfg.debugSerial = false;
+  cfg.stickserverDiscoveryEnabled = false;
   clearOutputReservations();
 
   logStatus(F("Factory defaults loaded."));
@@ -146,6 +147,7 @@ bool saveConfig() {
   doc["mqttPassword"] = cfg.mqttPassword;
   doc["arduinoOtaEnabled"] = cfg.arduinoOtaEnabled;
   doc["debugSerial"] = cfg.debugSerial;
+  doc["stickserverDiscoveryEnabled"] = cfg.stickserverDiscoveryEnabled;
 
   JsonArray devices = doc["devices"].to<JsonArray>();
   for (uint8_t i = 0; i < MAX_DEVICES; ++i) {
@@ -264,6 +266,7 @@ bool loadConfig() {
     cfg.mqttPort = DEFAULT_MQTT_PORT;
   cfg.arduinoOtaEnabled = doc["arduinoOtaEnabled"] | true;
   cfg.debugSerial = doc["debugSerial"] | false;
+  cfg.stickserverDiscoveryEnabled = doc["stickserverDiscoveryEnabled"] | false;
 
   logStatus(F("Configuration loaded successfully."));
   return true;

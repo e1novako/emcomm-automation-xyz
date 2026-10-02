@@ -260,6 +260,8 @@ void applyDiscoveredOutputs(uint8_t idx, JsonArrayConst devices) {
 
 void handleStickserverDiscoveryResponse(const String &topicStr,
                                         JsonDocument &response) {
+  if (!cfg.stickserverDiscoveryEnabled)
+    return;
   String rsp = response["rsp"] | String("");
   String status = response["status"] | String("");
   if (status != "ok")
@@ -312,7 +314,8 @@ void handleStickserverDiscoveryResponse(const String &topicStr,
 unsigned long lastHelloCommandSeenMs = 0;
 
 void maintainStickserverDiscovery() {
-  if (!cfg.mqttEnabled || !mqttClient.connected())
+  if (!cfg.stickserverDiscoveryEnabled || !cfg.mqttEnabled ||
+      !mqttClient.connected())
     return;
   unsigned long now = millis();
   static unsigned long lastPruneMs = 0;
@@ -397,7 +400,8 @@ void handleStickserverMessage(const String &topicStr,
   // either way). Mirrors the fleet-wide hello suppression.
   if (topicStr != STICKSERVER_ROOT_TOPIC &&
       topicStr != stickserverInstanceTopic()) {
-    if (request["cmd"].is<const char *>() &&
+    if (cfg.stickserverDiscoveryEnabled &&
+        request["cmd"].is<const char *>() &&
         String(request["cmd"].as<const char *>()) == F("list")) {
       for (uint8_t i = 0; i < MAX_DISCOVERED_SERVERS; ++i) {
         if (discoveredServers[i].active &&
@@ -447,6 +451,12 @@ void handleStickserverMessage(const String &topicStr,
   }
 
   if (cmd == F("hello")) {
+    if (!cfg.stickserverDiscoveryEnabled) {
+      // Discovery disabled: don't respond and don't reset the fleet-wide
+      // cooldown, so this device neither advertises itself nor
+      // participates in the hello broadcast suppression bookkeeping.
+      return;
+    }
     // A hello command was just observed on the bus (ours or a peer's);
     // reset the shared fleet-wide cooldown so no device re-broadcasts one
     // again too soon -- see maintainStickserverDiscovery().
@@ -471,6 +481,10 @@ void handleStickserverMessage(const String &topicStr,
   }
 
   if (cmd == F("list")) {
+    if (!cfg.stickserverDiscoveryEnabled) {
+      // Discovery disabled: don't respond to list requests either.
+      return;
+    }
     JsonDocument response;
     buildStickserverEnvelope(response, cmd, ver, mid, "ok");
     response["id"] = cfg.hostname;

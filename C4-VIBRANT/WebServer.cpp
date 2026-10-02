@@ -716,6 +716,11 @@ void handleNetworkSettingsGet() {
       "name='mqttPasswordClear' value='1'"
       " onchange=\"if(this.checked)document.getElementById('mqttPassword')."
       "value='';\"> Clear MQTT password (remove broker authentication)</label>"
+      "<label><input type='checkbox' name='stickserverDiscoveryEnabled' "
+      "value='1'" +
+      String(cfg.stickserverDiscoveryEnabled ? " checked" : "") +
+      "> Enable stickserver fleet discovery (hello/list broadcasts; "
+      "required for the All Outputs page and being visible to peers)</label>"
       "<p style='font-size:0.9em;color:#555;'>Device control is handled "
       "exclusively via the Stickserver protocol, which subscribes to "
       "<code>" +
@@ -825,6 +830,9 @@ void handleNetworkSettingsPost() {
     if (!newMqttPassword.isEmpty())
       cfg.mqttPassword = newMqttPassword;
   }
+  cfg.stickserverDiscoveryEnabled =
+      server.hasArg("stickserverDiscoveryEnabled") &&
+      server.arg("stickserverDiscoveryEnabled") == "1";
 
   logSettingsDebug("network");
   finishSettingsSave("Network settings updated from web UI.",
@@ -1088,6 +1096,15 @@ void handleStickserverFleetGet() {
     piece += F("<p style='color:#b00020;'><strong>MQTT is not connected.</"
                "strong> Enable and configure MQTT on the Network settings "
                "page to discover stickservers.</p></body></html>");
+    writeChunk(piece);
+    endChunkedHtml();
+    return;
+  }
+
+  if (!cfg.stickserverDiscoveryEnabled) {
+    piece += F("<p style='color:#b00020;'><strong>Stickserver discovery is "
+               "disabled.</strong> Enable it on the Network settings page "
+               "to populate this page.</p></body></html>");
     writeChunk(piece);
     endChunkedHtml();
     return;

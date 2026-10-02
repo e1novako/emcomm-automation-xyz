@@ -145,6 +145,10 @@ Additional security note: HTTP Basic Auth is not encrypted on plain HTTP. Use th
 
 ## Release notes
 
+### 1.7.0
+
+- Added a "stickserver fleet discovery" toggle on the Network settings page (`stickserverDiscoveryEnabled`), **disabled by default**. When disabled, a device neither broadcasts `hello`/`list` discovery requests nor responds to peers' `hello`/`list` requests, and does not build its "All Outputs" peer table from observed responses -- it still handles directly-addressed action commands (power_on/power_off/toggle/reserve/release/etc.) normally. This is an explicit opt-in for the MQTT discovery/All-Outputs feature, since most deployments only need direct device control and discovery was a source of continuous background MQTT broadcast traffic.
+
 ### 1.6.2
 
 - Fixed MQTT "invalid_json"/"IncompleteInput" parse errors observed live on the bus: `PubSubClient::setBufferSize()` was called on every MQTT (re)connect attempt without checking its return value; under heap pressure the 2048-byte realloc can silently fail, leaving the client at its previous (possibly library-default 256-byte) buffer, which truncates large hello/list JSON responses in transit. The buffer size is now only (re)applied once, its result is checked, and a warning is logged if it doesn't take effect.
