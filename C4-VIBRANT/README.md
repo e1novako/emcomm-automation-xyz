@@ -145,6 +145,10 @@ Additional security note: HTTP Basic Auth is not encrypted on plain HTTP. Use th
 
 ## Release notes
 
+### 1.9.2
+
+- All tables on every page (main output control, Settings, Network, Devices, Diagnostics, All Outputs) are now sized consistently: 70% of the available width, capped at 1200px max, and horizontally centered via `margin:0 auto`. Previously the main-page table was 60% wide (not centered) and the settings-page tables were full width (not centered).
+
 ### 1.9.1
 
 - All pages (main output control, Settings, Network, Devices, Diagnostics, All Outputs) now share the same unified header: the device name "C4-VIBRANT-<MAC>" followed by "Output Control", centered above the page content/table, with "FW: <firmware version>, Uptime: hh:mm:ss" shown centered underneath (uptime ticks live in the browser, matching the previous main-page behavior). Settings sub-pages keep their distinct page title (e.g. "Network, Wi-Fi & MQTT") as a secondary centered heading below the unified header so the active page is still clear.
