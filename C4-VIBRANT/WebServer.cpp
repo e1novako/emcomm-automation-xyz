@@ -1415,6 +1415,13 @@ static void renderFleetContent() {
       }
       piece += "</td>";
       writeChunk(piece);
+      // Feed the watchdog and let the WiFi/TCP stack run between cells.
+      // With many discovered stickservers (each with up to MAX_DEVICES
+      // outputs) this table can be hundreds of cells, each its own
+      // blocking network write; without yielding here a slow/congested
+      // link can starve background WiFi servicing long enough to trip the
+      // watchdog and reboot the device mid-page.
+      yield();
     }
     writeChunk(F("</tr>"));
   }

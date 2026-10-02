@@ -145,6 +145,10 @@ Additional security note: HTTP Basic Auth is not encrypted on plain HTTP. Use th
 
 ## Release notes
 
+### 1.8.3
+
+- Fixed the device rebooting while rendering the "All Outputs" page (`/fleet`, `/fleet/partial`) when many stickservers/outputs were discovered: the per-cell table render loop never yielded between the (potentially hundreds of) blocking network writes, which could starve the WiFi/TCP stack long enough to trip the watchdog. A `yield()` is now called after each cell.
+
 ### 1.8.2
 
 - Reduced heap fragmentation and fixed intermittent truncated/incomplete page loads on `/settings`, `/settings/network`, and `/settings/diagnostics`: these pages previously built their entire HTML as one large `String` in RAM before sending it, which could silently truncate under heap pressure (Arduino `String` concatenation fails silently on out-of-memory). They now stream in small independent pieces, the same pattern already used by the home, fleet, and device-settings pages. This also reduces the chance of incoming MQTT stickserver requests failing to parse with `"error":"invalid_json","message":"NoMemory"` while a settings page is being served.
