@@ -36,5 +36,6 @@ void handleStickserverFleetGet();
 void handleStickserverFleetPartial();
 void handleFleetOutputToggle();
 void handleReleaseReservation();
+void handleGuiReserveOutput();
 void handleNotFound();
 } // namespace vibrant

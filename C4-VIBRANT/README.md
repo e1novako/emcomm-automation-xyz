@@ -145,6 +145,12 @@ Additional security note: HTTP Basic Auth is not encrypted on plain HTTP. Use th
 
 ## Release notes
 
+### 1.10.0
+
+- Renamed the output table columns on the main page and Devices settings page: "Manufacturer" -> "DUT Manufacturer", "Model" -> "DUT Model", "Name" -> "DUT Name". On the main page, "Output" is now labeled "Status".
+- The Reservation button now shows "n/a" instead of "Not reserved" when an output isn't reserved, and is always clickable: clicking it while showing "n/a" reserves that specific output for the GUI (shown as owner "GUI"), which blocks any MQTT "reserve" request from picking it up (MQTT reserve already skips outputs that are already reserved by anyone). Clicking it again while reserved releases it as before, regardless of whether it was reserved by MQTT or the GUI.
+- Widened the Actions column (and narrowed the DUT Manufacturer/Model/Name columns slightly to compensate) on the main page table so the Leave Mesh and Factory Reset buttons fit on one line instead of wrapping onto two.
+
 ### 1.9.6
 
 - Fixed the All Outputs page: the 1.9.5 width override (`body{max-width:100%}`) made the body always fill the full browser width, so the header text and nav menu were left-aligned/off-center instead of centered like every other page. The body now uses `width:fit-content` (floored at `min-width:1200px`, capped at `max-width:100%`), so with little data it's still a centered 1200px box exactly like other pages, and only grows (while staying centered) when the table actually needs more room.

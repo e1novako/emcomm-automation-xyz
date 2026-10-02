@@ -44,6 +44,7 @@ void registerWebRoutes() {
   server.on("/settings/diagnostics", HTTP_POST, handleDiagnosticsPost);
   server.on("/device/reboot", HTTP_POST, handleRebootDevice);
   server.on("/reservation/release", HTTP_POST, handleReleaseReservation);
+  server.on("/reservation/reserve", HTTP_POST, handleGuiReserveOutput);
   server.on("/fleet", HTTP_GET, handleStickserverFleetGet);
   server.on("/fleet/partial", HTTP_GET, handleStickserverFleetPartial);
   server.on("/fleet/toggle", HTTP_POST, handleFleetOutputToggle);
@@ -338,12 +339,12 @@ static void renderHomeContent() {
       "<button type='submit'" +
       bulkDisabled + ">Factory Reset All</button></form>" + "</div>";
 
-  piece += F("<table><colgroup><col style='width:4%'><col style='width:20%'>"
-             "<col style='width:20%'><col style='width:20%'><col "
-             "style='width:10%'><col style='width:14%'><col "
-             "style='width:12%'></colgroup><tr><th>#</th><th>Manufacturer</"
-             "th><th>Model</th><th>Name</th><th>Output</th><th>Reservation</"
-             "th><th>Actions</th></tr>");
+  piece += F("<table><colgroup><col style='width:4%'><col style='width:16%'>"
+             "<col style='width:16%'><col style='width:16%'><col "
+             "style='width:10%'><col style='width:12%'><col "
+             "style='width:26%'></colgroup><tr><th>#</th><th>DUT "
+             "Manufacturer</th><th>DUT Model</th><th>DUT Name</"
+             "th><th>Status</th><th>Reservation</th><th>Actions</th></tr>");
   writeChunk(piece);
 
   // Each output row is built and flushed independently so the whole table
@@ -379,17 +380,28 @@ static void renderHomeContent() {
 
     piece += "</td><td>";
     if (mapped) {
-      String reservationLabel =
-          reserved ? (outputReservations[i].owner.isEmpty()
-                          ? String(F("Reserved"))
-                          : htmlEscape(outputReservations[i].owner))
-                   : String(F("Not reserved"));
-      const char *releaseDisabledAttr = reserved ? "" : " disabled";
-      piece += "<form method='post' action='/reservation/release' "
-               "style='margin:0;'><input type='hidden' name='idx' value='" +
+      String reservationLabel;
+      String reservationAction;
+      const char *reservationButtonClass;
+      if (reserved) {
+        reservationLabel = outputReservations[i].owner.isEmpty()
+                                ? String(F("Reserved"))
+                                : htmlEscape(outputReservations[i].owner);
+        reservationAction = F("/reservation/release");
+        reservationButtonClass = "output-on";
+      } else {
+        // Not reserved by anything yet: show "n/a" and let the button
+        // itself reserve this output for the GUI, which blocks any MQTT
+        // "reserve" request from picking it (that code path already skips
+        // outputs that are already reserved, regardless of owner).
+        reservationLabel = F("n/a");
+        reservationAction = F("/reservation/reserve");
+        reservationButtonClass = "output-off";
+      }
+      piece += "<form method='post' action='" + reservationAction +
+               "' style='margin:0;'><input type='hidden' name='idx' value='" +
                String(i) + "'><button type='submit' class='output-toggle " +
-               String(reserved ? "output-on" : "output-off") + "'" +
-               releaseDisabledAttr + ">" + reservationLabel +
+               String(reservationButtonClass) + "'>" + reservationLabel +
                "</button></form>";
     } else {
       piece += F("(none)");
@@ -961,8 +973,8 @@ void handleDeviceSettingsGet() {
            "GPIO assignments</button>"
            "<span>If the first Name contains #5, copy keeps the first row at "
            "#5 and fills later rows as #6, #7, and so on.</span></div>"
-           "<table><tr><th>#</th><th>Manufacturer</th><th>Model</th><th>Name</"
-           "th><th>Control output</th></tr>";
+           "<table><tr><th>#</th><th>DUT Manufacturer</th><th>DUT Model</"
+           "th><th>DUT Name</th><th>Control output</th></tr>";
   writeChunk(piece);
 
   // Each output row is flushed independently so the whole form table never
@@ -1158,6 +1170,33 @@ void handleReleaseReservation() {
   // release takes effect immediately; the resulting response is still
   // published over MQTT like any other stickserver command.
   handleStickserverMessage(stickserverInstanceTopic(), payload);
+  server.sendHeader("Location", "/");
+  server.send(303);
+}
+
+void handleGuiReserveOutput() {
+  if (!ensureAuthorized())
+    return;
+  int idx = -1;
+  if (!server.hasArg("idx") || !parseIndexValue(server.arg("idx"), idx) ||
+      idx < 0 || idx >= cfg.numOutputs ||
+      !isValidOutputPin(cfg.devices[idx].pin)) {
+    server.send(400, "text/plain", "Invalid output index");
+    return;
+  }
+  // Unlike handleReleaseReservation(), this is a local, GUI-only
+  // reservation: it is not routed through the stickserver protocol since
+  // that command picks any output matching a model/count request rather
+  // than this specific one. Setting outputReservations[idx] directly here
+  // is enough to block MQTT "reserve" requests from ever selecting this
+  // output, since that code path already skips any output that is already
+  // reserved -- regardless of owner.
+  if (!outputReservations[idx].reserved) {
+    outputReservations[idx].reserved = true;
+    outputReservations[idx].owner = "GUI";
+    logStatus(String(F("Reserved output ")) + String(idx + 1) +
+              F(" for the GUI via web UI (blocks MQTT reservation)."));
+  }
   server.sendHeader("Location", "/");
   server.send(303);
 }
