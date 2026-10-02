@@ -145,6 +145,10 @@ Additional security note: HTTP Basic Auth is not encrypted on plain HTTP. Use th
 
 ## Release notes
 
+### 1.8.2
+
+- Reduced heap fragmentation and fixed intermittent truncated/incomplete page loads on `/settings`, `/settings/network`, and `/settings/diagnostics`: these pages previously built their entire HTML as one large `String` in RAM before sending it, which could silently truncate under heap pressure (Arduino `String` concatenation fails silently on out-of-memory). They now stream in small independent pieces, the same pattern already used by the home, fleet, and device-settings pages. This also reduces the chance of incoming MQTT stickserver requests failing to parse with `"error":"invalid_json","message":"NoMemory"` while a settings page is being served.
+
 ### 1.8.1
 
 - Fixed "Turn ON all"/"Turn OFF all" (and other bulk/per-output actions) appearing to silently do nothing on some browsers: the `/partial` and `/fleet/partial` auto-refresh endpoints (and all other chunked HTML pages) now send `Cache-Control: no-store`, so a browser can no longer serve a stale cached copy of the output-status page after an action changed server-side state.

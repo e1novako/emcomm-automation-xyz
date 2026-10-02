@@ -742,54 +742,64 @@ static void logSettingsDebug(const char *pageName) {
 void handleSettingsGet() {
   if (!ensureAuthorized())
     return;
-  String html = settingsPageStart("");
-  html += F("<p class='page-intro'>Choose a settings page to configure the "
-            "network, outputs, or diagnostics and firmware updates.</p>"
-            "<ul><li><a href='/settings/network'>Network, Wi-Fi &amp; "
-            "MQTT</a></li><li><a href='/settings/devices'>Devices &amp; "
-            "outputs</a></li><li><a href='/settings/diagnostics'>Diagnostics "
-            "&amp; OTA</a></li></ul></body></html>");
-  sendChunkedHtml(200, html);
+  // Streamed in independent pieces (rather than one large String built in
+  // full before sending) to keep peak heap usage low on this memory
+  // constrained device; see beginChunkedHtml() for why that matters.
+  beginChunkedHtml(200);
+  writeChunk(settingsPageStart(""));
+  writeChunk(F("<p class='page-intro'>Choose a settings page to configure the "
+               "network, outputs, or diagnostics and firmware updates.</p>"
+               "<ul><li><a href='/settings/network'>Network, Wi-Fi &amp; "
+               "MQTT</a></li><li><a href='/settings/devices'>Devices &amp; "
+               "outputs</a></li><li><a href='/settings/diagnostics'>Diagnostics "
+               "&amp; OTA</a></li></ul></body></html>"));
+  endChunkedHtml();
 }
 
 void handleNetworkSettingsGet() {
   if (!ensureAuthorized())
     return;
-  String html = settingsPageStart("network");
-  html += "<p class='page-intro'>Network and broker changes are saved without "
-          "altering device or diagnostics settings.</p>"
-          "<form method='post' action='/settings/network'>"
-          "<fieldset><legend>Station network</legend>"
-          "<label>Station SSID <input name='staSsid' value='" +
-          htmlEscape(cfg.staSsid) +
-          "'></label>"
-          "<label for='staPassword'>Station password</label><input "
-          "id='staPassword' name='staPassword' type='password' value='' "
-          "placeholder='Leave empty to keep current station password'>"
-          "</fieldset>"
-          "<fieldset><legend>Access point</legend>"
-          "<label>SoftAP SSID <input value='" +
-          htmlEscape(defaultSoftApSsidFromMac(cfg.mac)) +
-          "' readonly></label>"
-          "<label for='apPassword'>SoftAP password</label><input "
-          "id='apPassword' name='apPassword' type='password' value='' "
-          "placeholder='Leave empty to keep current AP password'>"
-          "</fieldset>"
-          "<fieldset><legend>Network device settings</legend>"
-          "<label>MAC address <input name='mac' value='" +
-          htmlEscape(cfg.mac) +
-          "' maxlength='17'></label>"
-          "<label><input type='checkbox' name='useCustomMac' value='1'" +
-          String(cfg.useCustomMac ? " checked" : "") +
-          "> Use custom MAC address</label>"
-          "<label>Hostname for DHCP <input name='hostname' value='" +
-          htmlEscape(cfg.hostname) +
-          "' maxlength='32' pattern='[A-Za-z0-9-]*'></label>"
-          "<label>Wi-Fi power (5.0 - 20.5 dBm) <input name='wifiPower' "
-          "type='number' min='5' max='20.5' step='0.1' value='" +
-          String(cfg.wifiPower, 1) +
-          "'></label></fieldset>";
-  html +=
+  // Streamed as several independent pieces (rather than one large String
+  // built in full before sending) to keep peak heap usage low on this
+  // memory constrained device; see beginChunkedHtml() for why that matters.
+  beginChunkedHtml(200);
+  writeChunk(settingsPageStart("network"));
+  writeChunk(
+      "<p class='page-intro'>Network and broker changes are saved without "
+      "altering device or diagnostics settings.</p>"
+      "<form method='post' action='/settings/network'>"
+      "<fieldset><legend>Station network</legend>"
+      "<label>Station SSID <input name='staSsid' value='" +
+      htmlEscape(cfg.staSsid) +
+      "'></label>"
+      "<label for='staPassword'>Station password</label><input "
+      "id='staPassword' name='staPassword' type='password' value='' "
+      "placeholder='Leave empty to keep current station password'>"
+      "</fieldset>");
+  writeChunk(
+      "<fieldset><legend>Access point</legend>"
+      "<label>SoftAP SSID <input value='" +
+      htmlEscape(defaultSoftApSsidFromMac(cfg.mac)) +
+      "' readonly></label>"
+      "<label for='apPassword'>SoftAP password</label><input "
+      "id='apPassword' name='apPassword' type='password' value='' "
+      "placeholder='Leave empty to keep current AP password'>"
+      "</fieldset>"
+      "<fieldset><legend>Network device settings</legend>"
+      "<label>MAC address <input name='mac' value='" +
+      htmlEscape(cfg.mac) +
+      "' maxlength='17'></label>"
+      "<label><input type='checkbox' name='useCustomMac' value='1'" +
+      String(cfg.useCustomMac ? " checked" : "") +
+      "> Use custom MAC address</label>"
+      "<label>Hostname for DHCP <input name='hostname' value='" +
+      htmlEscape(cfg.hostname) +
+      "' maxlength='32' pattern='[A-Za-z0-9-]*'></label>"
+      "<label>Wi-Fi power (5.0 - 20.5 dBm) <input name='wifiPower' "
+      "type='number' min='5' max='20.5' step='0.1' value='" +
+      String(cfg.wifiPower, 1) +
+      "'></label></fieldset>");
+  writeChunk(
       "<fieldset><legend>MQTT</legend>"
       "<label><input type='checkbox' name='mqttEnabled' value='1'" +
       String(cfg.mqttEnabled ? " checked" : "") +
@@ -815,7 +825,8 @@ void handleNetworkSettingsGet() {
       "<label><input type='checkbox' id='mqttPasswordClear' "
       "name='mqttPasswordClear' value='1'"
       " onchange=\"if(this.checked)document.getElementById('mqttPassword')."
-      "value='';\"> Clear MQTT password (remove broker authentication)</label>"
+      "value='';\"> Clear MQTT password (remove broker authentication)</label>");
+  writeChunk(
       "<label><input type='checkbox' name='stickserverRespondEnabled' "
       "value='1'" +
       String(cfg.stickserverRespondEnabled ? " checked" : "") +
@@ -840,7 +851,8 @@ void handleNetworkSettingsGet() {
       "value='1'" +
       String(cfg.restoreReservationsOnBoot ? " checked" : "") +
       "> Restore output reservations after boot/reboot (otherwise all "
-      "reservations are cleared)</label>"
+      "reservations are cleared)</label>");
+  writeChunk(
       "<p style='font-size:0.9em;color:#555;'>Device control is handled "
       "exclusively via the Stickserver protocol, which subscribes to "
       "<code>" +
@@ -849,8 +861,8 @@ void handleNetworkSettingsGet() {
       "release / status / join / leave / power_on / power_off / "
       "factory_reset / reboot).</p></fieldset>"
       "<button type='submit'>Save network settings</button></form>"
-      "</body></html>";
-  sendChunkedHtml(200, html);
+      "</body></html>");
+  endChunkedHtml();
 }
 
 void handleNetworkSettingsPost() {
@@ -1110,52 +1122,59 @@ void handleDeviceSettingsPost() {
 void handleDiagnosticsGet() {
   if (!ensureAuthorized())
     return;
-  String html = settingsPageStart("diagnostics");
-  html += "<p class='page-intro'>Control verbose serial diagnostics and update "
-          "the firmware.</p><form method='post' "
-          "action='/settings/diagnostics'><fieldset><legend>Diagnostics and "
-          "ArduinoOTA</legend>"
-          "<label><input type='checkbox' name='arduinoOtaEnabled' value='1'" +
-          String(cfg.arduinoOtaEnabled ? " checked" : "") +
-          "> Enable ArduinoOTA service (developer OTA via IDE/tools; uses "
-          "admin password for auth)</label>"
-          "<p style='font-size:0.9em;color:#555;'>When enabled, ArduinoOTA "
-          "uses hostname <code>" +
-          htmlEscape(cfg.hostname) +
-          "</code> and requires the current admin password.</p>"
-          "<label><input type='checkbox' name='debugSerial' value='1'" +
-          String(cfg.debugSerial ? " checked" : "") +
-          "> Enable verbose serial debug logging</label></fieldset>"
-          "<button type='submit'>Save diagnostics settings</button></form>"
-          "<h2>Device control</h2>"
-          "<p>Current uptime: " +
-          formatUptimeHHMMSS(millis() / 1000UL) +
-          "</p>"
-          "<p>Free heap: " + String(ESP.getFreeHeap()) +
-          " bytes (fragmentation: " + String(ESP.getHeapFragmentation()) +
-          "%)</p>"
-          "<form method='post' action='/device/reboot' "
-          "onsubmit=\"return confirm('Reboot the device now?');\">"
-          "<button type='submit'>Reboot device</button></form>"
-          "<h2>Configuration maintenance</h2>"
-          "<p><a href='/config/export'>Download configuration backup</a></p>"
-          "<p>Hold the FLASH button during power-on (during the first " +
-          String(FLASH_BOOT_DETECTION_WINDOW_MS) +
-          " milliseconds of boot) to trigger factory reset and restart.</p>"
-          "<form method='post' action='/config/factory-reset' "
-          "onsubmit=\"return confirm('Factory reset?');\">"
-          "<button type='submit'>Factory reset</button></form>"
-          "<form method='post' action='/config/import' "
-          "enctype='multipart/form-data'>"
-          "<label>Import backup JSON <input type='file' name='config' "
-          "accept='application/json' required></label>"
-          "<button type='submit'>Upload and restore</button></form>"
-          "<h2>Firmware update</h2>"
-          "<p>Upload a compiled <code>.bin</code> to update firmware over the "
-          "network. The device reboots automatically after a successful "
-          "flash.</p><p><a href='/firmware/update'>Open firmware update "
-          "page</a></p></body></html>";
-  sendChunkedHtml(200, html);
+  // Streamed as several independent pieces (rather than one large String
+  // built in full before sending) to keep peak heap usage low on this
+  // memory constrained device; see beginChunkedHtml() for why that matters.
+  beginChunkedHtml(200);
+  writeChunk(settingsPageStart("diagnostics"));
+  writeChunk(
+      "<p class='page-intro'>Control verbose serial diagnostics and update "
+      "the firmware.</p><form method='post' "
+      "action='/settings/diagnostics'><fieldset><legend>Diagnostics and "
+      "ArduinoOTA</legend>"
+      "<label><input type='checkbox' name='arduinoOtaEnabled' value='1'" +
+      String(cfg.arduinoOtaEnabled ? " checked" : "") +
+      "> Enable ArduinoOTA service (developer OTA via IDE/tools; uses "
+      "admin password for auth)</label>"
+      "<p style='font-size:0.9em;color:#555;'>When enabled, ArduinoOTA "
+      "uses hostname <code>" +
+      htmlEscape(cfg.hostname) +
+      "</code> and requires the current admin password.</p>"
+      "<label><input type='checkbox' name='debugSerial' value='1'" +
+      String(cfg.debugSerial ? " checked" : "") +
+      "> Enable verbose serial debug logging</label></fieldset>"
+      "<button type='submit'>Save diagnostics settings</button></form>");
+  writeChunk(
+      "<h2>Device control</h2>"
+      "<p>Current uptime: " +
+      formatUptimeHHMMSS(millis() / 1000UL) +
+      "</p>"
+      "<p>Free heap: " + String(ESP.getFreeHeap()) +
+      " bytes (fragmentation: " + String(ESP.getHeapFragmentation()) +
+      "%)</p>"
+      "<form method='post' action='/device/reboot' "
+      "onsubmit=\"return confirm('Reboot the device now?');\">"
+      "<button type='submit'>Reboot device</button></form>");
+  writeChunk(
+      "<h2>Configuration maintenance</h2>"
+      "<p><a href='/config/export'>Download configuration backup</a></p>"
+      "<p>Hold the FLASH button during power-on (during the first " +
+      String(FLASH_BOOT_DETECTION_WINDOW_MS) +
+      " milliseconds of boot) to trigger factory reset and restart.</p>"
+      "<form method='post' action='/config/factory-reset' "
+      "onsubmit=\"return confirm('Factory reset?');\">"
+      "<button type='submit'>Factory reset</button></form>"
+      "<form method='post' action='/config/import' "
+      "enctype='multipart/form-data'>"
+      "<label>Import backup JSON <input type='file' name='config' "
+      "accept='application/json' required></label>"
+      "<button type='submit'>Upload and restore</button></form>");
+  writeChunk(F("<h2>Firmware update</h2>"
+               "<p>Upload a compiled <code>.bin</code> to update firmware over "
+               "the network. The device reboots automatically after a "
+               "successful flash.</p><p><a href='/firmware/update'>Open "
+               "firmware update page</a></p></body></html>"));
+  endChunkedHtml();
 }
 
 void handleDiagnosticsPost() {
