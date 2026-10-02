@@ -89,6 +89,31 @@ String formatUptimeHHMMSS(unsigned long totalSeconds) {
   return String(buf);
 }
 
+// Unified identity header shown at the top of every page: the device's
+// hostname (derived from its MAC address) plus live firmware version and
+// uptime, centered above the page's content/table. This keeps the device's
+// identity visible and consistent no matter which page is open, and ticks
+// the uptime locally via JS so it stays live without extra server round
+// trips.
+static String pageHeaderHtml() {
+  String html = F("<div class='page-header'><h1>");
+  html += defaultHostnameFromMac(cfg.mac);
+  html += F(" Output Control</h1><p>FW: ");
+  html += SOFTWARE_VERSION;
+  html += F(", Uptime: <span id='uptime-value'>");
+  html += formatUptimeHHMMSS(millis() / 1000UL);
+  html += F("</span></p></div><script>(function(){var s=");
+  html += String(millis() / 1000UL);
+  html += F(";function pad(n){return (n<10?'0':'')+n;}function "
+            "fmt(t){var h=Math.floor(t/3600);var "
+            "m=Math.floor((t%3600)/60);var sec=t%60;return "
+            "pad(h)+':'+pad(m)+':'+pad(sec);}function tick(){var "
+            "el=document.getElementById('uptime-value');if(el)"
+            "el.textContent=fmt(s);s++;}tick();setInterval(tick,1000);})();"
+            "</script>");
+  return html;
+}
+
 namespace {
 // Streaming helpers: callers build and send one small piece of HTML at a
 // time (e.g. one table row) instead of accumulating a whole page in RAM, so
@@ -402,18 +427,7 @@ void handleHome() {
   beginChunkedHtml(200);
 
   String piece = FPSTR(HOME_PAGE_HEADER);
-  piece += SOFTWARE_VERSION;
-  piece += F("</p><p>Uptime: <span id='uptime-value'>");
-  piece += formatUptimeHHMMSS(millis() / 1000UL);
-  piece += F("</span></p><script>(function(){var s=");
-  piece += String(millis() / 1000UL);
-  piece += F(";function pad(n){return (n<10?'0':'')+n;}function "
-             "fmt(t){var h=Math.floor(t/3600);var "
-             "m=Math.floor((t%3600)/60);var sec=t%60;return "
-             "pad(h)+':'+pad(m)+':'+pad(sec);}function tick(){var "
-             "el=document.getElementById('uptime-value');if(el)"
-             "el.textContent=fmt(s);s++;}tick();setInterval(tick,1000);})();"
-             "</script>");
+  piece += pageHeaderHtml();
   piece += F("<p><a class='nav-btn' href='/settings'>Settings</a>"
              "<a class='nav-btn' href='/settings/network'>Network</a>"
              "<a class='nav-btn' href='/settings/devices'>Devices</a>"
@@ -678,7 +692,9 @@ static String settingsNavigation(const char *activePage) {
 
 static String settingsPageStart(const char *title, const char *activePage) {
   String html = FPSTR(SETTINGS_PAGE_HEADER);
-  html += "</head><body><h1>" + String(title) + "</h1>";
+  html += "</head><body>";
+  html += pageHeaderHtml();
+  html += "<h2 class='page-header'>" + String(title) + "</h2>";
   html += settingsNavigation(activePage);
   if (usingFactoryPassword())
     html += passwordWarningHtml();

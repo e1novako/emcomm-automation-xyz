@@ -22,8 +22,8 @@ static const char HOME_PAGE_HEADER[] PROGMEM =
     "checkbox']{width:18px;height:18px;}.action-"
     "banner{background:#fff3cd;border:1px solid "
     "#ffc107;padding:10px;margin:10px "
-    "0;border-radius:4px;}</style>"
-    "</head><body><h1>VIBRANT Output Control</h1><p>Version: ";
+    "0;border-radius:4px;}.page-header{text-align:center;}</style>"
+    "</head><body>";
 static const char SETTINGS_PAGE_HEADER[] PROGMEM =
     "<!doctype html><html><head><meta charset='utf-8'><title>VIBRANT "
     "Settings</"
@@ -42,6 +42,7 @@ static const char SETTINGS_PAGE_HEADER[] PROGMEM =
     "border:1px solid #999;border-radius:999px;padding:6px "
     "14px;margin:2px;font-weight:bold;cursor:pointer;background:#e0e0e0;"
     "color:#222;text-decoration:none;}.nav-btn.current{background:#9fd3ff;}"
+    ".page-header{text-align:center;}"
     "</style>";
 static const char SETTINGS_PAGE_SCRIPT[] PROGMEM =
     "<script>\nfunction parseNameSequence(template){\n  const "

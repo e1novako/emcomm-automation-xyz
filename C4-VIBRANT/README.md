@@ -145,6 +145,10 @@ Additional security note: HTTP Basic Auth is not encrypted on plain HTTP. Use th
 
 ## Release notes
 
+### 1.9.1
+
+- All pages (main output control, Settings, Network, Devices, Diagnostics, All Outputs) now share the same unified header: the device name "C4-VIBRANT-<MAC>" followed by "Output Control", centered above the page content/table, with "FW: <firmware version>, Uptime: hh:mm:ss" shown centered underneath (uptime ticks live in the browser, matching the previous main-page behavior). Settings sub-pages keep their distinct page title (e.g. "Network, Wi-Fi & MQTT") as a secondary centered heading below the unified header so the active page is still clear.
+
 ### 1.9.0
 
 - Removed the `|` separators between navigation menu buttons on every page (main page, Settings, Network, Devices, Diagnostics, All Outputs); the buttons already have enough margin/border styling to read clearly without them.
