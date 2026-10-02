@@ -145,6 +145,10 @@ Additional security note: HTTP Basic Auth is not encrypted on plain HTTP. Use th
 
 ## Release notes
 
+### 1.8.4
+
+- Fixed MQTT `hello`/`list` stickserver responses occasionally being published truncated (seen fleet-wide as `invalid_json`/`IncompleteInput` errors on receiving devices). The response JSON was previously serialized into an intermediate Arduino `String`, which can silently truncate on heap exhaustion; it is now streamed directly into PubSubClient's publish buffer via `beginPublish()`/`write()`/`endPublish()`, which also fails cleanly (publishing nothing) if the message does not fit the configured MQTT buffer, instead of risking a partial publish.
+
 ### 1.8.3
 
 - Fixed the device rebooting while rendering the "All Outputs" page (`/fleet`, `/fleet/partial`) when many stickservers/outputs were discovered: the per-cell table render loop never yielded between the (potentially hundreds of) blocking network writes, which could starve the WiFi/TCP stack long enough to trip the watchdog. A `yield()` is now called after each cell.

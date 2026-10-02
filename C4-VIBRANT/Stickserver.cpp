@@ -103,13 +103,25 @@ void buildStickserverEnvelope(JsonDocument &doc, const String &rsp, int ver,
 bool publishStickserverResponse(JsonDocument &doc) {
   if (!cfg.mqttEnabled || !mqttClient.connected())
     return false;
-  String payload;
-  if (serializeJson(doc, payload) == 0) {
-    logWarning(F("Stickserver: failed to serialize response JSON."));
+  // Stream the JSON directly into PubSubClient's internal buffer via
+  // beginPublish()/write()/endPublish() instead of building an intermediate
+  // Arduino String with serializeJson(doc, String&). Arduino String
+  // concatenation fails silently on heap exhaustion, which previously caused
+  // hello/list responses to be published truncated (observed live as
+  // invalid_json/IncompleteInput errors on other stickservers). beginPublish
+  // also fails cleanly (returns false, sends nothing) if the measured size
+  // does not fit the configured MQTT buffer, instead of risking a partial
+  // publish.
+  size_t len = measureJson(doc);
+  String topic = stickserverInstanceTopic();
+  if (len == 0 || !mqttClient.beginPublish(topic.c_str(), len, false)) {
+    Serial.print(F("[WARN] [MQTT] Stickserver publish failed to begin "
+                    "(size/buffer) -> topic: "));
+    Serial.println(topic);
     return false;
   }
-  String topic = stickserverInstanceTopic();
-  bool ok = mqttClient.publish(topic.c_str(), payload.c_str());
+  size_t written = serializeJson(doc, mqttClient);
+  bool ok = mqttClient.endPublish() && written == len;
   if (ok) {
     DBG("[MQTT] Stickserver response -> topic: %s rsp: %s status: %s",
         topic.c_str(), doc["rsp"] | "?", doc["status"] | "?");
