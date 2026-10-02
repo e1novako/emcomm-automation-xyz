@@ -145,6 +145,11 @@ Additional security note: HTTP Basic Auth is not encrypted on plain HTTP. Use th
 
 ## Release notes
 
+### 1.8.1
+
+- Discovered stickserver records (and their per-output state, used by the "All Outputs" page) are now timestamped whenever a `hello`/`list` response is parsed, and forgotten after 60 seconds without a refresh (previously 90s, and pruning only ran while actively querying -- it now also runs for passively-discovered records).
+- The "All Outputs" page now updates in real time: responses to `power_on`/`power_off`/`reserve`/`release`/`status`/`join`/`reboot`/`factory_reset` commands observed on the bus (not just `hello`/`list`) refresh the matching output's state immediately instead of waiting for the next periodic `list` poll, for any server already known via a prior `hello`/`list`.
+
 ### 1.8.0
 
 - Split the single "stickserver fleet discovery" toggle into three independent flags on the Network settings page:

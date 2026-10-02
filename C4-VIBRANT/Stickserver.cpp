@@ -220,41 +220,51 @@ int allocateDiscoveredServerSlot(const String &topic) {
   return oldest;
 }
 
+void applyDiscoveredOutput(uint8_t idx, JsonObjectConst dev) {
+  String euid = dev["euid"] | String("");
+  if (euid.isEmpty())
+    return;
+  // Devices embedded in responses other than hello/list (reserve/release/
+  // status) carry an extra top-level "status" member for that specific
+  // request; "unknown_euid" means this euid isn't actually one of this
+  // server's outputs, so there is no genuine state to record for it.
+  String devStatus = dev["status"] | String("");
+  if (devStatus == F("unknown_euid"))
+    return;
+  String name = dev["name"] | String("");
+  String stateStr = dev["state"] | String("OFF");
+  bool state = (stateStr == "ON");
+
+  DiscoveredServer &server = discoveredServers[idx];
+  // Match by euid so each output keeps a stable row position across
+  // updates. A response that happens to omit some of a server's outputs
+  // (e.g. a short/partial reply) must not erase previously known outputs;
+  // otherwise the All Outputs page intermittently blanks out cells that
+  // were already known, which is the bug this merge logic fixes.
+  int slot = -1;
+  for (uint8_t i = 0; i < server.outputCount; ++i) {
+    if (server.outputs[i].valid && server.outputs[i].euid == euid) {
+      slot = i;
+      break;
+    }
+  }
+  if (slot < 0) {
+    if (server.outputCount >= MAX_DEVICES)
+      return;
+    slot = server.outputCount++;
+  }
+  server.outputs[slot].euid = euid;
+  server.outputs[slot].name = name;
+  server.outputs[slot].state = state;
+  server.outputs[slot].valid = true;
+}
+
 void applyDiscoveredOutputs(uint8_t idx, JsonArrayConst devices) {
   if (devices.isNull())
     return; // no per-output data in this particular response; keep what we
             // already know rather than wiping it out.
-  DiscoveredServer &server = discoveredServers[idx];
   for (JsonVariantConst item : devices) {
-    JsonObjectConst dev = item.as<JsonObjectConst>();
-    String euid = dev["euid"] | String("");
-    if (euid.isEmpty())
-      continue;
-    String name = dev["name"] | String("");
-    String stateStr = dev["state"] | String("OFF");
-    bool state = (stateStr == "ON");
-
-    // Match by euid so each output keeps a stable row position across
-    // updates. A response that happens to omit some of a server's outputs
-    // (e.g. a short/partial reply) must not erase previously known outputs;
-    // otherwise the All Outputs page intermittently blanks out cells that
-    // were already known, which is the bug this merge logic fixes.
-    int slot = -1;
-    for (uint8_t i = 0; i < server.outputCount; ++i) {
-      if (server.outputs[i].valid && server.outputs[i].euid == euid) {
-        slot = i;
-        break;
-      }
-    }
-    if (slot < 0) {
-      if (server.outputCount >= MAX_DEVICES)
-        continue;
-      slot = server.outputCount++;
-    }
-    server.outputs[slot].euid = euid;
-    server.outputs[slot].name = name;
-    server.outputs[slot].state = state;
-    server.outputs[slot].valid = true;
+    applyDiscoveredOutput(idx, item.as<JsonObjectConst>());
   }
 }
 
@@ -268,8 +278,13 @@ void handleStickserverDiscoveryResponse(const String &topicStr,
     return;
   String rsp = response["rsp"] | String("");
   String status = response["status"] | String("");
-  if (status != "ok")
-    return;
+  if (status != "ok") {
+    // "partial"/"busy"/"not_found" responses to action commands (below)
+    // still carry genuine current per-output state and are handled there;
+    // only hello/list themselves require a clean "ok".
+    if (rsp == F("hello") || rsp == F("list"))
+      return;
+  }
   if (rsp == F("hello")) {
     String topic = response["topic"] | topicStr;
     int idx = allocateDiscoveredServerSlot(topic);
@@ -300,6 +315,21 @@ void handleStickserverDiscoveryResponse(const String &topicStr,
     if (!ip.isEmpty())
       discoveredServers[idx].ipAddress = ip;
     applyDiscoveredOutputs(idx, response["devices"].as<JsonArrayConst>());
+  } else if (response["devices"].is<JsonArrayConst>() ||
+             response["device"].is<JsonObjectConst>()) {
+    // Any other stickserver response (power_on/power_off/reserve/release/
+    // status/join/reboot/...) that carries per-output state. Only apply it
+    // to a server we've already discovered via hello/list -- an action
+    // response alone doesn't carry enough identity (hostname/ip) to safely
+    // seed a brand-new "All Outputs" column.
+    int idx = findDiscoveredServerSlot(topicStr);
+    if (idx < 0)
+      return;
+    discoveredServers[idx].lastSeenMs = millis();
+    if (response["devices"].is<JsonArrayConst>())
+      applyDiscoveredOutputs(idx, response["devices"].as<JsonArrayConst>());
+    if (response["device"].is<JsonObjectConst>())
+      applyDiscoveredOutput(idx, response["device"].as<JsonObjectConst>());
   }
 }
 
@@ -318,54 +348,63 @@ void handleStickserverDiscoveryResponse(const String &topicStr,
 unsigned long lastHelloCommandSeenMs = 0;
 
 void maintainStickserverDiscovery() {
-  if (!cfg.stickserverQueryEnabled || !cfg.mqttEnabled ||
-      !mqttClient.connected())
+  if (!cfg.mqttEnabled || !mqttClient.connected())
     return;
   unsigned long now = millis();
   static unsigned long lastPruneMs = 0;
   const unsigned long kHelloIntervalMs = 5000;
   const unsigned long kListIntervalMs = 10000;
-  const unsigned long kStaleTimeoutMs = 90000;
+  // Discovery records (and the per-output state folded into them) are
+  // timestamped when parsed; anything not refreshed within this window is
+  // forgotten so the All Outputs page doesn't show long-gone servers.
+  const unsigned long kStaleTimeoutMs = 60000;
 
-  if (now - lastHelloCommandSeenMs >= kHelloIntervalMs) {
-    // Optimistically mark the cooldown as started immediately (rather than
-    // waiting for our own publish to echo back) so a near-simultaneous loop
-    // iteration on this same device can't also fire before the echo
-    // arrives.
-    lastHelloCommandSeenMs = now;
-    JsonDocument req;
-    req["cmd"] = "hello";
-    req["ver"] = STICKSERVER_PROTOCOL_VERSION;
-    req["mid"] = String(F("disc-")) + String(now);
-    String payload;
-    serializeJson(req, payload);
-    mqttClient.publish(STICKSERVER_ROOT_TOPIC, payload.c_str());
-  }
-
-  String selfTopic = stickserverInstanceTopic();
-  for (uint8_t i = 0; i < MAX_DISCOVERED_SERVERS; ++i) {
-    if (!discoveredServers[i].active)
-      continue;
-    // Never poll ourselves: our own hello response (received back via the
-    // root-topic echo) already carries a full "devices" array every
-    // kHelloIntervalMs, so a "list" round-trip to our own instance topic
-    // would be a pointless, self-inflicted MQTT message every cycle.
-    if (discoveredServers[i].instanceTopic == selfTopic)
-      continue;
-    if (now - discoveredServers[i].lastListRequestMs >= kListIntervalMs) {
-      discoveredServers[i].lastListRequestMs = now;
+  if (cfg.stickserverQueryEnabled) {
+    if (now - lastHelloCommandSeenMs >= kHelloIntervalMs) {
+      // Optimistically mark the cooldown as started immediately (rather
+      // than waiting for our own publish to echo back) so a
+      // near-simultaneous loop iteration on this same device can't also
+      // fire before the echo arrives.
+      lastHelloCommandSeenMs = now;
       JsonDocument req;
-      req["cmd"] = "list";
+      req["cmd"] = "hello";
       req["ver"] = STICKSERVER_PROTOCOL_VERSION;
-      req["mid"] = String(F("disc-list-")) + String(now) + "-" + String(i);
+      req["mid"] = String(F("disc-")) + String(now);
       String payload;
       serializeJson(req, payload);
-      mqttClient.publish(discoveredServers[i].instanceTopic.c_str(),
-                         payload.c_str());
+      mqttClient.publish(STICKSERVER_ROOT_TOPIC, payload.c_str());
+    }
+
+    String selfTopic = stickserverInstanceTopic();
+    for (uint8_t i = 0; i < MAX_DISCOVERED_SERVERS; ++i) {
+      if (!discoveredServers[i].active)
+        continue;
+      // Never poll ourselves: our own hello response (received back via the
+      // root-topic echo) already carries a full "devices" array every
+      // kHelloIntervalMs, so a "list" round-trip to our own instance topic
+      // would be a pointless, self-inflicted MQTT message every cycle.
+      if (discoveredServers[i].instanceTopic == selfTopic)
+        continue;
+      if (now - discoveredServers[i].lastListRequestMs >= kListIntervalMs) {
+        discoveredServers[i].lastListRequestMs = now;
+        JsonDocument req;
+        req["cmd"] = "list";
+        req["ver"] = STICKSERVER_PROTOCOL_VERSION;
+        req["mid"] = String(F("disc-list-")) + String(now) + "-" + String(i);
+        String payload;
+        serializeJson(req, payload);
+        mqttClient.publish(discoveredServers[i].instanceTopic.c_str(),
+                           payload.c_str());
+      }
     }
   }
 
-  if (now - lastPruneMs >= 5000) {
+  // Prune stale records whenever either discovery flag might have
+  // populated them (querying ourselves, or passively observed peer
+  // traffic), so entries from a mode that just got disabled are still
+  // forgotten instead of lingering forever.
+  if ((cfg.stickserverQueryEnabled || cfg.stickserverPassiveDiscoveryEnabled) &&
+      now - lastPruneMs >= 5000) {
     lastPruneMs = now;
     for (uint8_t i = 0; i < MAX_DISCOVERED_SERVERS; ++i) {
       if (discoveredServers[i].active &&
