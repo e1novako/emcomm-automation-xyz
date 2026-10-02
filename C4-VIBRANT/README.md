@@ -145,6 +145,10 @@ Additional security note: HTTP Basic Auth is not encrypted on plain HTTP. Use th
 
 ## Release notes
 
+### 1.9.6
+
+- Fixed the All Outputs page: the 1.9.5 width override (`body{max-width:100%}`) made the body always fill the full browser width, so the header text and nav menu were left-aligned/off-center instead of centered like every other page. The body now uses `width:fit-content` (floored at `min-width:1200px`, capped at `max-width:100%`), so with little data it's still a centered 1200px box exactly like other pages, and only grows (while staying centered) when the table actually needs more room.
+
 ### 1.9.5
 
 - On the "All Outputs" page, the table now has a minimum width of 1200px (same as other pages) but is no longer capped there: once enough stickservers are discovered that the table needs more room, the page body and table grow to use up to 100% of the browser width instead of squeezing columns or scrolling inside a fixed 1200px box.
