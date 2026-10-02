@@ -115,6 +115,8 @@ void setFactoryDefaults() {
     cfg.devices[i].pin =
         (i < DEFAULT_D0_D7_COUNT) ? OUTPUT_PIN_MAPPINGS[i].gpio : -1;
     cfg.devices[i].state = false;
+    cfg.devices[i].reserved = false;
+    cfg.devices[i].reservedOwner = "";
   }
 
   cfg.mqttEnabled = false;
@@ -127,6 +129,8 @@ void setFactoryDefaults() {
   cfg.stickserverRespondEnabled = true;
   cfg.stickserverQueryEnabled = false;
   cfg.stickserverPassiveDiscoveryEnabled = false;
+  cfg.restoreOutputStateOnBoot = false;
+  cfg.restoreReservationsOnBoot = false;
   clearOutputReservations();
 
   logStatus(F("Factory defaults loaded."));
@@ -153,6 +157,8 @@ bool saveConfig() {
   doc["stickserverQueryEnabled"] = cfg.stickserverQueryEnabled;
   doc["stickserverPassiveDiscoveryEnabled"] =
       cfg.stickserverPassiveDiscoveryEnabled;
+  doc["restoreOutputStateOnBoot"] = cfg.restoreOutputStateOnBoot;
+  doc["restoreReservationsOnBoot"] = cfg.restoreReservationsOnBoot;
 
   JsonArray devices = doc["devices"].to<JsonArray>();
   for (uint8_t i = 0; i < MAX_DEVICES; ++i) {
@@ -162,6 +168,8 @@ bool saveConfig() {
     d["name"] = cfg.devices[i].name;
     d["pin"] = cfg.devices[i].pin;
     d["state"] = cfg.devices[i].state;
+    d["reserved"] = cfg.devices[i].reserved;
+    d["reservedOwner"] = cfg.devices[i].reservedOwner;
   }
 
   File file = LittleFS.open(CONFIG_PATH, "w");
@@ -222,6 +230,8 @@ bool loadConfig() {
                                         static_cast<uint8_t>(MAX_DEVICES));
   if (cfg.numOutputs < 1 || cfg.numOutputs > MAX_DEVICES)
     cfg.numOutputs = MAX_DEVICES;
+  cfg.restoreOutputStateOnBoot = doc["restoreOutputStateOnBoot"] | false;
+  cfg.restoreReservationsOnBoot = doc["restoreReservationsOnBoot"] | false;
 
   JsonArray devices = doc["devices"].as<JsonArray>();
   for (uint8_t i = 0; i < MAX_DEVICES; ++i) {
@@ -240,17 +250,30 @@ bool loadConfig() {
         cfg.devices[i].model = DEFAULT_DEVICE_MODEL;
       cfg.devices[i].name = d["name"] | String(F("Output ")) + String(i + 1);
       cfg.devices[i].pin = static_cast<int8_t>(d["pin"] | -1);
+      // Only restore the last saved ON/OFF state when
+      // restoreOutputStateOnBoot is enabled; otherwise always boot OFF.
       cfg.devices[i].state =
-          false; // Always boot OFF; do not restore runtime ON state
+          cfg.restoreOutputStateOnBoot ? (bool)(d["state"] | false) : false;
+      cfg.devices[i].reserved = d["reserved"] | false;
+      cfg.devices[i].reservedOwner = d["reservedOwner"] | String("");
     } else {
       cfg.devices[i].manufacturer = DEFAULT_DEVICE_MANUFACTURER;
       cfg.devices[i].model = DEFAULT_DEVICE_MODEL;
       cfg.devices[i].name = String(F("Output ")) + String(i + 1);
       cfg.devices[i].pin = -1;
       cfg.devices[i].state = false;
+      cfg.devices[i].reserved = false;
+      cfg.devices[i].reservedOwner = "";
     }
   }
-  clearOutputReservations();
+  if (cfg.restoreReservationsOnBoot) {
+    for (uint8_t i = 0; i < MAX_DEVICES; ++i) {
+      outputReservations[i].reserved = cfg.devices[i].reserved;
+      outputReservations[i].owner = cfg.devices[i].reservedOwner;
+    }
+  } else {
+    clearOutputReservations();
+  }
 
   if (cfg.staSsid.isEmpty())
     cfg.staSsid = DEFAULT_STA_SSID;
@@ -295,6 +318,22 @@ void performFactoryResetAndRestart(const String &reason) {
   }
   delay(500);
   ESP.restart();
+}
+
+void maybePersistOutputState() {
+  if (!cfg.restoreOutputStateOnBoot)
+    return;
+  saveConfig();
+}
+
+void maybePersistReservations() {
+  if (!cfg.restoreReservationsOnBoot)
+    return;
+  for (uint8_t i = 0; i < MAX_DEVICES; ++i) {
+    cfg.devices[i].reserved = outputReservations[i].reserved;
+    cfg.devices[i].reservedOwner = outputReservations[i].owner;
+  }
+  saveConfig();
 }
 
 } // namespace vibrant

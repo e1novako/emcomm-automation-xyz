@@ -6,6 +6,13 @@ struct DeviceEntry {
   String manufacturer, model, name;
   int8_t pin;
   bool state;
+  // Output reservation, persisted alongside output state so it can
+  // optionally be restored after boot/reboot (see
+  // DeviceConfig::restoreReservationsOnBoot). The live, authoritative
+  // reservation state during runtime is outputReservations[] (see
+  // Reservations.h); these fields only mirror it for persistence.
+  bool reserved;
+  String reservedOwner;
 };
 struct DeviceConfig {
   String mac;
@@ -33,6 +40,12 @@ struct DeviceConfig {
   bool stickserverRespondEnabled;
   bool stickserverQueryEnabled;
   bool stickserverPassiveDiscoveryEnabled;
+  // When enabled, each output's last-known ON/OFF state is restored at
+  // boot/reboot instead of always starting OFF. Disabled by default.
+  bool restoreOutputStateOnBoot;
+  // When enabled, output reservations (GUI- or MQTT-reserved) are restored
+  // at boot/reboot instead of being cleared. Disabled by default.
+  bool restoreReservationsOnBoot;
 };
 struct PinMapping {
   int8_t gpio;
@@ -51,6 +64,15 @@ extern DeviceConfig cfg;
 void setFactoryDefaults();
 bool saveConfig();
 bool loadConfig();
+// Persists cfg.devices[i].state to flash if restoreOutputStateOnBoot is
+// enabled; no-op otherwise. Call after any discrete, user-intentional
+// output state change (toggle, all-on/off, MQTT power_on/power_off) -- not
+// from transient pulse/sequence steps.
+void maybePersistOutputState();
+// Mirrors outputReservations[] into cfg.devices[] and persists to flash if
+// restoreReservationsOnBoot is enabled; no-op otherwise. Call after any
+// reservation or release (GUI or MQTT).
+void maybePersistReservations();
 bool parseMac(const String &, uint8_t out[6]);
 bool applyConfiguredMac();
 void performFactoryResetAndRestart(const String &);

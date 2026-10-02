@@ -603,6 +603,7 @@ void handleStickserverMessage(const String &topicStr,
       newReservation[reservedCount] = true;
       ++reservedCount;
     }
+    maybePersistReservations();
 
     JsonDocument response;
     buildStickserverEnvelope(
@@ -697,6 +698,8 @@ void handleStickserverMessage(const String &topicStr,
         device["status"] = "not_reserved";
       }
     }
+    if (releasedCount > 0)
+      maybePersistReservations();
 
     buildStickserverEnvelope(
         response, cmd, ver, mid,

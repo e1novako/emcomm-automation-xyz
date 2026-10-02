@@ -554,7 +554,7 @@ void handleToggle() {
   Serial.print(d.name);
   Serial.print(F(" -> "));
   Serial.println(d.state ? F("ON") : F("OFF"));
-  // Runtime state changes are not persisted to flash by design.
+  maybePersistOutputState();
   server.sendHeader("Location", "/");
   server.send(303);
 }
@@ -630,6 +630,7 @@ void handleAllOn() {
     mqttPublishOutputState(i);
     first = false;
   }
+  maybePersistOutputState();
   server.sendHeader("Location", "/");
   server.send(303);
 }
@@ -652,6 +653,7 @@ void handleAllOff() {
     mqttPublishOutputState(i);
     first = false;
   }
+  maybePersistOutputState();
   server.sendHeader("Location", "/");
   server.send(303);
 }
@@ -824,6 +826,16 @@ void handleNetworkSettingsGet() {
       String(cfg.stickserverPassiveDiscoveryEnabled ? " checked" : "") +
       "> Passively parse hello/list responses observed on the bus "
       "(required for the All Outputs page)</label>"
+      "<label><input type='checkbox' name='restoreOutputStateOnBoot' "
+      "value='1'" +
+      String(cfg.restoreOutputStateOnBoot ? " checked" : "") +
+      "> Restore output ON/OFF state after boot/reboot (otherwise all "
+      "outputs always start OFF)</label>"
+      "<label><input type='checkbox' name='restoreReservationsOnBoot' "
+      "value='1'" +
+      String(cfg.restoreReservationsOnBoot ? " checked" : "") +
+      "> Restore output reservations after boot/reboot (otherwise all "
+      "reservations are cleared)</label>"
       "<p style='font-size:0.9em;color:#555;'>Device control is handled "
       "exclusively via the Stickserver protocol, which subscribes to "
       "<code>" +
@@ -942,6 +954,12 @@ void handleNetworkSettingsPost() {
   cfg.stickserverPassiveDiscoveryEnabled =
       server.hasArg("stickserverPassiveDiscoveryEnabled") &&
       server.arg("stickserverPassiveDiscoveryEnabled") == "1";
+  cfg.restoreOutputStateOnBoot =
+      server.hasArg("restoreOutputStateOnBoot") &&
+      server.arg("restoreOutputStateOnBoot") == "1";
+  cfg.restoreReservationsOnBoot =
+      server.hasArg("restoreReservationsOnBoot") &&
+      server.arg("restoreReservationsOnBoot") == "1";
 
   logSettingsDebug("network");
   finishSettingsSave("Network settings updated from web UI.",
@@ -1197,6 +1215,7 @@ void handleGuiReserveOutput() {
     outputReservations[idx].owner = "GUI";
     logStatus(String(F("Reserved output ")) + String(idx + 1) +
               F(" for the GUI via web UI (blocks MQTT reservation)."));
+    maybePersistReservations();
   }
   server.sendHeader("Location", "/");
   server.send(303);
@@ -1320,6 +1339,12 @@ static void renderFleetContent() {
   for (uint8_t c = 0; c < activeCount; ++c) {
     const DiscoveredServer &s = discoveredServers[activeIdx[c]];
     String label = s.hostname.isEmpty() ? s.instanceTopic : s.hostname;
+    // Hostnames follow the "C4-VIBRANT-<MAC suffix>" convention; strip the
+    // common prefix so the column header shows just the distinguishing MAC
+    // suffix. The instanceTopic fallback is a different format and is left
+    // untouched.
+    if (!s.hostname.isEmpty() && label.startsWith(F("C4-VIBRANT-")))
+      label.remove(0, 11);
     if (!s.ipAddress.isEmpty()) {
       piece += "<th><a href=\"http://" + htmlEscape(s.ipAddress) +
                "\" target=\"_blank\" rel=\"noopener\">" + htmlEscape(label) +
@@ -1377,17 +1402,6 @@ void handleStickserverFleetGet() {
     return;
   beginChunkedHtml(200);
   String piece = settingsPageStart("fleet");
-  // This page's table has one column per discovered stickserver, so it can
-  // easily need more than the shared 1200px page width once several
-  // servers are discovered. Override the shared body/table sizing just for
-  // this page: the body shrink-wraps to its content (width:fit-content)
-  // instead of always filling 1200px, floored at 1200px (min-width) and
-  // capped at the viewport width (max-width:100%), and stays centered via
-  // the inherited margin:auto either way -- so with little data it's a
-  // centered 1200px box exactly like other pages, and with a lot of data
-  // it grows (still centered, now using the full page width) to fit.
-  piece += F("<style>body{max-width:100%;width:fit-content;min-width:1200px;}"
-             "#fleet-table{width:100%;}</style>");
   piece += F(
       "<p class='page-intro'>Discovered stickserver instances and their "
       "outputs, gathered passively over MQTT (hello/list). Each column is "

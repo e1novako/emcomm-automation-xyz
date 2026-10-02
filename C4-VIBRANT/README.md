@@ -145,6 +145,15 @@ Additional security note: HTTP Basic Auth is not encrypted on plain HTTP. Use th
 
 ## Release notes
 
+### 1.12.0
+
+- The "All Outputs" page uses the same shared 1200px max-width page constraint as every other page (reverted the page-specific `width:fit-content`/`min-width:1200px` override from 1.9.5/1.9.6).
+- On the "All Outputs" page, stickserver column headers now strip the common `C4-VIBRANT-` hostname prefix, showing just the distinguishing MAC suffix.
+- Output ON/OFF state and reservations can now be persisted to flash and restored after boot/reboot, gated by two new, independent flags on the Network settings page (both disabled by default, matching current behavior when off):
+  - **Restore output ON/OFF state after boot/reboot**: when enabled, toggling an output (main page, "All on"/"All off", or MQTT `power_on`/`power_off`) saves the new state to flash, and that saved state is restored at boot instead of always starting OFF.
+  - **Restore output reservations after boot/reboot**: when enabled, GUI and MQTT reservations/releases are saved to flash, and saved reservations are restored at boot instead of always being cleared.
+  - Transient pulse/sequence steps (Leave Mesh, Factory Reset profiles) do not trigger a flash save; only discrete, user-intentional state/reservation changes do.
+
 ### 1.11.0
 
 - The nav menu is now horizontally centered (`.settings-nav{text-align:center;}`) on every page, instead of being left-aligned within the centered page column.

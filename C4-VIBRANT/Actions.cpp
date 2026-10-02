@@ -216,7 +216,7 @@ bool handleLoadAction(uint8_t idx, const String &cmd) {
       cancelAction();
     setOutputDirect(idx, true);
     mqttPublishOutputState(idx);
-    // Runtime state changes are not persisted to flash by design.
+    maybePersistOutputState();
     return true;
   }
   if (cmd == F("power_off")) {
@@ -224,7 +224,7 @@ bool handleLoadAction(uint8_t idx, const String &cmd) {
       cancelAction();
     setOutputDirect(idx, false);
     mqttPublishOutputState(idx);
-    // Runtime state changes are not persisted to flash by design.
+    maybePersistOutputState();
     return true;
   }
   if (!isValidOutputPin(cfg.devices[idx].pin))
