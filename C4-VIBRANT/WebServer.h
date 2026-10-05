@@ -31,6 +31,8 @@ void handleNetworkSettingsPost();
 void handleDeviceSettingsGet();
 void handleDeviceSettingsPost();
 void handleDiagnosticsGet();
+void handleDiagnosticsData();
+void handleDiagnosticsHeapLog();
 void handleDiagnosticsPost();
 void handleRebootDevice();
 void handleStickserverFleetGet();

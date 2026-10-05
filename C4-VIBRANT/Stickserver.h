@@ -17,7 +17,6 @@ struct DiscoveredOutputEntry {
 struct DiscoveredServer {
   bool active = false;
   String instanceTopic;
-  String instanceId;
   String hostname;
   String ipAddress;
   unsigned long lastSeenMs = 0;
@@ -29,10 +28,32 @@ constexpr uint8_t MAX_DISCOVERED_SERVERS = 16;
 extern DiscoveredServer discoveredServers[MAX_DISCOVERED_SERVERS];
 void maintainStickserverDiscovery();
 
+// Fixed-size (no heap allocation) ring buffer of recent per-message heap
+// snapshots, recorded in handleStickserverMessage() when cfg.debugSerial is
+// enabled. Exposed over HTTP (see WebServer.cpp's
+// /settings/diagnostics/heaplog) so the heap-fragmentation trace can be
+// inspected without a physical serial connection.
+struct HeapTraceEntry {
+  char topic[28] = {0};
+  uint16_t payloadLen = 0;
+  uint32_t freeBefore = 0;
+  uint32_t blockBefore = 0;
+  uint32_t freeAfterParse = 0;
+  uint32_t blockAfterParse = 0;
+  int32_t freeAfterDiscovery = -1; // -1 = not a discovery-response message
+  uint32_t blockAfterDiscovery = 0;
+  uint32_t atMs = 0;
+};
+constexpr uint8_t HEAP_TRACE_CAPACITY = 16;
+extern HeapTraceEntry heapTraceLog[HEAP_TRACE_CAPACITY];
+extern uint8_t heapTraceHead;
+extern uint8_t heapTraceCount;
+String renderHeapTraceJson();
+
 String stickserverMacToken();
 String stickserverIdToken();
 String stickserverInstanceId();
-String stickserverInstanceTopic();
+const String &stickserverInstanceTopic();
 String stickserverOutputEuid(uint8_t);
 int findManagedOutputByEuid(const String &);
 void populateStickserverDevice(JsonObject, uint8_t);

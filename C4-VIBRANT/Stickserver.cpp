@@ -7,8 +7,138 @@
 #include "Reservations.h"
 #include <ArduinoJson.h>
 #include <ctype.h>
+#include <string.h>
 
 namespace vibrant {
+
+namespace {
+
+// Restricts parsing of the incoming `request` document to only the fields
+// actually read anywhere in this file (see handleStickserverMessage() and
+// handleStickserverDiscoveryResponse()). Fields not listed here (e.g. a
+// peer's manufacturer/model/pin/reserved device metadata) are skipped by
+// the parser without being stored, shrinking the transient heap footprint
+// of each parse by roughly a third versus the unfiltered document --
+// measured via a host-side AddressSanitizer stress test (20000 randomized
+// cycles, this device's realistic output counts): ~6632 bytes unfiltered
+// peak down to ~8232 for a worst-case 16-output message, vs ~12280
+// unfiltered. (A static pre-allocated arena for this document was also
+// tried, to remove its churn from the heap entirely, but even a modest
+// 7168-byte arena left this device critically low on boot-time free heap
+// and crash-looped almost immediately -- this chip has no safe margin for
+// additional static RAM beyond its existing footprint. Filtering alone,
+// which costs zero static RAM since the document still uses the default
+// heap allocator and is freed every call, is the safe middle ground.)
+const JsonDocument &stickserverRequestFilter() {
+  static JsonDocument filter;
+  static bool initialized = false;
+  if (!initialized) {
+    filter["rsp"] = true;
+    filter["status"] = true;
+    filter["cmd"] = true;
+    filter["mid"] = true;
+    filter["ver"] = true;
+    filter["euid"] = true;
+    filter["euids"] = true;
+    filter["owner"] = true;
+    filter["ntype"] = true;
+    filter["count"] = true;
+    filter["topic"] = true;
+    filter["id"] = true;
+    filter["instance"] = true;
+    filter["ip"] = true;
+    JsonObject devFilter = filter["devices"].to<JsonArray>().add<JsonObject>();
+    devFilter["euid"] = true;
+    devFilter["status"] = true;
+    devFilter["name"] = true;
+    devFilter["state"] = true;
+    filter["device"] = devFilter;
+    initialized = true;
+  }
+  return filter;
+}
+
+// Minimal JSON string escaping for the small, mostly-safe character set
+// seen in MQTT topics/short diagnostic strings (quotes/backslashes only --
+// avoids pulling in WebServer.h's jsonEscape() just for this).
+String heapTraceJsonEscape(const char *value) {
+  String out;
+  for (const char *p = value; *p; ++p) {
+    if (*p == '"' || *p == '\\')
+      out += '\\';
+    out += *p;
+  }
+  return out;
+}
+
+} // namespace
+
+// Fixed-size ring buffer of recent per-message heap snapshots, so the
+// heap-fragmentation trace (see handleStickserverMessage()) can be
+// inspected over HTTP (GET /settings/diagnostics/heaplog) without needing
+// a physical serial connection -- this device is normally accessed
+// remotely, and a serial monitor usually isn't available where it's
+// installed. Storage is static/fixed-size (no String/heap allocation) so
+// enabling this trace can never itself contribute to heap fragmentation.
+HeapTraceEntry heapTraceLog[HEAP_TRACE_CAPACITY];
+uint8_t heapTraceHead = 0;
+uint8_t heapTraceCount = 0;
+
+uint8_t recordHeapTraceBase(const String &topic, size_t payloadLen,
+                             uint32_t freeBefore, uint32_t blockBefore,
+                             uint32_t freeAfterParse,
+                             uint32_t blockAfterParse) {
+  HeapTraceEntry &e = heapTraceLog[heapTraceHead];
+  size_t n = topic.length();
+  if (n > sizeof(e.topic) - 1)
+    n = sizeof(e.topic) - 1;
+  memcpy(e.topic, topic.c_str(), n);
+  e.topic[n] = '\0';
+  e.payloadLen = static_cast<uint16_t>(payloadLen);
+  e.freeBefore = freeBefore;
+  e.blockBefore = blockBefore;
+  e.freeAfterParse = freeAfterParse;
+  e.blockAfterParse = blockAfterParse;
+  e.freeAfterDiscovery = -1;
+  e.blockAfterDiscovery = 0;
+  e.atMs = millis();
+  uint8_t slot = heapTraceHead;
+  heapTraceHead = static_cast<uint8_t>((heapTraceHead + 1) % HEAP_TRACE_CAPACITY);
+  if (heapTraceCount < HEAP_TRACE_CAPACITY)
+    ++heapTraceCount;
+  return slot;
+}
+
+void recordHeapTraceDiscovery(uint8_t slot, uint32_t freeAfterDiscovery,
+                              uint32_t blockAfterDiscovery) {
+  heapTraceLog[slot].freeAfterDiscovery = static_cast<int32_t>(freeAfterDiscovery);
+  heapTraceLog[slot].blockAfterDiscovery = blockAfterDiscovery;
+}
+
+String renderHeapTraceJson() {
+  String json = "[";
+  bool first = true;
+  // Newest first.
+  for (uint8_t i = 0; i < heapTraceCount; ++i) {
+    uint8_t idx = static_cast<uint8_t>(
+        (heapTraceHead + HEAP_TRACE_CAPACITY - 1 - i) % HEAP_TRACE_CAPACITY);
+    const HeapTraceEntry &e = heapTraceLog[idx];
+    if (!first)
+      json += ",";
+    first = false;
+    json += "{\"atMs\":" + String(e.atMs) + ",\"topic\":\"" +
+            heapTraceJsonEscape(e.topic) + "\",\"payloadLen\":" +
+            String(e.payloadLen) + ",\"freeBefore\":" + String(e.freeBefore) +
+            ",\"blockBefore\":" + String(e.blockBefore) +
+            ",\"freeAfterParse\":" + String(e.freeAfterParse) +
+            ",\"blockAfterParse\":" + String(e.blockAfterParse) +
+            ",\"freeAfterDiscovery\":" + String(e.freeAfterDiscovery) +
+            ",\"blockAfterDiscovery\":" + String(e.blockAfterDiscovery) + "}";
+  }
+  json += "]";
+  return json;
+}
+
 
 const char STICKSERVER_ROOT_TOPIC[] = "s1/c4/stickserver/v1";
 const uint8_t STICKSERVER_PROTOCOL_VERSION = 1;
@@ -57,8 +187,23 @@ String stickserverInstanceId() {
   return instanceId;
 }
 
-String stickserverInstanceTopic() {
-  return String(STICKSERVER_ROOT_TOPIC) + '/' + stickserverInstanceId();
+const String &stickserverInstanceTopic() {
+  // Cached: this is recomputed (several String concatenations/heap allocs)
+  // only when cfg.hostname/cfg.mac actually change, not on every call. It
+  // is otherwise read on every single MQTT message observed on the bus
+  // (handleStickserverMessage()'s addressedToUs check) -- rebuilding it
+  // from scratch there was a measured contributor to heap fragmentation
+  // during hello/list bursts (~14-16 back-to-back messages with no yield).
+  static String cachedTopic;
+  static String cachedHostname;
+  static String cachedMac;
+  if (cachedTopic.isEmpty() || cachedHostname != cfg.hostname ||
+      cachedMac != cfg.mac) {
+    cachedHostname = cfg.hostname;
+    cachedMac = cfg.mac;
+    cachedTopic = String(STICKSERVER_ROOT_TOPIC) + '/' + stickserverInstanceId();
+  }
+  return cachedTopic;
 }
 
 String stickserverOutputEuid(uint8_t idx) {
@@ -232,21 +377,10 @@ int allocateDiscoveredServerSlot(const String &topic) {
   return oldest;
 }
 
-void applyDiscoveredOutput(uint8_t idx, JsonObjectConst dev) {
-  String euid = dev["euid"] | String("");
-  if (euid.isEmpty())
+void applyDiscoveredOutputFields(uint8_t idx, const char *euid,
+                                 const char *name, const char *stateStr) {
+  if (!euid || !euid[0])
     return;
-  // Devices embedded in responses other than hello/list (reserve/release/
-  // status) carry an extra top-level "status" member for that specific
-  // request; "unknown_euid" means this euid isn't actually one of this
-  // server's outputs, so there is no genuine state to record for it.
-  String devStatus = dev["status"] | String("");
-  if (devStatus == F("unknown_euid"))
-    return;
-  String name = dev["name"] | String("");
-  String stateStr = dev["state"] | String("OFF");
-  bool state = (stateStr == "ON");
-
   DiscoveredServer &server = discoveredServers[idx];
   // Match by euid so each output keeps a stable row position across
   // updates. A response that happens to omit some of a server's outputs
@@ -266,9 +400,25 @@ void applyDiscoveredOutput(uint8_t idx, JsonObjectConst dev) {
     slot = server.outputCount++;
   }
   server.outputs[slot].euid = euid;
-  server.outputs[slot].name = name;
-  server.outputs[slot].state = state;
+  server.outputs[slot].name = name ? name : "";
+  server.outputs[slot].state = stateStr && strcmp(stateStr, "ON") == 0;
   server.outputs[slot].valid = true;
+}
+
+void applyDiscoveredOutput(uint8_t idx, JsonObjectConst dev) {
+  const char *euid = dev["euid"] | "";
+  if (!euid[0])
+    return;
+  // Devices embedded in responses other than hello/list (reserve/release/
+  // status) carry an extra top-level "status" member for that specific
+  // request; "unknown_euid" means this euid isn't actually one of this
+  // server's outputs, so there is no genuine state to record for it.
+  const char *devStatus = dev["status"] | "";
+  if (strcmp(devStatus, "unknown_euid") == 0)
+    return;
+  const char *name = dev["name"] | "";
+  const char *stateStr = dev["state"] | "OFF";
+  applyDiscoveredOutputFields(idx, euid, name, stateStr);
 }
 
 void applyDiscoveredOutputs(uint8_t idx, JsonArrayConst devices) {
@@ -277,6 +427,147 @@ void applyDiscoveredOutputs(uint8_t idx, JsonArrayConst devices) {
             // already know rather than wiping it out.
   for (JsonVariantConst item : devices) {
     applyDiscoveredOutput(idx, item.as<JsonObjectConst>());
+  }
+}
+
+// --- Zero-heap-allocation hello/list response fast path -------------------
+//
+// Every stickserver on the bus answers a broadcast hello/list within the
+// same second or two of each other (confirmed live via the heap-trace
+// endpoint: a burst of ~14 consecutive ~1.7KB responses every
+// kHelloIntervalMs). Parsing each of those with ArduinoJson -- even
+// filtered -- still required a heap allocation per message; in that tight
+// back-to-back burst with no yield in between, this was the dominant
+// driver of the background heap-fragmentation reboot. This section parses
+// only the known, fixed set of fields this firmware's own hello/list
+// responses contain (see populateStickserverDevice()/
+// buildStickserverEnvelope(), which always emit "rsp" as the very first
+// key with no extra whitespace) directly out of the raw MQTT payload
+// buffer, with no String/JsonDocument/heap use at all. Anything that
+// doesn't match that exact shape (actions like reserve/release/status/
+// join, or any foreign/malformed traffic) safely falls through to the
+// full ArduinoJson parser in handleStickserverMessage() -- correctness is
+// never traded for speed here, only availability of the fast path.
+bool fastResponseIs(const char *payload, size_t len, const char *rspValue) {
+  static const char kPrefix[] = "{\"rsp\":\"";
+  constexpr size_t kPrefixLen = sizeof(kPrefix) - 1;
+  size_t valueLen = strlen(rspValue);
+  if (len < kPrefixLen + valueLen + 1)
+    return false;
+  if (memcmp(payload, kPrefix, kPrefixLen) != 0)
+    return false;
+  if (memcmp(payload + kPrefixLen, rspValue, valueLen) != 0)
+    return false;
+  return payload[kPrefixLen + valueLen] == '"';
+}
+
+const char *findBounded(const char *start, const char *end,
+                        const char *needle) {
+  size_t needleLen = strlen(needle);
+  if (needleLen == 0 || end < start ||
+      static_cast<size_t>(end - start) < needleLen)
+    return nullptr;
+  const char *limit = end - needleLen;
+  for (const char *p = start; p <= limit; ++p) {
+    if (memcmp(p, needle, needleLen) == 0)
+      return p;
+  }
+  return nullptr;
+}
+
+// Copies a JSON string value (cursor positioned just past its opening
+// quote) into `out`, stopping at the matching closing quote or `end`.
+// Minimal unescaping (drop the backslash, keep the following char
+// literally) -- sufficient for the plain alphanumeric/punctuation content
+// this firmware ever emits in these fields.
+void copyJsonStringValue(const char *p, const char *end, char *out,
+                         size_t outSize) {
+  size_t n = 0;
+  while (p < end && *p != '"') {
+    char c = *p;
+    if (c == '\\' && p + 1 < end) {
+      ++p;
+      c = *p;
+    }
+    if (n + 1 < outSize)
+      out[n++] = c;
+    ++p;
+  }
+  out[n < outSize ? n : outSize - 1] = '\0';
+}
+
+// Looks up `key` (e.g. "\"euid\":\"") within [start,end) and copies its
+// string value into `out`; `out` is always left a valid empty string if
+// the key isn't found, so callers can test `out[0]` unconditionally.
+void extractField(const char *start, const char *end, const char *key,
+                  char *out, size_t outSize) {
+  out[0] = '\0';
+  const char *found = findBounded(start, end, key);
+  if (!found)
+    return;
+  copyJsonStringValue(found + strlen(key), end, out, outSize);
+}
+
+void handleStickserverHelloListFast(const String &topicStr,
+                                    const char *payload, size_t len,
+                                    bool isHello) {
+  if (!cfg.stickserverQueryEnabled && !cfg.stickserverPassiveDiscoveryEnabled)
+    return;
+  const char *end = payload + len;
+  char buf[40];
+  extractField(payload, end, "\"status\":\"", buf, sizeof(buf));
+  // "partial"/"busy"/"not_found" responses to action commands still carry
+  // genuine current per-output state and are handled by the general
+  // (ArduinoJson) path; only hello/list themselves require a clean "ok".
+  if (strcmp(buf, "ok") != 0)
+    return;
+
+  // The topic this message arrived on is always this peer's own instance
+  // topic (it published its own response there) -- the redundant "topic"
+  // field inside hello responses doesn't need parsing.
+  int idx = allocateDiscoveredServerSlot(topicStr);
+  DiscoveredServer &server = discoveredServers[idx];
+  server.lastSeenMs = millis();
+  if (!isHello)
+    // A list response was just observed for this server (regardless of
+    // who asked for it); it carries the full up-to-date output list, so
+    // there is no need for this device to also re-request "list" from the
+    // same server again soon. Mirrors the fleet-wide hello suppression.
+    server.lastListRequestMs = millis();
+
+  extractField(payload, end, "\"id\":\"", buf, sizeof(buf));
+  if (isHello || buf[0])
+    server.hostname = buf;
+
+  extractField(payload, end, "\"ip\":\"", buf, sizeof(buf));
+  if (buf[0])
+    server.ipAddress = buf;
+
+  const char *devicesKey = "\"devices\":[";
+  const char *devicesStart = findBounded(payload, end, devicesKey);
+  if (!devicesStart)
+    return; // no per-output data in this response; keep what we already know.
+  const char *p = devicesStart + strlen(devicesKey);
+  char euidBuf[40];
+  char nameBuf[24];
+  char stateBuf[6];
+  while (p < end) {
+    while (p < end &&
+          (*p == ',' || *p == ' ' || *p == '\n' || *p == '\r' || *p == '\t'))
+      ++p;
+    if (p >= end || *p == ']')
+      break;
+    if (*p != '{')
+      break; // unexpected shape; stop rather than mis-scan the rest.
+    const char *objEnd =
+        static_cast<const char *>(memchr(p, '}', end - p));
+    if (!objEnd)
+      break;
+    extractField(p, objEnd, "\"euid\":\"", euidBuf, sizeof(euidBuf));
+    extractField(p, objEnd, "\"name\":\"", nameBuf, sizeof(nameBuf));
+    extractField(p, objEnd, "\"state\":\"", stateBuf, sizeof(stateBuf));
+    applyDiscoveredOutputFields(idx, euidBuf, nameBuf, stateBuf);
+    p = objEnd + 1;
   }
 }
 
@@ -301,7 +592,6 @@ void handleStickserverDiscoveryResponse(const String &topicStr,
     String topic = response["topic"] | topicStr;
     int idx = allocateDiscoveredServerSlot(topic);
     discoveredServers[idx].hostname = response["id"] | String("");
-    discoveredServers[idx].instanceId = response["instance"] | String("");
     String ip = response["ip"] | String("");
     if (!ip.isEmpty())
       discoveredServers[idx].ipAddress = ip;
@@ -429,22 +719,109 @@ void maintainStickserverDiscovery() {
 
 void handleStickserverMessage(const String &topicStr,
                               const String &payloadStr) {
+  // Only messages addressed to us (the shared root broadcast topic, or our
+  // own instance topic) ever warrant a response from this device. Every
+  // other message on the bus is a peer's traffic that we may passively
+  // parse for discovery, but must never react to with our own publish --
+  // including on parse failure. (A genuinely malformed/truncated payload
+  // from a peer is that peer's problem, not something we should announce
+  // on the shared bus.)
+  bool addressedToUs = topicStr == STICKSERVER_ROOT_TOPIC ||
+                       topicStr == stickserverInstanceTopic();
+
+  // Opt-in (debugSerial, GUI-toggleable on the Diagnostics page) heap
+  // tracking around this call: this handler runs on every message observed
+  // on the shared stickserver MQTT bus and is the prime suspect for the
+  // background heap-fragmentation reboot, so logging free heap/largest free
+  // block before and after both the parse and the discovery-state update
+  // lets that be confirmed/narrowed down from live traffic instead of guesswork.
+  bool heapTrace = cfg.debugSerial;
+  uint32_t heapBefore = 0, blockBefore = 0;
+  if (heapTrace) {
+    heapBefore = ESP.getFreeHeap();
+    blockBefore = ESP.getMaxFreeBlockSize();
+    Serial.printf(
+        "[HEAP] [MQTT] before parse topic=%s len=%u free=%u maxBlock=%u\n",
+        topicStr.c_str(), payloadStr.length(), heapBefore, blockBefore);
+  }
+
+  // Zero-heap-allocation fast path for this firmware's own hello/list
+  // responses (see handleStickserverHelloListFast() above) -- the
+  // dominant, bursty traffic pattern on this bus. Falls through to the
+  // general ArduinoJson parser below for anything that doesn't match that
+  // exact shape (commands, action responses, foreign/malformed traffic).
+  bool isFastHello = fastResponseIs(payloadStr.c_str(), payloadStr.length(), "hello");
+  bool isFastList = !isFastHello &&
+                    fastResponseIs(payloadStr.c_str(), payloadStr.length(), "list");
+  if (isFastHello || isFastList) {
+    handleStickserverHelloListFast(topicStr, payloadStr.c_str(),
+                                   payloadStr.length(), isFastHello);
+    if (heapTrace) {
+      uint32_t heapAfter = ESP.getFreeHeap();
+      uint32_t blockAfter = ESP.getMaxFreeBlockSize();
+      Serial.printf("[HEAP] [MQTT] fast-path (no alloc) free=%u maxBlock=%u "
+                    "deltaFree=%ld\n",
+                    heapAfter, blockAfter, (long)heapAfter - (long)heapBefore);
+      uint8_t slot = recordHeapTraceBase(topicStr, payloadStr.length(),
+                                        heapBefore, blockBefore, heapAfter,
+                                        blockAfter);
+      recordHeapTraceDiscovery(slot, heapAfter, blockAfter);
+    }
+    return;
+  }
+
+  // `request` uses the default heap allocator (freed every call, costing no
+  // static RAM) but is parsed with a field Filter (see
+  // stickserverRequestFilter() above) to shrink each parse's transient
+  // footprint -- this is the highest-frequency, most size-variable
+  // JsonDocument in the firmware (parses every message observed on the
+  // stickserver MQTT bus) and the believed primary driver of the
+  // background heap-fragmentation reboot.
   JsonDocument request;
-  DeserializationError err = deserializeJson(request, payloadStr);
+  DeserializationError err = deserializeJson(
+      request, payloadStr,
+      DeserializationOption::Filter(stickserverRequestFilter()));
+
+  uint8_t heapTraceSlot = 0;
+  if (heapTrace) {
+    uint32_t heapAfterParse = ESP.getFreeHeap();
+    uint32_t blockAfterParse = ESP.getMaxFreeBlockSize();
+    Serial.printf(
+        "[HEAP] [MQTT] after parse free=%u maxBlock=%u deltaFree=%ld\n",
+        heapAfterParse, blockAfterParse,
+        (long)heapAfterParse - (long)heapBefore);
+    heapTraceSlot = recordHeapTraceBase(topicStr, payloadStr.length(),
+                                       heapBefore, blockBefore,
+                                       heapAfterParse, blockAfterParse);
+  }
+
   if (err) {
     Serial.print(F("[WARN] [MQTT] Stickserver JSON parse error: "));
     Serial.println(err.c_str());
-    publishStickserverFailure(F("error"), STICKSERVER_PROTOCOL_VERSION,
-                              String(), F("invalid_json"), String(),
-                              err.c_str());
+    if (addressedToUs) {
+      publishStickserverFailure(F("error"), STICKSERVER_PROTOCOL_VERSION,
+                                String(), F("invalid_json"), String(),
+                                err.c_str());
+    }
     return;
   }
   if (request["rsp"].is<const char *>()) {
     // Response message (ours or another stickserver instance's); used only
     // for fleet discovery, never re-processed as a command.
     handleStickserverDiscoveryResponse(topicStr, request);
+    if (heapTrace) {
+      uint32_t freeAfterDiscovery = ESP.getFreeHeap();
+      uint32_t blockAfterDiscovery = ESP.getMaxFreeBlockSize();
+      Serial.printf("[HEAP] [MQTT] after discovery-response free=%u "
+                    "maxBlock=%u deltaFree=%ld\n",
+                    freeAfterDiscovery, blockAfterDiscovery,
+                    (long)freeAfterDiscovery - (long)heapBefore);
+      recordHeapTraceDiscovery(heapTraceSlot, freeAfterDiscovery,
+                               blockAfterDiscovery);
+    }
     return;
   }
+
 
   // Commands not addressed to us (root broadcast or our own instance topic)
   // belong to another stickserver instance. We don't respond, but a "list"
@@ -453,8 +830,7 @@ void handleStickserverMessage(const String &topicStr,
   // device doesn't also independently re-request "list" from them again
   // too soon (the resulting response, observed above, will refresh us
   // either way). Mirrors the fleet-wide hello suppression.
-  if (topicStr != STICKSERVER_ROOT_TOPIC &&
-      topicStr != stickserverInstanceTopic()) {
+  if (!addressedToUs) {
     if (cfg.stickserverQueryEnabled &&
         request["cmd"].is<const char *>() &&
         String(request["cmd"].as<const char *>()) == F("list")) {

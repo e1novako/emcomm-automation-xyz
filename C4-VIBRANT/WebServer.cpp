@@ -41,6 +41,8 @@ void registerWebRoutes() {
   server.on("/settings/devices", HTTP_GET, handleDeviceSettingsGet);
   server.on("/settings/devices", HTTP_POST, handleDeviceSettingsPost);
   server.on("/settings/diagnostics", HTTP_GET, handleDiagnosticsGet);
+  server.on("/settings/diagnostics/data", HTTP_GET, handleDiagnosticsData);
+  server.on("/settings/diagnostics/heaplog", HTTP_GET, handleDiagnosticsHeapLog);
   server.on("/settings/diagnostics", HTTP_POST, handleDiagnosticsPost);
   server.on("/device/reboot", HTTP_POST, handleRebootDevice);
   server.on("/reservation/release", HTTP_POST, handleReleaseReservation);
@@ -1186,15 +1188,26 @@ void handleDiagnosticsGet() {
       "<button type='submit'>Save diagnostics settings</button></form>");
   writeChunk(
       "<h2>Device control</h2>"
-      "<p>Current uptime: " +
+      "<p>Current uptime: <span id='diag-uptime'>" +
       formatUptimeHHMMSS(millis() / 1000UL) +
-      "</p>"
-      "<p>Free heap: " + String(ESP.getFreeHeap()) +
+      "</span></p>"
+      "<p>Free heap: <span id='diag-heap'>" + String(ESP.getFreeHeap()) +
       " bytes (fragmentation: " + String(ESP.getHeapFragmentation()) +
-      "%)</p>"
+      "%, largest free block: " + String(ESP.getMaxFreeBlockSize()) +
+      " bytes)</span></p>"
       "<form method='post' action='/device/reboot' "
       "onsubmit=\"return confirm('Reboot the device now?');\">"
-      "<button type='submit'>Reboot device</button></form>");
+      "<button type='submit'>Reboot device</button></form>"
+      "<script>(function(){function refresh(){"
+      "fetch('/settings/diagnostics/data').then(function(r){return "
+      "r.json();}).then(function(d){"
+      "var u=document.getElementById('diag-uptime');if(u)u.textContent=d."
+      "uptime;"
+      "var h=document.getElementById('diag-heap');if(h)h.textContent=d."
+      "freeHeap+' bytes (fragmentation: '+d.heapFragmentation+'%, largest "
+      "free block: '+d.maxFreeBlockSize+' bytes)';"
+      "}).catch(function(){});}"
+      "refresh();setInterval(refresh,5000);})();</script>");
   writeChunk(
       "<h2>Configuration maintenance</h2>"
       "<p><a href='/config/export'>Download configuration backup</a></p>"
@@ -1215,6 +1228,39 @@ void handleDiagnosticsGet() {
                "successful flash.</p><p><a href='/firmware/update'>Open "
                "firmware update page</a></p></body></html>"));
   endChunkedHtml();
+}
+
+// Lightweight REST endpoint returning the diagnostics page's live values
+// (uptime, heap, OTA/debug flags) as JSON, so the diagnostics page can poll
+// and refresh just these values in place instead of re-fetching/re-parsing
+// the whole HTML page.
+void handleDiagnosticsData() {
+  if (!ensureAuthorized())
+    return;
+  String json = "{\"version\":\"" + jsonEscape(String(SOFTWARE_VERSION)) +
+                "\",\"hostname\":\"" + jsonEscape(cfg.hostname) +
+                "\",\"uptimeSeconds\":" + String(millis() / 1000UL) +
+                ",\"uptime\":\"" + formatUptimeHHMMSS(millis() / 1000UL) +
+                "\",\"freeHeap\":" + String(ESP.getFreeHeap()) +
+                ",\"heapFragmentation\":" + String(ESP.getHeapFragmentation()) +
+                ",\"maxFreeBlockSize\":" + String(ESP.getMaxFreeBlockSize()) +
+                ",\"arduinoOtaEnabled\":" +
+                String(cfg.arduinoOtaEnabled ? "true" : "false") +
+                ",\"debugSerial\":" +
+                String(cfg.debugSerial ? "true" : "false") + "}";
+  server.sendHeader("Cache-Control", "no-store");
+  server.send(200, "application/json", json);
+}
+
+// Exposes the fixed-size heap-fragmentation trace (see
+// handleStickserverMessage()/recordHeapTraceBase() in Stickserver.cpp) over
+// HTTP, so it can be inspected without a physical serial connection. Only
+// populated while cfg.debugSerial is enabled.
+void handleDiagnosticsHeapLog() {
+  if (!ensureAuthorized())
+    return;
+  server.sendHeader("Cache-Control", "no-store");
+  server.send(200, "application/json", renderHeapTraceJson());
 }
 
 void handleDiagnosticsPost() {

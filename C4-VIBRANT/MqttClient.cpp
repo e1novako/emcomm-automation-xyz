@@ -6,6 +6,7 @@
 #include "Stickserver.h"
 #include <ArduinoJson.h>
 #include <ESP8266WiFi.h>
+#include <string.h>
 
 namespace vibrant {
 
@@ -65,15 +66,36 @@ void mqttCallback(char *topic, byte *payload, unsigned int length) {
   }
 
   if (cfg.debugSerial) {
+    // Truncate into a fixed stack buffer rather than
+    // payloadStr.substring(...), which would heap-allocate a fresh String
+    // on every single message observed on the bus -- this log line runs on
+    // the hottest path in the firmware (every MQTT message, including the
+    // ~14-16-message hello/list bursts) and was a measured contributor to
+    // heap fragmentation when debugSerial is left on for diagnostics.
+    char logBuf[MQTT_PAYLOAD_LOG_MAX_LEN + 1];
+    size_t copyLen = payloadStr.length() < MQTT_PAYLOAD_LOG_MAX_LEN
+                        ? payloadStr.length()
+                        : MQTT_PAYLOAD_LOG_MAX_LEN;
+    memcpy(logBuf, payloadStr.c_str(), copyLen);
+    logBuf[copyLen] = '\0';
     DBG("[MQTT] Received -> topic: %s payload[%u]: %s%s", topicStr.c_str(),
-        length, payloadStr.substring(0, MQTT_PAYLOAD_LOG_MAX_LEN).c_str(),
+        length, logBuf,
         payloadStr.length() > MQTT_PAYLOAD_LOG_MAX_LEN ? "...(truncated)" : "");
   }
 
   // Subscribed via root topic + wildcard (root/#), so this also receives
   // other stickserver instances' requests/responses, used for discovery.
-  if (topicStr == STICKSERVER_ROOT_TOPIC ||
-      topicStr.startsWith(String(STICKSERVER_ROOT_TOPIC) + '/')) {
+  // Checked via raw prefix comparison (strncmp), not
+  // topicStr.startsWith(String(STICKSERVER_ROOT_TOPIC) + '/'), which would
+  // heap-allocate two temporary Strings on every single message -- this
+  // runs unconditionally (not just under debugSerial) for all bus traffic,
+  // making it a prime fragmentation source during hello/list bursts.
+  size_t rootLen = strlen(STICKSERVER_ROOT_TOPIC);
+  bool isRootSubtopic = topicStr.length() > rootLen &&
+                       strncmp(topicStr.c_str(), STICKSERVER_ROOT_TOPIC,
+                               rootLen) == 0 &&
+                       topicStr[rootLen] == '/';
+  if (topicStr == STICKSERVER_ROOT_TOPIC || isRootSubtopic) {
     DBG("[MQTT] Stickserver message -> topic: %s", topicStr.c_str());
     handleStickserverMessage(topicStr, payloadStr);
     return;

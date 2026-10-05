@@ -6,6 +6,7 @@ On every commit:
 - build and upload the firmware for every change
 - only upload built firmware to device 192.168.1.194 (do not deploy to the rest of the device fleet unless explicitly asked)
 - when asked to deploy/update the fleet (all devices, not just 192.168.1.194), run the fleet-wide OTA upload directly without asking for confirmation and without testing a single device first
+- firmware version numbers follow major.minor.patch; only increment the patch number on commits. Do not change the major or minor version unless the user explicitly tells you to.
 
 ## Building C4-VIBRANT/C4-VIBRANT.ino with arduino-cli
 
