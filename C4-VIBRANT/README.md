@@ -145,6 +145,10 @@ Additional security note: HTTP Basic Auth is not encrypted on plain HTTP. Use th
 
 ## Release notes
 
+### 1.8.18
+
+- Fixed settings-page checkboxes (Network/MQTT, Diagnostics, etc.) rendering above their label text instead of to its left. Cause: the settings-page stylesheet applied `input,select{width:100%}` indiscriminately, which stretched every `<input type="checkbox">` to the full field width, pushing its label text onto the next line. Checkboxes are now excluded from that rule and sized/aligned explicitly (18x18px, inline, `vertical-align:middle`, small right margin) so the box sits inline to the left of its label text as intended.
+
 ### 1.8.17
 
 - 1.8.16's zero-allocation fast path reduced but did not eliminate the heap-fragmentation reboot. The HTTP-exposed heap trace (`/settings/diagnostics/heaplog`) showed `freeAfterParse` still dropping by ~350-450 bytes on *every* message, with no recovery between messages -- even on the "no alloc" fast path. Root cause was in the MQTT message dispatch wrapper itself, not the parser: `mqttCallback()` built `String(STICKSERVER_ROOT_TOPIC) + '/'` (two temporary heap-allocated Strings) on **every single message** observed on the bus, unconditionally, to check the topic prefix; `handleStickserverMessage()`'s `addressedToUs` check called `stickserverInstanceTopic()`, which rebuilt the full instance topic (MAC token, hostname token, multiple concatenations) from scratch on every call, also on every message; and the debug-only payload log line called `payloadStr.substring(...)`, allocating again whenever `debugSerial` was enabled (as it was throughout testing). None of these leaked memory, but the repeated malloc/free churn across 14-16 back-to-back burst messages fragmented the heap into small blocks that never fully recovered. Fixed by: replacing the topic-prefix check with a raw `strncmp` (no temporary Strings); caching `stickserverInstanceTopic()` in a static String, recomputed only if `cfg.hostname`/`cfg.mac` actually change instead of on every call; and replacing the debug payload-log `substring()` with a fixed stack buffer + `memcpy`.
