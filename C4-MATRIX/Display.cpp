@@ -1,13 +1,15 @@
 #include "Display.h"
 #include "Config.h"
 #include "Debug.h"
+#include "NtpClock.h"
+#include "OtaService.h"
 #include <Adafruit_NeoPixel.h>
 
 namespace c4matrix {
-constexpr uint8_t MATRIX_WIDTH = 32;
-constexpr uint8_t MATRIX_HEIGHT = 8;
-constexpr uint16_t MATRIX_LEDS = MATRIX_WIDTH * MATRIX_HEIGHT;
-static Adafruit_NeoPixel strip(MATRIX_LEDS, 16, NEO_GRB + NEO_KHZ800);
+static uint16_t matrixWidth = DEFAULT_MATRIX_WIDTH;
+static uint16_t matrixHeight = DEFAULT_MATRIX_HEIGHT;
+static uint16_t matrixLedCount = DEFAULT_MATRIX_WIDTH * DEFAULT_MATRIX_HEIGHT;
+static Adafruit_NeoPixel strip(matrixLedCount, 16, NEO_GRB + NEO_KHZ800);
 static bool stripReady = false;
 static bool scrolling = false;
 static bool displayDirty = true;
@@ -20,10 +22,18 @@ const char *displayModeName(DisplayMode mode) {
     return "fill";
   case DisplayMode::Off:
     return "off";
+  case DisplayMode::Count:
+    return "count";
+  case DisplayMode::Clock:
+    return "clock";
   default:
     return "text";
   }
 }
+
+uint16_t displayLedCount() { return matrixLedCount; }
+uint16_t displayMatrixWidth() { return matrixWidth; }
+uint16_t displayMatrixHeight() { return matrixHeight; }
 
 static const uint8_t *glyphFor(char character) {
   static const uint8_t question[5] = {0x02, 0x01, 0x51, 0x09, 0x06};
@@ -85,7 +95,7 @@ static const uint8_t *glyphFor(char character) {
       {0x27, 0x45, 0x45, 0x45, 0x39}, {0x3C, 0x4A, 0x49, 0x49, 0x30},
       {0x01, 0x71, 0x09, 0x05, 0x03}, {0x36, 0x49, 0x49, 0x49, 0x36},
       {0x06, 0x49, 0x49, 0x29, 0x1E}, {0, 0x36, 0x36, 0, 0},
-      {0, 0x56, 0x36, 0, 0}, {8, 0x14, 0x22, 0x41, 0},
+      {0, 0x36, 0x36, 0, 0}, {8, 0x14, 0x22, 0x41, 0},
       {0x14, 0x14, 0x14, 0x14, 0x14}, {0, 0x41, 0x22, 0x14, 8},
       {2, 1, 0x51, 9, 6}, {0x32, 0x49, 0x79, 0x41, 0x3E}};
   if (character >= '0' && character <= '9')
@@ -127,32 +137,32 @@ static uint32_t pixelColor() {
 }
 
 uint16_t xyToIndex(uint8_t x, uint8_t y) {
-  if (x >= MATRIX_WIDTH || y >= MATRIX_HEIGHT)
+  if (x >= matrixWidth || y >= matrixHeight)
     return 0;
   if (cfg.flipHorizontal)
-    x = MATRIX_WIDTH - 1 - x;
-  uint8_t row = (cfg.serpentine && (x & 1)) ? MATRIX_HEIGHT - 1 - y : y;
-  return static_cast<uint16_t>(x) * MATRIX_HEIGHT + row;
+    x = matrixWidth - 1 - x;
+  uint8_t row = (cfg.serpentine && (x & 1)) ? matrixHeight - 1 - y : y;
+  return static_cast<uint16_t>(x) * matrixHeight + row;
 }
 
-static uint16_t textWidth() {
-  return cfg.text.isEmpty() ? 0 : static_cast<uint16_t>(cfg.text.length() * 6 - 1);
+static uint16_t textWidth(const String &text) {
+  return text.isEmpty() ? 0 : static_cast<uint16_t>(text.length() * 6 - 1);
 }
 
-static void renderText(int16_t originX) {
+static void renderText(const String &text, int16_t originX) {
   if (!stripReady)
     return;
   strip.clear();
   uint32_t color = pixelColor();
-  for (size_t characterIndex = 0; characterIndex < cfg.text.length();
+  for (size_t characterIndex = 0; characterIndex < text.length();
        ++characterIndex) {
-    const uint8_t *glyph = glyphFor(cfg.text[characterIndex]);
+    const uint8_t *glyph = glyphFor(text[characterIndex]);
     int16_t characterX = originX + static_cast<int16_t>(characterIndex * 6);
     for (uint8_t column = 0; column < 5; ++column) {
       int16_t x = characterX + column;
-      if (x < 0 || x >= MATRIX_WIDTH)
+      if (x < 0 || x >= matrixWidth)
         continue;
-      for (uint8_t y = 0; y < MATRIX_HEIGHT; ++y) {
+      for (uint8_t y = 0; y < matrixHeight; ++y) {
         if (glyph[column] & (1U << y))
           strip.setPixelColor(xyToIndex(static_cast<uint8_t>(x), y), color);
       }
@@ -161,7 +171,42 @@ static void renderText(int16_t originX) {
   strip.show();
 }
 
+// Column-major 8x8 bitmap of a Wi-Fi "pie" signal icon (two concentric
+// arcs plus a dot), bit 0 = top row, matching the font glyph convention
+// used elsewhere in this file.
+static const uint8_t WIFI_ICON[8] = {0x04, 0x16, 0x0A, 0xAA,
+                                      0xAA, 0x0A, 0x16, 0x04};
+
+static void renderWifiIcon() {
+  if (!stripReady)
+    return;
+  strip.clear();
+  uint32_t color = pixelColor();
+  int16_t originX = matrixWidth > 8 ? (matrixWidth - 8) / 2 : 0;
+  for (uint8_t column = 0; column < 8; ++column) {
+    int16_t x = originX + column;
+    if (x < 0 || x >= matrixWidth)
+      continue;
+    for (uint8_t y = 0; y < matrixHeight && y < 8; ++y) {
+      if (WIFI_ICON[column] & (1U << y))
+        strip.setPixelColor(xyToIndex(static_cast<uint8_t>(x), y), color);
+    }
+  }
+  strip.show();
+}
+
+void displayShowOtaIcon() { renderWifiIcon(); }
+
+void displayForceRedraw() {
+  displayDirty = true;
+  maintainDisplay();
+}
+
 bool displayBegin(int8_t pin) {
+  matrixWidth = cfg.matrixWidth;
+  matrixHeight = cfg.matrixHeight;
+  matrixLedCount = static_cast<uint16_t>(matrixWidth) * matrixHeight;
+  strip.updateLength(matrixLedCount);
   cfg.displayPin = pin;
   if (stripReady)
     strip.updateType(NEO_GRB + NEO_KHZ800);
@@ -172,11 +217,24 @@ bool displayBegin(int8_t pin) {
   strip.clear();
   strip.show();
   displayDirty = true;
-  logStatus(String(F("Matrix initialized on GPIO")) + String(pin));
+  logStatus(String(F("Matrix initialized on GPIO")) + String(pin) + F(" (") +
+            String(matrixWidth) + F("x") + String(matrixHeight) + F(")"));
   scrollOffset = 0;
   lastScrollStep = millis();
   maintainDisplay();
   return true;
+}
+
+void displaySetMatrixSize(uint16_t width, uint16_t height) {
+  matrixWidth = width;
+  matrixHeight = height;
+  matrixLedCount = static_cast<uint16_t>(width) * height;
+  strip.updateLength(matrixLedCount);
+  if (cfg.ledCount > matrixLedCount)
+    cfg.ledCount = matrixLedCount;
+  displayDirty = true;
+  DBG("Matrix size set to %ux%u (%u LEDs)", width, height, matrixLedCount);
+  maintainDisplay();
 }
 
 void displaySetText(const String &text) {
@@ -195,6 +253,15 @@ void displaySetLeds(DisplayMode mode, uint32_t color) {
   cfg.fillColor = color & 0xFFFFFFUL;
   displayDirty = true;
   DBG("LED mode: %s, fill color: #%06lX", displayModeName(cfg.mode),
+      static_cast<unsigned long>(cfg.fillColor));
+  maintainDisplay();
+}
+void displaySetLedCount(uint32_t color, uint16_t count) {
+  cfg.mode = DisplayMode::Count;
+  cfg.fillColor = color & 0xFFFFFFUL;
+  cfg.ledCount = count > matrixLedCount ? matrixLedCount : count;
+  displayDirty = true;
+  DBG("LED mode: count, LEDs lit: %u, fill color: #%06lX", cfg.ledCount,
       static_cast<unsigned long>(cfg.fillColor));
   maintainDisplay();
 }
@@ -252,22 +319,59 @@ void scrollStop() {
 void maintainDisplay() {
   if (!stripReady)
     return;
+  if (otaTransferInProgress) {
+    renderWifiIcon();
+    return;
+  }
+  if (cfg.mode == DisplayMode::Clock) {
+    // Clock text ("HH:MM") is recomputed periodically rather than stored in
+    // cfg.text, so it never overwrites the user's saved custom text. The
+    // colon blinks at 1Hz (500ms visible / 500ms hidden).
+    static String lastClockText;
+    static unsigned long lastClockCheck = 0;
+    unsigned long nowMillis = millis();
+    if (nowMillis - lastClockCheck >= 500 || lastClockText.isEmpty()) {
+      lastClockCheck = nowMillis;
+      bool colonVisible = (nowMillis / 500) % 2 == 0;
+      String clockText = ntpTimeString(colonVisible);
+      if (clockText != lastClockText) {
+        lastClockText = clockText;
+        displayDirty = true;
+      }
+    }
+    if (!displayDirty)
+      return;
+    uint16_t clockWidth = textWidth(lastClockText);
+    int16_t clockX = clockWidth <= matrixWidth
+                          ? (matrixWidth - static_cast<int16_t>(clockWidth)) / 2
+                          : 0;
+    renderText(lastClockText, clockX);
+    displayDirty = false;
+    return;
+  }
   if (cfg.mode != DisplayMode::Text) {
     if (!displayDirty)
       return;
-    strip.fill(cfg.mode == DisplayMode::Fill ? cfg.fillColor : 0);
+    if (cfg.mode == DisplayMode::Count) {
+      strip.clear();
+      uint16_t litCount = cfg.ledCount > matrixLedCount ? matrixLedCount : cfg.ledCount;
+      for (uint16_t i = 0; i < litCount; ++i)
+        strip.setPixelColor(i, cfg.fillColor);
+    } else {
+      strip.fill(cfg.mode == DisplayMode::Fill ? cfg.fillColor : 0);
+    }
     strip.show();
     displayDirty = false;
     return;
   }
-  uint16_t width = textWidth();
-  if (scrolling && width > MATRIX_WIDTH) {
+  uint16_t width = textWidth(cfg.text);
+  if (scrolling && width > matrixWidth) {
     unsigned long now = millis();
     bool step = false;
     if (now - lastScrollStep >= cfg.scrollSpeed) {
       lastScrollStep = now;
       ++scrollOffset;
-      if (scrollOffset > width + MATRIX_WIDTH)
+      if (scrollOffset > width + matrixWidth)
         scrollOffset = 0;
       step = true;
     }
@@ -275,17 +379,17 @@ void maintainDisplay() {
       return;
     int16_t x = cfg.scrollRight
                     ? -static_cast<int16_t>(width) + scrollOffset
-                    : MATRIX_WIDTH - static_cast<int16_t>(scrollOffset);
-    renderText(x);
+                    : matrixWidth - static_cast<int16_t>(scrollOffset);
+    renderText(cfg.text, x);
     displayDirty = false;
     return;
   }
   if (!displayDirty)
     return;
-  int16_t x = width <= MATRIX_WIDTH
-                  ? (MATRIX_WIDTH - static_cast<int16_t>(width)) / 2
+  int16_t x = width <= matrixWidth
+                  ? (matrixWidth - static_cast<int16_t>(width)) / 2
                   : 0;
-  renderText(x);
+  renderText(cfg.text, x);
   displayDirty = false;
 }
 }

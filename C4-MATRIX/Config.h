@@ -12,14 +12,17 @@ struct DeviceConfig {
   int8_t displayPin;
   uint8_t brightness;
   uint32_t textColor;
+  uint16_t matrixWidth, matrixHeight;
   DisplayMode mode;
   uint32_t fillColor;
+  uint16_t ledCount;
   bool serpentine, flipHorizontal;
   bool scrollEnabled;
   bool scrollRight;
   uint16_t scrollSpeed;
   String text;
   bool arduinoOtaEnabled, debugSerial;
+  int16_t utcOffsetMinutes;
 };
 
 extern const char CONFIG_PATH[];

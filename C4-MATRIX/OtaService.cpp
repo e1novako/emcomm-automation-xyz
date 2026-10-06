@@ -1,6 +1,7 @@
 #include "OtaService.h"
 #include "Config.h"
 #include "Debug.h"
+#include "Display.h"
 #include <ArduinoOTA.h>
 
 namespace c4matrix {
@@ -19,6 +20,7 @@ void applyArduinoOtaSettings() {
   if (!callbacksConfigured) {
     ArduinoOTA.onStart([]() {
       otaTransferInProgress = true;
+      displayShowOtaIcon();
       logStatus(F("ArduinoOTA transfer started."));
     });
     ArduinoOTA.onEnd([]() {
@@ -32,6 +34,7 @@ void applyArduinoOtaSettings() {
     });
     ArduinoOTA.onError([](ota_error_t error) {
       otaTransferInProgress = false;
+      displayForceRedraw();
       logError(String(F("ArduinoOTA error #")) +
                String(static_cast<int>(error)));
     });

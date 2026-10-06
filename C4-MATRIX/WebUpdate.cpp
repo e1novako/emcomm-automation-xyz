@@ -1,6 +1,8 @@
 #include "WebUpdate.h"
 #include "Config.h"
 #include "Debug.h"
+#include "Display.h"
+#include "OtaService.h"
 #include "WebServer.h"
 #include <ESP8266WebServer.h>
 #include <Updater.h>
@@ -16,10 +18,11 @@ void handleFirmwareUpdatePage() {
       200, "text/html; charset=utf-8",
       F("<!doctype html><html><head><meta charset='utf-8'><meta "
         "name='viewport' content='width=device-width,initial-scale=1'>"
-        "<title>C4-MATRIX Firmware Update</title></head><body "
+        "<title>C4-MATRIX - Firmware Update</title></head><body "
         "style='font:16px Arial,sans-serif;margin:24px auto;max-width:700px;"
-        "padding:0 14px'><h1>Firmware Update</h1><p><a href='/config'>"
-        "Configuration</a> | <a href='/'>Display</a></p><p>Upload a compiled "
+        "padding:0 14px'><h1 style='text-align:center'>C4-MATRIX - Firmware "
+        "Update</h1><p><a href='/config/ota'>"
+        "OTA settings</a> | <a href='/'>Display</a></p><p>Upload a compiled "
         "ESP8266 firmware .bin file. The device will reboot after a successful "
         "update. Do not power off during the transfer.</p><form method='post' "
         "action='/update' enctype='multipart/form-data'><input type='file' "
@@ -44,6 +47,9 @@ void handleFirmwareUpdateUpload() {
       updateFailed = true;
       updateError = Update.getErrorString();
       logError(String(F("Web OTA could not begin: ")) + updateError);
+    } else {
+      otaTransferInProgress = true;
+      displayShowOtaIcon();
     }
   } else if (upload.status == UPLOAD_FILE_WRITE && !updateFailed) {
     if (Update.write(upload.buf, upload.currentSize) != upload.currentSize) {
@@ -66,6 +72,13 @@ void handleFirmwareUpdateUpload() {
     updateError = F("Upload aborted by client.");
     Update.end(false);
     logWarning(F("Web OTA upload aborted."));
+  }
+  // The device reboots automatically after a successful upload, so the icon
+  // only needs to be cleared when the transfer failed and execution will
+  // continue running the current firmware.
+  if (updateFailed && otaTransferInProgress) {
+    otaTransferInProgress = false;
+    displayForceRedraw();
   }
 }
 

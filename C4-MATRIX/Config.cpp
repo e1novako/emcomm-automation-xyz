@@ -67,8 +67,11 @@ void setFactoryDefaults() {
   cfg.displayPin = 16;
   cfg.brightness = 40;
   cfg.textColor = 0x00FF00;
-  cfg.mode = DisplayMode::Text;
+  cfg.matrixWidth = 32;
+  cfg.matrixHeight = 8;
+  cfg.mode = DisplayMode::Clock;
   cfg.fillColor = 0xFFFFFF;
+  cfg.ledCount = 0;
   cfg.serpentine = true;
   cfg.flipHorizontal = false;
   cfg.scrollEnabled = true;
@@ -77,6 +80,7 @@ void setFactoryDefaults() {
   cfg.text = "";
   cfg.arduinoOtaEnabled = true;
   cfg.debugSerial = false;
+  cfg.utcOffsetMinutes = 0;
   logStatus(F("Factory defaults loaded."));
 }
 
@@ -92,8 +96,11 @@ bool saveConfig() {
   doc["displayPin"] = cfg.displayPin;
   doc["brightness"] = cfg.brightness;
   doc["textColor"] = cfg.textColor;
+  doc["matrixWidth"] = cfg.matrixWidth;
+  doc["matrixHeight"] = cfg.matrixHeight;
   doc["mode"] = displayModeName(cfg.mode);
   doc["fillColor"] = cfg.fillColor;
+  doc["ledCount"] = cfg.ledCount;
   doc["serpentine"] = cfg.serpentine;
   doc["flipHorizontal"] = cfg.flipHorizontal;
   doc["scrollEnabled"] = cfg.scrollEnabled;
@@ -102,6 +109,7 @@ bool saveConfig() {
   doc["text"] = cfg.text;
   doc["arduinoOtaEnabled"] = cfg.arduinoOtaEnabled;
   doc["debugSerial"] = cfg.debugSerial;
+  doc["utcOffsetMinutes"] = cfg.utcOffsetMinutes;
   File file = LittleFS.open(CONFIG_PATH, "w");
   if (!file) {
     logError(F("Could not open configuration file for writing."));
@@ -148,10 +156,16 @@ bool loadConfig() {
   int displayPin = doc["displayPin"] | 16;
   int brightness = doc["brightness"] | 40;
   cfg.textColor = (doc["textColor"] | 0x00FF00UL) & 0xFFFFFFUL;
-  String mode = doc["mode"] | String("text");
-  cfg.mode = mode == "fill" ? DisplayMode::Fill
-                          : mode == "off" ? DisplayMode::Off : DisplayMode::Text;
+  int matrixWidthValue = doc["matrixWidth"] | 32;
+  int matrixHeightValue = doc["matrixHeight"] | 8;
+  String mode = doc["mode"] | String("clock");
+  cfg.mode = mode == "fill"    ? DisplayMode::Fill
+             : mode == "off"   ? DisplayMode::Off
+             : mode == "count" ? DisplayMode::Count
+             : mode == "clock" ? DisplayMode::Clock
+                                : DisplayMode::Text;
   cfg.fillColor = (doc["fillColor"] | 0xFFFFFFUL) & 0xFFFFFFUL;
+  int ledCount = doc["ledCount"] | 0;
   cfg.serpentine = doc["serpentine"] | true;
   cfg.flipHorizontal = doc["flipHorizontal"] | false;
   cfg.scrollEnabled = doc["scrollEnabled"] | true;
@@ -160,6 +174,10 @@ bool loadConfig() {
   cfg.text = doc["text"] | String("");
   cfg.arduinoOtaEnabled = doc["arduinoOtaEnabled"] | true;
   cfg.debugSerial = doc["debugSerial"] | false;
+  int utcOffsetMinutes = doc["utcOffsetMinutes"] | 0;
+  cfg.utcOffsetMinutes = utcOffsetMinutes >= -720 && utcOffsetMinutes <= 840
+                             ? static_cast<int16_t>(utcOffsetMinutes)
+                             : 0;
   if (cfg.hostname.isEmpty())
     cfg.hostname = defaultHostnameFromMac(cfg.mac);
   if (cfg.staSsid.isEmpty())
@@ -182,6 +200,21 @@ bool loadConfig() {
   cfg.scrollSpeed = scrollSpeed >= 10 && scrollSpeed <= 1000
                         ? static_cast<uint16_t>(scrollSpeed)
                         : 80;
+  bool validMatrixSize = matrixWidthValue >= 1 &&
+                         matrixWidthValue <= MATRIX_MAX_WIDTH &&
+                         matrixHeightValue >= 1 &&
+                         matrixHeightValue <= MATRIX_MAX_HEIGHT;
+  cfg.matrixWidth = validMatrixSize
+                        ? static_cast<uint16_t>(matrixWidthValue)
+                        : DEFAULT_MATRIX_WIDTH;
+  cfg.matrixHeight = validMatrixSize
+                         ? static_cast<uint16_t>(matrixHeightValue)
+                         : DEFAULT_MATRIX_HEIGHT;
+  uint16_t configuredLedCount =
+      static_cast<uint16_t>(cfg.matrixWidth) * cfg.matrixHeight;
+  cfg.ledCount = ledCount >= 0 && ledCount <= configuredLedCount
+                     ? static_cast<uint16_t>(ledCount)
+                     : 0;
   if (cfg.text.length() > 128)
     cfg.text.remove(128);
   if (cfg.useCustomMac) {

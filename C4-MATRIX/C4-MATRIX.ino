@@ -2,6 +2,7 @@
 #include "Config.h"
 #include "Debug.h"
 #include "Display.h"
+#include "NtpClock.h"
 #include "OtaService.h"
 #include "Version.h"
 #include "WebServer.h"
@@ -11,6 +12,33 @@
 #include <LittleFS.h>
 
 using namespace c4matrix;
+
+// GPIO0 is the NodeMCU "FLASH"/BOOT button, pulled up externally. Holding it
+// low for FACTORY_RESET_HOLD_MS while the board starts up (power-on or
+// reset) restores factory defaults -- useful for recovering a device whose
+// saved Wi-Fi credentials are wrong and unreachable over the network.
+static const uint8_t FACTORY_RESET_BUTTON_PIN = 0;
+static const unsigned long FACTORY_RESET_HOLD_MS = 3000;
+
+static void checkFactoryResetButton() {
+  pinMode(FACTORY_RESET_BUTTON_PIN, INPUT_PULLUP);
+  delay(20); // let the pin settle before sampling it
+  if (digitalRead(FACTORY_RESET_BUTTON_PIN) != LOW)
+    return;
+  logWarning(F("Boot button held at startup; keep holding for 3s to factory "
+               "reset..."));
+  unsigned long start = millis();
+  while (digitalRead(FACTORY_RESET_BUTTON_PIN) == LOW) {
+    if (millis() - start >= FACTORY_RESET_HOLD_MS) {
+      performFactoryResetAndRestart(
+          F("Factory reset requested via boot button hold."));
+      return; // unreachable: performFactoryResetAndRestart() restarts
+    }
+    delay(20);
+  }
+  logStatus(F("Boot button released before hold threshold; continuing "
+              "normal boot."));
+}
 
 void setup() {
   Serial.begin(115200);
@@ -26,12 +54,14 @@ void setup() {
     if (!LittleFS.format() || !LittleFS.begin())
       restartDevice(F("Could not initialize LittleFS."));
   }
+  checkFactoryResetButton();
   if (!loadConfig()) {
     setFactoryDefaults();
     if (!saveConfig())
       restartDevice(F("Could not save factory configuration."));
   }
   applyWifiSettings();
+  ntpBegin();
   displayBegin(cfg.displayPin);
   displaySetBrightness(cfg.brightness);
   displaySetColor(cfg.textColor);
@@ -51,6 +81,7 @@ void loop() {
     return;
   server.handleClient();
   maintainWifiConnection();
+  ntpMaintain();
   maintainDisplay();
   yield();
 }
