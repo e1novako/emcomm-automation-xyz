@@ -14,6 +14,17 @@ static bool displayDirty = true;
 static unsigned long lastScrollStep = 0;
 static uint16_t scrollOffset = 0;
 
+const char *displayModeName(DisplayMode mode) {
+  switch (mode) {
+  case DisplayMode::Fill:
+    return "fill";
+  case DisplayMode::Off:
+    return "off";
+  default:
+    return "text";
+  }
+}
+
 static const uint8_t *glyphFor(char character) {
   static const uint8_t question[5] = {0x02, 0x01, 0x51, 0x09, 0x06};
   static const uint8_t digits[10][5] = {
@@ -162,18 +173,29 @@ bool displayBegin(int8_t pin) {
   strip.show();
   displayDirty = true;
   logStatus(String(F("Matrix initialized on GPIO")) + String(pin));
-  displaySetText(cfg.text);
+  scrollOffset = 0;
+  lastScrollStep = millis();
+  maintainDisplay();
   return true;
 }
 
 void displaySetText(const String &text) {
   cfg.text = text;
+  cfg.mode = DisplayMode::Text;
   scrollOffset = 0;
   lastScrollStep = millis();
   displayDirty = true;
   logStatus(String(F("Display text updated (")) + String(text.length()) +
             F(" characters)."));
   DBG("Text content: %s", text.c_str());
+  maintainDisplay();
+}
+void displaySetLeds(DisplayMode mode, uint32_t color) {
+  cfg.mode = mode;
+  cfg.fillColor = color & 0xFFFFFFUL;
+  displayDirty = true;
+  DBG("LED mode: %s, fill color: #%06lX", displayModeName(cfg.mode),
+      static_cast<unsigned long>(cfg.fillColor));
   maintainDisplay();
 }
 void displaySetBrightness(uint8_t brightness) {
@@ -230,6 +252,14 @@ void scrollStop() {
 void maintainDisplay() {
   if (!stripReady)
     return;
+  if (cfg.mode != DisplayMode::Text) {
+    if (!displayDirty)
+      return;
+    strip.fill(cfg.mode == DisplayMode::Fill ? cfg.fillColor : 0);
+    strip.show();
+    displayDirty = false;
+    return;
+  }
   uint16_t width = textWidth();
   if (scrolling && width > MATRIX_WIDTH) {
     unsigned long now = millis();

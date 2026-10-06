@@ -1,5 +1,6 @@
 #pragma once
 #include <Arduino.h>
+#include "Display.h"
 
 namespace c4matrix {
 struct DeviceConfig {
@@ -11,6 +12,8 @@ struct DeviceConfig {
   int8_t displayPin;
   uint8_t brightness;
   uint32_t textColor;
+  DisplayMode mode;
+  uint32_t fillColor;
   bool serpentine, flipHorizontal;
   bool scrollEnabled;
   bool scrollRight;

@@ -14,5 +14,6 @@ void handleFactoryReset();
 void handleStatus();
 void handleTextPost();
 void handleScrollPost();
+void handleLedsPost();
 void handleNotFound();
 }

@@ -24,6 +24,7 @@ void registerWebRoutes() {
   server.on("/api/status", HTTP_GET, handleStatus);
   server.on("/api/text", HTTP_POST, handleTextPost);
   server.on("/api/scroll", HTTP_POST, handleScrollPost);
+  server.on("/api/leds", HTTP_POST, handleLedsPost);
   server.on("/update", HTTP_GET, handleFirmwareUpdatePage);
   server.on("/update", HTTP_POST, handleFirmwareUpdateDone,
             handleFirmwareUpdateUpload);
@@ -170,7 +171,17 @@ void handleHome() {
             "Configuration</a></p><form id='text-form'><label>Text to "
             "display<input id='text' name='text' maxlength='128' "
             "autocomplete='off' required></label><button type='submit'>"
-            "Display text</button></form><p id='message' role='status'></p>");
+            "Display text</button></form><fieldset><legend>All LEDs</legend>"
+            "<button type='button' data-state='on'>All ON</button>"
+            "<button type='button' data-state='off'>All OFF</button>"
+            "<button type='button' data-color='red'>Red</button>"
+            "<button type='button' data-color='green'>Green</button>"
+            "<button type='button' data-color='blue'>Blue</button>"
+            "<form id='color-form'><label>Custom RGB color"
+            "<input type='color' id='fill-color' value='");
+  html += colorHex(cfg.fillColor);
+  html += F("'></label><button type='submit'>Apply</button></form></fieldset>"
+            "<p id='message' role='status'></p>");
   html += FPSTR(HOME_PAGE_SCRIPT);
   html += F("</body></html>");
   server.send(200, "text/html; charset=utf-8", html);
@@ -250,7 +261,8 @@ void handleConfig() {
             "async function refreshStatus(){try{let r=await fetch('/api/status');"
             "let s=await r.json();document.querySelector('#status').textContent="
             "`Version: ${s.version}\\nIP: ${s.ip}\\nMAC: ${s.mac}\\nHeap: "
-            "${s.heap} bytes\\nUptime: ${s.uptime} s\\nText: ${s.text}\\nScroll: "
+            "${s.heap} bytes\\nUptime: ${s.uptime} s\\nLED mode: ${s.mode}"
+            "\\nFill color: ${s.fillColor}\\nText: ${s.text}\\nScroll: "
             "${s.scrollEnabled?'on':'off'} ${s.direction}, ${s.speed} ms/column`}"
             "}catch(e){document.querySelector('#status').textContent='Status "
             "unavailable.'}}refreshStatus();</script></body></html>");
@@ -362,6 +374,11 @@ void handleStatus() {
   json += cfg.scrollRight ? F("right") : F("left");
   json += F("\",\"speed\":");
   json += String(cfg.scrollSpeed);
+  json += F(",\"mode\":\"");
+  json += displayModeName(cfg.mode);
+  json += F("\",\"fillColor\":\"");
+  json += colorHex(cfg.fillColor);
+  json += '"';
   json += '}';
   server.send(200, "application/json", json);
 }
@@ -427,6 +444,56 @@ void handleScrollPost() {
   if (!saveConfig()) {
     server.send(500, "application/json",
                 F("{\"error\":\"Could not save scroll settings\"}"));
+    return;
+  }
+  server.send(200, "application/json", F("{\"ok\":true}"));
+}
+
+void handleLedsPost() {
+  String payload = server.arg("plain");
+  if (payload.length() > 512) {
+    server.send(413, "application/json",
+                F("{\"error\":\"Request body is too large\"}"));
+    return;
+  }
+  JsonDocument doc;
+  DeserializationError error = deserializeJson(doc, payload);
+  JsonObjectConst command = doc.as<JsonObjectConst>();
+  DisplayMode mode = DisplayMode::Fill;
+  uint32_t color = cfg.fillColor;
+  bool valid = false;
+  if (!error && command.size() == 1 && command["state"].is<String>()) {
+    String state = command["state"].as<String>();
+    valid = state == "on" || state == "off";
+    mode = state == "off" ? DisplayMode::Off : DisplayMode::Fill;
+  } else if (!error && command.size() == 1 &&
+             command["color"].is<String>()) {
+    String name = command["color"].as<String>();
+    valid = name == "red" || name == "green" || name == "blue";
+    color = name == "red" ? 0xFF0000UL
+                         : name == "green" ? 0x00FF00UL : 0x0000FFUL;
+  } else if (!error && command.size() == 3 &&
+             command["r"].is<int>() && command["g"].is<int>() &&
+             command["b"].is<int>()) {
+    int r = command["r"].as<int>();
+    int g = command["g"].as<int>();
+    int b = command["b"].as<int>();
+    valid = r >= 0 && r <= 255 && g >= 0 && g <= 255 && b >= 0 && b <= 255;
+    if (valid)
+      color = (static_cast<uint32_t>(r) << 16) |
+              (static_cast<uint32_t>(g) << 8) | static_cast<uint32_t>(b);
+  }
+  if (!valid) {
+    DBG("Rejected invalid LED command");
+    server.send(400, "application/json",
+                F("{\"error\":\"Expected state on/off, color red/green/blue, "
+                  "or integer r, g, b from 0 to 255\"}"));
+    return;
+  }
+  displaySetLeds(mode, color);
+  if (!saveConfig()) {
+    server.send(500, "application/json",
+                F("{\"error\":\"Could not save LED settings\"}"));
     return;
   }
   server.send(200, "application/json", F("{\"ok\":true}"));

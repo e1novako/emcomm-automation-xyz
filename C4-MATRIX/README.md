@@ -1,7 +1,8 @@
 # C4-MATRIX
 
 ESP8266 NodeMCU v3 firmware for an 8x32 WS2812 LED matrix with a text-entry
-web page, LittleFS-persisted settings, SoftAP + station Wi-Fi, ArduinoOTA, and
+web page with solid-color LED controls, LittleFS-persisted settings, SoftAP +
+station Wi-Fi, ArduinoOTA, and
 web firmware updates.
 
 ## Wiring
@@ -47,7 +48,15 @@ station credentials are `Fiber714Cvet` and the default station SSID is
 `Z-Wave Automation`.
 
 - `/` provides the text input. Submitted text is displayed and saved in
-  LittleFS across reboots.
+  LittleFS across reboots, returning the display to **text** mode.
+  **All ON** fills all 256 LEDs with the last applied fill color (white by
+  default); **All OFF** blanks the matrix without forgetting that color.
+  **Red**, **Green**, and **Blue** fill the matrix immediately. Choose a
+  **Custom RGB color** with the color picker and press **Apply** to fill it.
+  These controls use `fetch` without reloading the page and show success/error
+  feedback. Fill/off overrides text and scrolling without changing the saved
+  text or scroll settings; all modes respect the configured brightness.
+  Mode and fill color are restored after reboot.
 - `/config` configures hostname, Wi-Fi power, station credentials, optional
   custom MAC, display pin/brightness/color/orientation, scroll direction and
   speed, ArduinoOTA, and debug logging. It also shows firmware version, IP,
@@ -68,14 +77,33 @@ station credentials are `Fiber714Cvet` and the default station SSID is
 ## API
 
 - `GET /api/status` returns version, active IP, MAC, free heap, uptime, current
-  text, and scroll state.
+  text, scroll state, `mode` (`text`, `fill`, or `off`), and `fillColor`
+  (a `#RRGGBB` string).
 - `POST /api/text` accepts JSON such as `{"text":"Hello"}`; text is limited to
   128 characters and saved to LittleFS.
 - `POST /api/scroll` accepts JSON such as
   `{"enabled":true,"direction":"left","speed":80}`. Direction is `left` or
   `right`; speed is milliseconds per column from 10 through 1000.
+- `POST /api/leds` accepts exactly one command: `{"state":"on"}`,
+  `{"state":"off"}`, `{"color":"red"}`, `{"color":"green"}`,
+  `{"color":"blue"}`, or `{"r":12,"g":200,"b":90}`. RGB values must be
+  integers from 0 through 255. Unknown names, missing channels, mixed
+  commands, and invalid values return HTTP 400 without changing the display.
+  Successful commands return `{"ok":true}` and persist mode and fill color.
+  Bodies larger than 512 bytes return HTTP 413; storage failures return 500.
+  For example (replace the IP with your device's address):
+
+  ```sh
+  curl -H 'Content-Type: application/json' -d '{"state":"on"}' http://192.168.1.194/api/leds
+  curl -H 'Content-Type: application/json' -d '{"color":"red"}' http://192.168.1.194/api/leds
+  curl -H 'Content-Type: application/json' -d '{"r":12,"g":200,"b":90}' http://192.168.1.194/api/leds
+  curl -H 'Content-Type: application/json' -d '{"state":"off"}' http://192.168.1.194/api/leds
+  ```
 
 ## Configuration
 
 Settings are stored as JSON at `/matrix_config.json` in LittleFS. Factory
 reset is available on `/config`. Firmware version is defined in `Version.h`.
+Firmware **1.0.1** adds the LED controls, persisted display modes, and LED API.
+Additional LED command diagnostics follow the **Serial debug logging** toggle
+on `/config`, so they can be disabled from the GUI.
