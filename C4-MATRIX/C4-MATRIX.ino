@@ -13,31 +13,19 @@
 
 using namespace c4matrix;
 
-// GPIO0 is the NodeMCU "FLASH"/BOOT button, pulled up externally. Holding it
-// low for FACTORY_RESET_HOLD_MS while the board starts up (power-on or
-// reset) restores factory defaults -- useful for recovering a device whose
+// GPIO0 is the NodeMCU "FLASH"/BOOT button, pulled up externally. If it is
+// pressed (held low) while the board starts up (power-on or reset), the
+// device performs a factory reset -- useful for recovering a device whose
 // saved Wi-Fi credentials are wrong and unreachable over the network.
 static const uint8_t FACTORY_RESET_BUTTON_PIN = 0;
-static const unsigned long FACTORY_RESET_HOLD_MS = 3000;
 
 static void checkFactoryResetButton() {
   pinMode(FACTORY_RESET_BUTTON_PIN, INPUT_PULLUP);
-  delay(20); // let the pin settle before sampling it
+  delay(20); // let the pin settle before sampling it, debouncing noise
   if (digitalRead(FACTORY_RESET_BUTTON_PIN) != LOW)
     return;
-  logWarning(F("Boot button held at startup; keep holding for 3s to factory "
-               "reset..."));
-  unsigned long start = millis();
-  while (digitalRead(FACTORY_RESET_BUTTON_PIN) == LOW) {
-    if (millis() - start >= FACTORY_RESET_HOLD_MS) {
-      performFactoryResetAndRestart(
-          F("Factory reset requested via boot button hold."));
-      return; // unreachable: performFactoryResetAndRestart() restarts
-    }
-    delay(20);
-  }
-  logStatus(F("Boot button released before hold threshold; continuing "
-              "normal boot."));
+  performFactoryResetAndRestart(
+      F("Factory reset requested: FLASH/BOOT button pressed at startup."));
 }
 
 void setup() {

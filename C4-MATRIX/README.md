@@ -7,7 +7,7 @@ web firmware updates.
 
 ## Wiring
 
-- Matrix data input to NodeMCU **D0 (GPIO16)** by default. The data pin can be
+- Matrix data input to NodeMCU **D1 (GPIO5)** by default. The data pin can be
   changed to D0-D8 on `/config`.
 - Power the 256-pixel matrix from an appropriately rated external **5 V**
   supply. Do not power the whole matrix from the NodeMCU 3.3 V pin.
@@ -225,9 +225,8 @@ matrix size changes; `/config/ota` starts/stops ArduinoOTA live; and
 
 - If the device is unreachable over the network (e.g. wrong/invalid saved
   Wi-Fi credentials), hold the NodeMCU **FLASH/BOOT button** (GPIO0) while
-  powering on or resetting the board, and keep holding it for about 3
-  seconds. The device logs a warning over serial, then performs the same
-  factory reset as `/config/diagnostics`' Factory reset button and reboots
-  with default settings. Releasing the button before the 3-second threshold
-  cancels the reset and continues a normal boot.
+  powering on or resetting the board. If the button is still pressed a
+  moment after startup, the device immediately performs the same factory
+  reset as `/config/diagnostics`' Factory reset button and reboots with
+  default settings.
 

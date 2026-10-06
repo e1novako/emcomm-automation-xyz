@@ -64,7 +64,7 @@ void setFactoryDefaults() {
   cfg.staPassword = DEFAULT_STA_PASSWORD;
   cfg.apPassword = DEFAULT_AP_PASSWORD;
   cfg.wifiPower = 20.5f;
-  cfg.displayPin = 16;
+  cfg.displayPin = 5;
   cfg.brightness = 40;
   cfg.textColor = 0x00FF00;
   cfg.matrixWidth = 32;
@@ -153,7 +153,7 @@ bool loadConfig() {
   cfg.staPassword = doc["staPassword"] | String(DEFAULT_STA_PASSWORD);
   cfg.apPassword = doc["apPassword"] | String(DEFAULT_AP_PASSWORD);
   cfg.wifiPower = doc["wifiPower"] | 20.5f;
-  int displayPin = doc["displayPin"] | 16;
+  int displayPin = doc["displayPin"] | 5;
   int brightness = doc["brightness"] | 40;
   cfg.textColor = (doc["textColor"] | 0x00FF00UL) & 0xFFFFFFUL;
   int matrixWidthValue = doc["matrixWidth"] | 32;
@@ -192,7 +192,7 @@ bool loadConfig() {
   if (displayPin != 16 && displayPin != 5 && displayPin != 4 &&
       displayPin != 0 && displayPin != 2 && displayPin != 14 &&
       displayPin != 12 && displayPin != 13 && displayPin != 15)
-    displayPin = 16;
+    displayPin = 5;
   cfg.displayPin = static_cast<int8_t>(displayPin);
   cfg.brightness = brightness >= 0 && brightness <= 255
                        ? static_cast<uint8_t>(brightness)
