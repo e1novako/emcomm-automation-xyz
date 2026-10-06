@@ -67,6 +67,8 @@ void setFactoryDefaults() {
   cfg.displayPin = 16;
   cfg.brightness = 40;
   cfg.textColor = 0x00FF00;
+  cfg.mode = DisplayMode::Text;
+  cfg.fillColor = 0xFFFFFF;
   cfg.serpentine = true;
   cfg.flipHorizontal = false;
   cfg.scrollEnabled = true;
@@ -90,6 +92,8 @@ bool saveConfig() {
   doc["displayPin"] = cfg.displayPin;
   doc["brightness"] = cfg.brightness;
   doc["textColor"] = cfg.textColor;
+  doc["mode"] = displayModeName(cfg.mode);
+  doc["fillColor"] = cfg.fillColor;
   doc["serpentine"] = cfg.serpentine;
   doc["flipHorizontal"] = cfg.flipHorizontal;
   doc["scrollEnabled"] = cfg.scrollEnabled;
@@ -144,6 +148,10 @@ bool loadConfig() {
   int displayPin = doc["displayPin"] | 16;
   int brightness = doc["brightness"] | 40;
   cfg.textColor = (doc["textColor"] | 0x00FF00UL) & 0xFFFFFFUL;
+  String mode = doc["mode"] | String("text");
+  cfg.mode = mode == "fill" ? DisplayMode::Fill
+                          : mode == "off" ? DisplayMode::Off : DisplayMode::Text;
+  cfg.fillColor = (doc["fillColor"] | 0xFFFFFFUL) & 0xFFFFFFUL;
   cfg.serpentine = doc["serpentine"] | true;
   cfg.flipHorizontal = doc["flipHorizontal"] | false;
   cfg.scrollEnabled = doc["scrollEnabled"] | true;

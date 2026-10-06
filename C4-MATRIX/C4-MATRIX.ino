@@ -37,7 +37,6 @@ void setup() {
   displaySetColor(cfg.textColor);
   displaySetSerpentine(cfg.serpentine);
   displaySetOrientation(cfg.flipHorizontal);
-  displaySetText(cfg.text);
   if (cfg.scrollEnabled)
     scrollStart();
   applyArduinoOtaSettings();
