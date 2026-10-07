@@ -509,26 +509,26 @@ void handleHome() {
       "<script>"
       "document.getElementById('home-loading').style.display='none';"
       "document.getElementById('home-content').style.display='';"
-      // Guarded against overlapping fetches: on a slow/weak link a refresh
-      // can still be in flight when the next interval tick fires, and a
-      // second concurrent connection opened mid-transfer has been observed
-      // to crash the device (extra connection memory on top of an
-      // already-large in-progress response). This single flag now guards
-      // BOTH the periodic /partial refresh AND button-submitted actions
-      // (previously only refresh-vs-refresh was guarded; an action POST
-      // could still fire while a refresh GET was in flight, opening a
-      // second simultaneous connection that could crash the device --
-      // seen in practice as the browser's fetch() aborting mid-request
-      // with 'TypeError: Failed to fetch').
-      "var homeRequestInFlight=false;"
+      // Guarded against overlapping fetches: a second concurrent connection
+      // opened while another is still being serviced has been observed to
+      // occasionally crash the device or hang the socket (no response at
+      // all) under load. /partial can legitimately take anywhere from a
+      // few hundred ms to 8+ seconds depending on link conditions, so a
+      // single in-flight slot would block an action button for that whole
+      // span whenever a refresh happened to be slow. Up to
+      // HOME_MAX_INFLIGHT requests are now allowed outstanding at once
+      // (covering both the periodic /partial refresh and button-submitted
+      // actions combined); only once that many are already in flight does
+      // a new refresh tick get skipped or a new submit get rejected.
+      "var homeInFlightCount=0;var HOME_MAX_INFLIGHT=2;"
       "function refreshHomeContent(){"
-      "if(homeRequestInFlight)return;"
-      "homeRequestInFlight=true;"
+      "if(homeInFlightCount>=HOME_MAX_INFLIGHT)return;"
+      "homeInFlightCount++;"
       "fetch('/partial').then(function(r){return r.text();})"
       ".then(function(html){"
       "document.getElementById('home-content').innerHTML=html;"
       "}).catch(function(){})"
-      ".then(function(){homeRequestInFlight=false;});"
+      ".then(function(){homeInFlightCount--;});"
       "}"
       "setInterval(refreshHomeContent,3000);"
       // Buttons are re-created on every refresh, so submits are intercepted
@@ -544,9 +544,9 @@ void handleHome() {
       "function(e){"
       "if(e.defaultPrevented)return;"
       "e.preventDefault();"
-      "if(homeRequestInFlight){"
+      "if(homeInFlightCount>=HOME_MAX_INFLIGHT){"
       "alert('Busy refreshing, please try again in a moment.');return;}"
-      "homeRequestInFlight=true;"
+      "homeInFlightCount++;"
       // Submit as application/x-www-form-urlencoded (URLSearchParams),
       // not raw FormData (multipart/form-data): forms with no input
       // fields (the four bulk "all" actions have none -- the route
@@ -568,7 +568,7 @@ void handleHome() {
       "alert('Action failed (HTTP '+r.status+'): '+(t||r.statusText));"
       "});}})"
       ".catch(function(err){alert('Action failed: '+err);})"
-      ".then(function(){homeRequestInFlight=false;"
+      ".then(function(){homeInFlightCount--;"
       "setTimeout(refreshHomeContent,1000);});"
       "});"
       "</script></body></html>"));
@@ -1509,7 +1509,7 @@ void handleStickserverFleetGet() {
       "</div>"
       "<script>(function(){"
       "var contentEl=document.getElementById('fleet-content');"
-      "var refreshInFlight=false;"
+      "var fleetInFlightCount=0;var FLEET_MAX_INFLIGHT=2;"
       "function esc(s){return String(s).replace(/[&<>\"']/g,function(c){"
       "return "
       "{'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',\"'\":'&#39;'}[c];"
@@ -1568,17 +1568,20 @@ void handleStickserverFleetGet() {
       // Guarded against overlapping fetches: on a slow/weak link a refresh
       // can still be in flight when the next interval tick fires, and a
       // second concurrent connection opened mid-transfer has been observed
-      // to crash the device. This flag now also guards toggle/bulk-action
-      // POSTs (previously unguarded against the periodic refresh, so a
-      // click could open a second simultaneous connection while a refresh
-      // was in flight and crash the device -- seen as the browser's
-      // fetch() aborting mid-request with 'TypeError: Failed to fetch').
+      // to crash the device. /fleet/data can take anywhere from a few
+      // hundred ms to several seconds depending on link conditions and
+      // fleet size, so a single in-flight slot would block a toggle/bulk
+      // click for that whole span whenever a refresh happened to be slow.
+      // Up to FLEET_MAX_INFLIGHT requests are now allowed outstanding at
+      // once (covering both the periodic refresh and toggle/bulk-action
+      // POSTs combined); only once that many are already in flight does a
+      // new refresh tick get skipped or a new click get rejected.
       "function refreshFleetContent(){"
-      "if(refreshInFlight)return;"
-      "refreshInFlight=true;"
+      "if(fleetInFlightCount>=FLEET_MAX_INFLIGHT)return;"
+      "fleetInFlightCount++;"
       "fetch('/fleet/data').then(function(r){return r.json();})"
       ".then(applyData).catch(function(){})"
-      ".then(function(){refreshInFlight=false;});"
+      ".then(function(){fleetInFlightCount--;});"
       "}"
       "refreshFleetContent();"
       "setInterval(refreshFleetContent,5000);"
@@ -1588,9 +1591,9 @@ void handleStickserverFleetGet() {
       "contentEl.addEventListener('click',function(e){"
       "var btn=e.target.closest('button.output-toggle');"
       "if(!btn)return;"
-      "if(refreshInFlight){"
+      "if(fleetInFlightCount>=FLEET_MAX_INFLIGHT){"
       "alert('Busy refreshing, please try again in a moment.');return;}"
-      "refreshInFlight=true;"
+      "fleetInFlightCount++;"
       "var body=new URLSearchParams();"
       "body.set('topic',btn.getAttribute('data-topic'));"
       "body.set('euid',btn.getAttribute('data-euid'));"
@@ -1603,7 +1606,7 @@ void handleStickserverFleetGet() {
       "alert('Action failed (HTTP '+r.status+'): '+(t||r.statusText));"
       "});}})"
       ".catch(function(err){alert('Action failed: '+err);})"
-      ".then(function(){refreshInFlight=false;"
+      ".then(function(){fleetInFlightCount--;"
       "setTimeout(refreshFleetContent,1000);});"
       "});"
       "document.querySelectorAll('.bulk-actions "
@@ -1611,9 +1614,9 @@ void handleStickserverFleetGet() {
       "btn.addEventListener('click',function(){"
       "var confirmMsg=btn.getAttribute('data-confirm');"
       "if(confirmMsg&&!confirm(confirmMsg))return;"
-      "if(refreshInFlight){"
+      "if(fleetInFlightCount>=FLEET_MAX_INFLIGHT){"
       "alert('Busy refreshing, please try again in a moment.');return;}"
-      "refreshInFlight=true;"
+      "fleetInFlightCount++;"
       "var body=new URLSearchParams();"
       "body.set('cmd',btn.getAttribute('data-cmd'));"
       "fetch('/fleet/bulk',{method:'POST',body:body})"
@@ -1621,7 +1624,7 @@ void handleStickserverFleetGet() {
       "alert('Action failed (HTTP '+r.status+'): '+(t||r.statusText));"
       "});}})"
       ".catch(function(err){alert('Action failed: '+err);})"
-      ".then(function(){refreshInFlight=false;"
+      ".then(function(){fleetInFlightCount--;"
       "setTimeout(refreshFleetContent,1000);});"
       "});"
       "});"
