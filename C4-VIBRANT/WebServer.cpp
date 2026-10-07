@@ -547,7 +547,18 @@ void handleHome() {
       "if(homeRequestInFlight){"
       "alert('Busy refreshing, please try again in a moment.');return;}"
       "homeRequestInFlight=true;"
-      "fetch(e.target.action,{method:'POST',body:new FormData(e.target)})"
+      // Submit as application/x-www-form-urlencoded (URLSearchParams),
+      // not raw FormData (multipart/form-data): forms with no input
+      // fields (the four bulk "all" actions have none -- the route
+      // itself fully determines the action) produce an empty multipart
+      // body, which ESP8266WebServer's multipart parser cannot handle --
+      // it resets the connection without sending any response at all,
+      // surfacing in the browser as 'TypeError: Failed to fetch'.
+      // Confirmed 100% reproducible against a real device; urlencoded
+      // bodies (used here and already by /fleet/toggle, /fleet/bulk) do
+      // not hit this parser path and are unaffected.
+      "fetch(e.target.action,{method:'POST',"
+      "body:new URLSearchParams(new FormData(e.target))})"
       // fetch() only rejects on a network failure; an HTTP error status
       // (e.g. 409 when another action is already running, or 400 for a
       // bad request) still resolves normally and was previously swallowed
