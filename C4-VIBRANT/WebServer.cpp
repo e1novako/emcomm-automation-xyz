@@ -540,7 +540,15 @@ void handleHome() {
       "if(e.defaultPrevented)return;"
       "e.preventDefault();"
       "fetch(e.target.action,{method:'POST',body:new FormData(e.target)})"
-      ".catch(function(){})"
+      // fetch() only rejects on a network failure; an HTTP error status
+      // (e.g. 409 when another action is already running, or 400 for a
+      // bad request) still resolves normally and was previously swallowed
+      // here, so a rejected bulk/per-output action silently appeared to do
+      // nothing. Surface it instead.
+      ".then(function(r){if(!r.ok){r.text().then(function(t){"
+      "alert('Action failed (HTTP '+r.status+'): '+(t||r.statusText));"
+      "});}})"
+      ".catch(function(err){alert('Action failed: '+err);})"
       ".then(function(){setTimeout(refreshHomeContent,1000);});"
       "});"
       "</script></body></html>"));
@@ -1561,7 +1569,14 @@ void handleStickserverFleetGet() {
       "body.set('topic',btn.getAttribute('data-topic'));"
       "body.set('euid',btn.getAttribute('data-euid'));"
       "body.set('cmd',btn.getAttribute('data-cmd'));"
-      "fetch('/fleet/toggle',{method:'POST',body:body}).catch(function(){})"
+      "fetch('/fleet/toggle',{method:'POST',body:body})"
+      // fetch() only rejects on a network failure; an HTTP error status
+      // (e.g. 400/503) still resolves normally and was previously
+      // swallowed here, silently appearing to do nothing. Surface it.
+      ".then(function(r){if(!r.ok){r.text().then(function(t){"
+      "alert('Action failed (HTTP '+r.status+'): '+(t||r.statusText));"
+      "});}})"
+      ".catch(function(err){alert('Action failed: '+err);})"
       ".then(function(){setTimeout(refreshFleetContent,1000);});"
       "});"
       "document.querySelectorAll('.bulk-actions "
@@ -1571,7 +1586,11 @@ void handleStickserverFleetGet() {
       "if(confirmMsg&&!confirm(confirmMsg))return;"
       "var body=new URLSearchParams();"
       "body.set('cmd',btn.getAttribute('data-cmd'));"
-      "fetch('/fleet/bulk',{method:'POST',body:body}).catch(function(){})"
+      "fetch('/fleet/bulk',{method:'POST',body:body})"
+      ".then(function(r){if(!r.ok){r.text().then(function(t){"
+      "alert('Action failed (HTTP '+r.status+'): '+(t||r.statusText));"
+      "});}})"
+      ".catch(function(err){alert('Action failed: '+err);})"
       ".then(function(){setTimeout(refreshFleetContent,1000);});"
       "});"
       "});"

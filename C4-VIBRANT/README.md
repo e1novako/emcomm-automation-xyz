@@ -145,6 +145,10 @@ Additional security note: HTTP Basic Auth is not encrypted on plain HTTP. Use th
 
 ## Release notes
 
+### 1.8.19
+
+- Fixed `Turn ON all`/`Turn OFF all`/`Leave Mesh All`/`Factory Reset All` (and the "All Outputs" page's bulk/per-output actions) appearing to silently do nothing when the server rejected the request (e.g. HTTP 409 "another action is already running", or 400/503). The page's JS submitted these via `fetch()` and only handled network-level failures (`.catch()`); a resolved response with a non-2xx status was never inspected, so a rejected action gave zero feedback. The JS now checks `response.ok` and shows an `alert()` with the HTTP status and server message on failure. Also added a `button:disabled` style (dimmed, `cursor:not-allowed`) to both the main and settings-page stylesheets, since disabled buttons previously looked identical to enabled ones and gave no visual indication of why a click had no effect.
+
 ### 1.8.18
 
 - Fixed settings-page checkboxes (Network/MQTT, Diagnostics, etc.) rendering above their label text instead of to its left. Cause: the settings-page stylesheet applied `input,select{width:100%}` indiscriminately, which stretched every `<input type="checkbox">` to the full field width, pushing its label text onto the next line. Checkboxes are now excluded from that rule and sized/aligned explicitly (18x18px, inline, `vertical-align:middle`, small right margin) so the box sits inline to the left of its label text as intended.

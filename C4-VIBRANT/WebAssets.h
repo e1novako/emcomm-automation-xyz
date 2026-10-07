@@ -13,7 +13,7 @@ static const char HOME_PAGE_HEADER[] PROGMEM =
     "8px;margin:2px;}button,.output-toggle{border:1px solid "
     "#999;border-radius:999px;min-width:64px;padding:8px "
     "16px;margin:2px;font-weight:bold;cursor:pointer;background:#e0e0e0;"
-    "color:#222;}"
+    "color:#222;}button:disabled{opacity:.45;cursor:not-allowed;}"
     ".output-on{background:#fff2b2;color:#222;}.output-off{background:#d3d3d3;"
     "color:#222;}.nav-btn{display:inline-block;border:1px solid "
     "#999;border-radius:999px;padding:6px "
