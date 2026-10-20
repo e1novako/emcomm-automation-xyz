@@ -28,6 +28,8 @@ boot.
   - DHCP hostname (up to 32 letters, digits or hyphens; empty uses the MAC-based default)
   - MQTT broker host, port, username, and password (enable/disable toggle)
 - The Devices page supports:
+  - Per-device **Device Type/Model** selection: Control4 Vibrant (default), Control4 Gen3, or Control4 Gen4, plus copying the first selection to every visible row
+  - Gen3/Gen4 **Top button output** and **Bottom button output** mappings. These select existing output rows (not GPIO numbers); configure their Control output GPIOs separately. Top defaults to the device's own row; bottom defaults to `none`. Use distinct GPIOs connected to the device's button contacts, not its mains supply.
   - Bulk-copying the first Manufacturer/Model/Name to all visible rows (`#<number>` in the first name continues from the parsed starting number)
   - Clearing all Manufacturer, Model, and Name fields without changing Control output selections
   - Reversing GPIO assignments across the currently configured output rows
@@ -144,6 +146,16 @@ Security note: factory credentials are public and meant only for first setup.
 Additional security note: HTTP Basic Auth is not encrypted on plain HTTP. Use this firmware only on trusted local networks/AP access.
 
 ## Release notes
+
+### 1.8.23
+
+- Added an extensible `DeviceModels.h/.cpp` registry. Control4 Vibrant retains its existing power-on/off, leave-mesh, reset, and reboot behavior; identify/join powers it on.
+- Control4 Gen3 and Gen4 currently share non-blocking button functions: identify/join presses top 4 times; leave mesh presses top 13, bottom 4, top 13; factory reset presses top 9, bottom 4, top 9; reboot presses top 15 times. Each press and release lasts 150 ms, with contacts released for 800 ms before starting. Actions end and cancel with contacts released.
+- For button models, power-on, toggle, and `button_top` press top once; power-off and `button_bottom` press bottom once. These commands simulate button presses, not measured lamp state. The displayed ON/OFF value is the relay contact state, not the light's actual state. Identify/top/bottom buttons are available on the main page.
+- JSON device entries now store numeric `deviceModel` (`0` = Vibrant, `1` = Gen3, `2` = Gen4), and zero-based `topOutput`/`bottomOutput` (`-1` = none). Existing configs and factory defaults select Vibrant. Invalid stored model IDs fall back to Vibrant; invalid stored mappings become unassigned. Backup/export/import preserves these fields.
+- Mixed-model bulk actions run sequentially using each device's model. Rows referenced as another device's button contacts are skipped as standalone bulk targets. All-Vibrant leave/reset retains simultaneous operation. Missing, inactive, or reserved secondary outputs reject the button action; a bulk action logs and skips invalid mappings.
+- Button contacts start released even when output-state restoration is enabled. Output configuration changes are rejected while an action runs; importing/resetting config cancels it first. Model/command and press-stage debug logs use the existing GUI-controlled verbose logging setting on Diagnostics & OTA.
+- To add a model, assign a stable numeric ID and add a registry entry with the common function interface. Existing state-machine helpers can be reused; no HTTP dispatch changes are needed.
 
 ### 1.8.22
 

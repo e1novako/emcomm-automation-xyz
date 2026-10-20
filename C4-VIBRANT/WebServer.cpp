@@ -399,7 +399,8 @@ static void renderHomeContent() {
             "</td><td>" + htmlEscape(d.name) + "</td><td>";
 
     if (mapped) {
-      const char *toggleDisabledAttr = reserved ? " disabled" : "";
+      const char *toggleDisabledAttr =
+          reserved || isButtonHelperOutput(i) ? " disabled" : "";
       piece += "<form method='post' action='/toggle' style='margin:0;'>"
                "<input type='hidden' name='idx' value='" +
                String(i) +
@@ -452,6 +453,19 @@ static void renderHomeContent() {
       } else {
         const char *disabledAttr =
             (otherActionRunning || reserved) ? " disabled" : "";
+        if (getDeviceModel(d.deviceModel).usesButtons) {
+          writeChunk(piece);
+          piece = "";
+          const char *commands[] = {"identify", "button_top", "button_bottom"};
+          const char *labels[] = {"Identify / Join", "Top button", "Bottom button"};
+          for (uint8_t button = 0; button < 3; ++button) {
+            writeChunk("<form method='post' action='/action' "
+                       "style='display:inline;margin:0;'>"
+                       "<input type='hidden' name='idx' value='" + String(i) +
+                       "'><button name='cmd' value='" + commands[button] + "'" +
+                       disabledAttr + ">" + labels[button] + "</button></form>");
+          }
+        }
         piece += "<form method='post' action='/action' "
                  "style='display:inline;margin:0;'>"
                  "<input type='hidden' name='idx' value='" +
@@ -616,20 +630,18 @@ void handleToggle() {
     return;
   }
 
-  // Abort any running sequence action on this output
-  if (actionOwnsOutput(static_cast<uint8_t>(idx))) {
-    cancelAction();
+  if (!handleLoadAction(static_cast<uint8_t>(idx),
+                        server.arg("state") == "1" ? F("power_on")
+                                                   : F("power_off"))) {
+    server.send(409, "text/plain", "Another action is already running");
+    return;
   }
-
-  setOutputDirect(static_cast<uint8_t>(idx), server.arg("state") == "1");
   if (!outputsActivated)
     applyOutputsWhenSafe();
-  mqttPublishOutputState(static_cast<uint8_t>(idx));
   Serial.print(F("[INFO] Output toggled: "));
   Serial.print(d.name);
   Serial.print(F(" -> "));
   Serial.println(d.state ? F("ON") : F("OFF"));
-  maybePersistOutputState();
   server.sendHeader("Location", "/");
   server.send(303);
 }
@@ -695,17 +707,7 @@ void handleAllOn() {
     return;
   }
   logStatus(F("Turn ON all outputs requested."));
-  bool first = true;
-  for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
-    if (!isManagedOutput(i))
-      continue;
-    if (!first)
-      delay(50);
-    setOutputDirect(i, true);
-    mqttPublishOutputState(i);
-    first = false;
-  }
-  maybePersistOutputState();
+  startModelActionAll("power_on");
   server.sendHeader("Location", "/");
   server.send(303);
 }
@@ -718,17 +720,7 @@ void handleAllOff() {
     return;
   }
   logStatus(F("Turn OFF all outputs requested."));
-  bool first = true;
-  for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
-    if (!isManagedOutput(i))
-      continue;
-    if (!first)
-      delay(50);
-    setOutputDirect(i, false);
-    mqttPublishOutputState(i);
-    first = false;
-  }
-  maybePersistOutputState();
+  startModelActionAll("power_off");
   server.sendHeader("Location", "/");
   server.send(303);
 }
@@ -742,7 +734,7 @@ void handleFactoryResetAll() {
   }
   logStatus(F("Factory reset ALL outputs requested."));
   if (managedOutputCount())
-    startSequence(PROFILE_FACTORY_RESET, 0, true);
+    startModelActionAll("factory_reset");
   server.sendHeader("Location", "/");
   server.send(303);
 }
@@ -756,7 +748,7 @@ void handleLeaveMeshAll() {
   }
   logStatus(F("Leave mesh ALL outputs requested."));
   if (managedOutputCount())
-    startSequence(PROFILE_LEAVE_MESH, 0, true);
+    startModelActionAll("leave_mesh");
   server.sendHeader("Location", "/");
   server.send(303);
 }
@@ -1071,6 +1063,8 @@ void handleDeviceSettingsGet() {
            "all</button>"
            "<button type='button' onclick='copyFirstModelToAll()'>Use first "
            "Model for all</button>"
+           "<button type='button' onclick='copyFirstDeviceModelToAll()'>Use first "
+           "Device Type/Model for all</button>"
            "<button type='button' onclick='copyFirstNameToAll()'>Use first "
            "Name for all</button>"
            "<button type='button' onclick='clearAllFieldsExceptOutput()'>"
@@ -1080,7 +1074,9 @@ void handleDeviceSettingsGet() {
            "<span>If the first Name contains #5, copy keeps the first row at "
            "#5 and fills later rows as #6, #7, and so on.</span></div>"
            "<table><tr><th>#</th><th>DUT Manufacturer</th><th>DUT Model</"
-           "th><th>DUT Name</th><th>Control output</th></tr>";
+           "th><th>DUT Name</th><th>Device Type/Model</th>"
+           "<th>Top button output</th><th>Bottom button output</th>"
+           "<th>Control output</th></tr>";
   writeChunk(piece);
 
   // Each output row is flushed independently so the whole form table never
@@ -1093,7 +1089,28 @@ void handleDeviceSettingsGet() {
             htmlEscape(cfg.devices[i].model) +
             "'></td><td><input name='name_" + String(i) + "' value='" +
             htmlEscape(cfg.devices[i].name) +
-            "'></td><td><select name='pin_" + String(i) + "'>";
+            "'></td><td><select name='deviceModel_" + String(i) + "'>";
+    for (size_t m = 0; m < DEVICE_MODEL_COUNT; ++m) {
+      const DeviceModel &model = DEVICE_MODELS[m];
+      piece += "<option value='" + String(static_cast<int>(model.type)) + "'" +
+               (cfg.devices[i].deviceModel == model.type ? " selected" : "") +
+               ">" + model.name + "</option>";
+    }
+    piece += F("</select></td>");
+    writeChunk(piece);
+    for (uint8_t button = 0; button < 2; ++button) {
+      int selected = button ? cfg.devices[i].bottomOutput : cfg.devices[i].topOutput;
+      piece = "<td><select name='" + String(button ? "bottomOutput_" : "topOutput_") +
+              String(i) + "'><option value='-1'" +
+              (selected < 0 ? " selected" : "") + ">none</option>";
+      for (uint8_t output = 0; output < cfg.numOutputs; ++output)
+        piece += "<option value='" + String(output) + "'" +
+                 (selected == output ? " selected" : "") + ">Output " +
+                 String(output + 1) + "</option>";
+      piece += F("</select></td>");
+      writeChunk(piece);
+    }
+    piece = "<td><select name='pin_" + String(i) + "'>";
     piece += (cfg.devices[i].pin < 0)
                  ? "<option value='-1' selected>none</option>"
                  : "<option value='-1'>none</option>";
@@ -1110,6 +1127,10 @@ void handleDeviceSettingsGet() {
 void handleDeviceSettingsPost() {
   if (!ensureAuthorized())
     return;
+  if (isActionRunning()) {
+    server.send(409, "text/plain", "Cancel the running action before changing outputs");
+    return;
+  }
   int parsedOutputs = -1;
   if (!server.hasArg("numOutputs") ||
       !parseIndexValue(server.arg("numOutputs"), parsedOutputs) ||
@@ -1147,6 +1168,33 @@ void handleDeviceSettingsPost() {
   }
   for (int i = 0; i < parsedOutputs; ++i) {
     String index = String(i);
+    String modelArg = "deviceModel_" + index;
+    int modelType = static_cast<int>(cfg.devices[i].deviceModel);
+    if (server.hasArg(modelArg) &&
+        (!parseIndexValue(server.arg(modelArg), modelType) ||
+         !isValidDeviceModel(modelType))) {
+      server.send(400, "text/plain", "Invalid device model");
+      return;
+    }
+    int mappings[2] = {cfg.devices[i].topOutput, cfg.devices[i].bottomOutput};
+    const char *fields[] = {"topOutput_", "bottomOutput_"};
+    for (uint8_t b = 0; b < 2; ++b) {
+      String field = String(fields[b]) + index;
+      if (server.hasArg(field)) {
+        if (server.arg(field) == "-1")
+          mappings[b] = -1;
+        else if (!parseIndexValue(server.arg(field), mappings[b]) ||
+                 mappings[b] < 0 || mappings[b] >= parsedOutputs) {
+          server.send(400, "text/plain", "Invalid button output mapping");
+          return;
+        }
+      }
+    }
+    if (getDeviceModel(modelType).usesButtons &&
+        mappings[0] >= 0 && mappings[0] == mappings[1]) {
+      server.send(400, "text/plain", "Top and bottom must use different outputs");
+      return;
+    }
     if (i < cfg.numOutputs &&
         (!server.hasArg("manufacturer_" + index) ||
          !server.hasArg("model_" + index) || !server.hasArg("name_" + index))) {
@@ -1166,6 +1214,13 @@ void handleDeviceSettingsPost() {
     cfg.devices[i].model = server.hasArg("model_" + index)
                                ? server.arg("model_" + index)
                                : String(DEFAULT_DEVICE_MODEL);
+    if (server.hasArg("deviceModel_" + index))
+      cfg.devices[i].deviceModel =
+          getDeviceModel(server.arg("deviceModel_" + index).toInt()).type;
+    if (server.hasArg("topOutput_" + index))
+      cfg.devices[i].topOutput = server.arg("topOutput_" + index).toInt();
+    if (server.hasArg("bottomOutput_" + index))
+      cfg.devices[i].bottomOutput = server.arg("bottomOutput_" + index).toInt();
     String manufacturer = cfg.devices[i].manufacturer;
     String model = cfg.devices[i].model;
     manufacturer.trim();

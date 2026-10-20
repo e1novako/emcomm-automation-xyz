@@ -16,7 +16,9 @@ enum ActionPhase : uint8_t {
   APHASE_CYCLE_ON,
   APHASE_FINAL_WAIT,
   APHASE_TRIGGER_OFF,
-  APHASE_TRIGGER_ON
+  APHASE_TRIGGER_ON,
+  APHASE_BUTTON_PRESS,
+  APHASE_BUTTON_RELEASE
 };
 struct ActiveAction {
   ActionPhase phase;
@@ -36,4 +38,8 @@ void finishAction();
 void maintainBackgroundAction();
 void cancelAction();
 bool handleLoadAction(uint8_t, const String &);
+bool startButtonAction(uint8_t, uint8_t, uint8_t, const char *);
+bool buttonActionOwnsOutput(uint8_t);
+bool isButtonHelperOutput(uint8_t);
+bool startModelActionAll(const char *command);
 } // namespace vibrant

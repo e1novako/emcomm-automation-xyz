@@ -1,9 +1,13 @@
 #pragma once
 #include <Arduino.h>
+#include "DeviceModels.h"
 namespace vibrant {
 enum : uint8_t { MAX_DEVICES = 16 };
 struct DeviceEntry {
   String manufacturer, model, name;
+  DeviceModelType deviceModel = MODEL_VIBRANT;
+  // Output indices, not GPIO numbers; -1 means unassigned.
+  int8_t topOutput = -1, bottomOutput = -1;
   int8_t pin;
   bool state;
   // Output reservation, persisted alongside output state so it can

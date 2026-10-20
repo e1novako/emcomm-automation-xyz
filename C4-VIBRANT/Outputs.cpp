@@ -27,6 +27,18 @@ bool isValidOutputPin(int8_t pin) { return findPinMapping(pin) != nullptr; }
 
 void applyOutputsNow() {
   logStatus(F("Applying output states..."));
+  if (!outputsActivated) {
+    for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
+      if (!getDeviceModel(cfg.devices[i].deviceModel).usesButtons)
+        continue;
+      int top = cfg.devices[i].topOutput;
+      int bottom = cfg.devices[i].bottomOutput;
+      if (top >= 0 && top < cfg.numOutputs)
+        cfg.devices[top].state = false;
+      if (bottom >= 0 && bottom < cfg.numOutputs)
+        cfg.devices[bottom].state = false;
+    }
+  }
   for (uint8_t i = 0; i < MAX_DEVICES; ++i) {
     int8_t pin = cfg.devices[i].pin;
     if (!isValidOutputPin(pin)) {
@@ -106,8 +118,10 @@ bool isManagedOutput(uint8_t idx) {
 }
 
 bool actionOwnsOutput(uint8_t idx) {
-  return isActionRunning() && (bgAction.allOutputs ? isManagedOutput(idx)
-                                                   : bgAction.deviceIdx == idx);
+  return isActionRunning() &&
+         (buttonActionOwnsOutput(idx) ||
+          (bgAction.allOutputs ? isManagedOutput(idx)
+                               : bgAction.deviceIdx == idx));
 }
 
 } // namespace vibrant

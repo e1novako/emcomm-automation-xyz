@@ -52,6 +52,11 @@ static const char SETTINGS_PAGE_HEADER[] PROGMEM =
     ".page-header{text-align:center;}"
     "</style>";
 static const char SETTINGS_PAGE_SCRIPT[] PROGMEM =
+    "<script>function copyFirstDeviceModelToAll(){"
+    "const form=document.getElementById('device-form');if(!form)return;"
+    "const first=form.elements['deviceModel_0'];if(!first)return;"
+    "form.querySelectorAll(\"select[name^='deviceModel_']\").forEach("
+    "(field)=>{field.value=first.value;});}</script>"
     "<script>\nfunction parseNameSequence(template){\n  const "
     "match=template.match(/#(\\d+)/);\n  if(!match)return null;\n  return "
     "{token:match[0],start:parseInt(match[1],10)};\n}\nfunction "

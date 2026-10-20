@@ -1,4 +1,5 @@
 #include "BackupRestore.h"
+#include "Actions.h"
 #include "Config.h"
 #include "Debug.h"
 #include "Reservations.h"
@@ -109,13 +110,23 @@ static bool verifyImportedConfig(JsonDocument &importedDoc) {
       expModel = DEFAULT_DEVICE_MODEL;
     String expName = d["name"] | (String(F("Output ")) + String(i + 1));
     int8_t expPin = static_cast<int8_t>(d["pin"] | -1);
+    DeviceModelType expDeviceModel = getDeviceModel(d["deviceModel"] | 0).type;
+    int expTop = d["topOutput"] | static_cast<int>(i);
+    int expBottom = d["bottomOutput"] | -1;
+    if (expTop < 0 || expTop >= MAX_DEVICES)
+      expTop = -1;
+    if (expBottom < 0 || expBottom >= MAX_DEVICES)
+      expBottom = -1;
     bool expReserved = d["reserved"] | false;
     String expOwner = d["reservedOwner"] | String("");
 
     bool mismatch = false;
     if (cfg.devices[i].manufacturer != expManufacturer ||
         cfg.devices[i].model != expModel || cfg.devices[i].name != expName ||
-        cfg.devices[i].pin != expPin) {
+        cfg.devices[i].pin != expPin ||
+        cfg.devices[i].deviceModel != expDeviceModel ||
+        cfg.devices[i].topOutput != expTop ||
+        cfg.devices[i].bottomOutput != expBottom) {
       mismatch = true;
     }
     if (outputReservations[i].reserved != expReserved ||
@@ -140,6 +151,8 @@ static bool verifyImportedConfig(JsonDocument &importedDoc) {
 void handleConfigImportDone() {
   if (!ensureAuthorized())
     return;
+  if (isActionRunning())
+    cancelAction();
   if (importFailed) {
     logError(F("Configuration upload failed before validation."));
     server.send(500, "text/plain", "Configuration upload failed");
@@ -200,6 +213,8 @@ void handleConfigImportDone() {
 void handleFactoryReset() {
   if (!ensureAuthorized())
     return;
+  if (isActionRunning())
+    cancelAction();
 
   logStatus(F("Factory reset requested."));
   setFactoryDefaults();

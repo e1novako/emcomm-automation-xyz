@@ -108,6 +108,9 @@ void setFactoryDefaults() {
   for (uint8_t i = 0; i < MAX_DEVICES; ++i) {
     cfg.devices[i].manufacturer = DEFAULT_DEVICE_MANUFACTURER;
     cfg.devices[i].model = DEFAULT_DEVICE_MODEL;
+    cfg.devices[i].deviceModel = MODEL_VIBRANT;
+    cfg.devices[i].topOutput = i;
+    cfg.devices[i].bottomOutput = -1;
     cfg.devices[i].name = String(F("Output ")) + String(i + 1);
     // Map first DEFAULT_D0_D7_COUNT outputs to D0-D7 by default; rest
     // unassigned. Compile-time static_assert above guarantees
@@ -165,6 +168,9 @@ bool saveConfig() {
     JsonObject d = devices.add<JsonObject>();
     d["manufacturer"] = cfg.devices[i].manufacturer;
     d["model"] = cfg.devices[i].model;
+    d["deviceModel"] = static_cast<uint8_t>(cfg.devices[i].deviceModel);
+    d["topOutput"] = cfg.devices[i].topOutput;
+    d["bottomOutput"] = cfg.devices[i].bottomOutput;
     d["name"] = cfg.devices[i].name;
     d["pin"] = cfg.devices[i].pin;
     d["state"] = cfg.devices[i].state;
@@ -235,8 +241,18 @@ bool loadConfig() {
 
   JsonArray devices = doc["devices"].as<JsonArray>();
   for (uint8_t i = 0; i < MAX_DEVICES; ++i) {
+    cfg.devices[i].deviceModel = MODEL_VIBRANT;
+    cfg.devices[i].topOutput = i;
+    cfg.devices[i].bottomOutput = -1;
     if (i < devices.size()) {
       JsonObject d = devices[i];
+      cfg.devices[i].deviceModel =
+          getDeviceModel(d["deviceModel"] | 0).type;
+      int top = d["topOutput"] | static_cast<int>(i);
+      int bottom = d["bottomOutput"] | -1;
+      cfg.devices[i].topOutput = top >= 0 && top < MAX_DEVICES ? top : -1;
+      cfg.devices[i].bottomOutput =
+          bottom >= 0 && bottom < MAX_DEVICES ? bottom : -1;
       cfg.devices[i].manufacturer =
           d["manufacturer"] | String(DEFAULT_DEVICE_MANUFACTURER);
       cfg.devices[i].model = d["model"] | String(DEFAULT_DEVICE_MODEL);
