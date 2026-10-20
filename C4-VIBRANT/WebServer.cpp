@@ -1066,7 +1066,7 @@ void handleDeviceSettingsGet() {
            "<button type='button' onclick='copyFirstModelToAll()'>Use first "
            "Model for all</button>"
            "<button type='button' onclick='copyFirstDeviceModelToAll()'>Use first "
-           "DUT_Type for all</button>"
+           "DUT Type for all</button>"
            "<button type='button' onclick='copyFirstNameToAll()'>Use first "
            "Name for all</button>"
            "<button type='button' onclick='clearAllFieldsExceptOutput()'>"
@@ -1076,7 +1076,7 @@ void handleDeviceSettingsGet() {
            "<span>If the first Name contains #5, copy keeps the first row at "
            "#5 and fills later rows as #6, #7, and so on.</span></div>"
            "<table><tr><th>#</th><th>DUT Manufacturer</th><th>DUT Model</"
-           "th><th>DUT Name</th><th>DUT_Type</th>"
+           "th><th>DUT Name</th><th>DUT Type</th>"
            "<th>Top button output</th><th>Bottom button output</th>"
            "<th>Control output</th></tr>";
   writeChunk(piece);
@@ -1227,7 +1227,7 @@ void handleDeviceSettingsPost() {
       cfg.devices[i].topOutput = server.arg("topOutput_" + index).toInt();
     if (server.hasArg("bottomOutput_" + index))
       cfg.devices[i].bottomOutput = server.arg("bottomOutput_" + index).toInt();
-    DBG("[MODEL] settings output=%u DUT_Type=%u top=%d bottom=%d", i + 1,
+    DBG("[MODEL] settings output=%u DUT Type=%u top=%d bottom=%d", i + 1,
         static_cast<unsigned>(cfg.devices[i].deviceModel),
         cfg.devices[i].topOutput + 1, cfg.devices[i].bottomOutput + 1);
     String manufacturer = cfg.devices[i].manufacturer;
