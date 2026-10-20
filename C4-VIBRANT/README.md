@@ -147,6 +147,11 @@ Additional security note: HTTP Basic Auth is not encrypted on plain HTTP. Use th
 
 ## Release notes
 
+### 1.8.24
+
+- Button action forms submit commands as hidden inputs so the main page's asynchronous form handler includes them. Action status reports remaining button presses as well as bulb power cycles.
+- Applying settings releases configured button contacts when idle, including when converting a previously powered bulb output to a button model.
+
 ### 1.8.23
 
 - Added an extensible `DeviceModels.h/.cpp` registry. Control4 Vibrant retains its existing power-on/off, leave-mesh, reset, and reboot behavior; identify/join powers it on.

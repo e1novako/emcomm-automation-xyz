@@ -172,7 +172,9 @@ bool isActionRunning() { return bgAction.phase != APHASE_NONE; }
 
 bool isInCyclePhase() {
   return bgAction.phase == APHASE_CYCLE_OFF ||
-         bgAction.phase == APHASE_CYCLE_ON;
+         bgAction.phase == APHASE_CYCLE_ON ||
+         bgAction.phase == APHASE_BUTTON_PRESS ||
+         bgAction.phase == APHASE_BUTTON_RELEASE;
 }
 
 String actionPhaseName() {

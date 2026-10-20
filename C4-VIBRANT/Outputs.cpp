@@ -27,7 +27,7 @@ bool isValidOutputPin(int8_t pin) { return findPinMapping(pin) != nullptr; }
 
 void applyOutputsNow() {
   logStatus(F("Applying output states..."));
-  if (!outputsActivated) {
+  if (!isActionRunning()) {
     for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
       if (!getDeviceModel(cfg.devices[i].deviceModel).usesButtons)
         continue;

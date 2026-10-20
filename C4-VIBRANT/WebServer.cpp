@@ -462,7 +462,8 @@ static void renderHomeContent() {
             writeChunk("<form method='post' action='/action' "
                        "style='display:inline;margin:0;'>"
                        "<input type='hidden' name='idx' value='" + String(i) +
-                       "'><button name='cmd' value='" + commands[button] + "'" +
+                       "'><input type='hidden' name='cmd' value='" +
+                       commands[button] + "'><button type='submit'" +
                        disabledAttr + ">" + labels[button] + "</button></form>");
           }
         }
