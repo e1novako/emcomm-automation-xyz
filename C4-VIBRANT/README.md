@@ -28,8 +28,9 @@ boot.
   - DHCP hostname (up to 32 letters, digits or hyphens; empty uses the MAC-based default)
   - MQTT broker host, port, username, and password (enable/disable toggle)
 - The Devices page supports:
-  - Per-device **Device Type/Model** selection: Control4 Vibrant (default), Control4 Gen3, or Control4 Gen4, plus copying the first selection to every visible row
+  - Per-device **DUT_Type** selection: Control4 Vibrant (default), Control4 Gen3, or Control4 Gen4, plus copying the first selection to every visible row
   - Gen3/Gen4 **Top button output** and **Bottom button output** mappings. These select existing output rows (not GPIO numbers); configure their Control output GPIOs separately. Top defaults to the device's own row; bottom defaults to `none`. Use distinct GPIOs connected to the device's button contacts, not its mains supply.
+  - Top/bottom selectors are enabled only for Gen3/Gen4, including after changing DUT_Type or bulk-copying it. Selecting output B as A's bottom sets B's top to A; selecting B as A's top sets B's bottom to A. Selecting `none` or the same row does not create a reciprocal link. Reciprocal values in disabled rows are preserved on save.
   - Bulk-copying the first Manufacturer/Model/Name to all visible rows (`#<number>` in the first name continues from the parsed starting number)
   - Clearing all Manufacturer, Model, and Name fields without changing Control output selections
   - Reversing GPIO assignments across the currently configured output rows
@@ -146,6 +147,12 @@ Security note: factory credentials are public and meant only for first setup.
 Additional security note: HTTP Basic Auth is not encrypted on plain HTTP. Use this firmware only on trusted local networks/AP access.
 
 ## Release notes
+
+### 1.8.25
+
+- Renamed the device type selector column and bulk-copy label to `DUT_Type`.
+- Enabled top/bottom mapping selectors only for Gen3/Gen4 and added reciprocal top/bottom selection updates. Disabled rows retain their mappings on save, including reciprocal updates. Existing JSON field names and model IDs are unchanged.
+- Mapping-save debug details use the existing Diagnostics & OTA verbose logging checkbox.
 
 ### 1.8.24
 
