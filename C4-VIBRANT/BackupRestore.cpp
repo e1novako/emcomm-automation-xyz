@@ -111,12 +111,8 @@ static bool verifyImportedConfig(JsonDocument &importedDoc) {
     String expName = d["name"] | (String(F("Output ")) + String(i + 1));
     int8_t expPin = static_cast<int8_t>(d["pin"] | -1);
     DeviceModelType expDeviceModel = getDeviceModel(d["deviceModel"] | 0).type;
-    int expTop = d["topOutput"] | static_cast<int>(i);
-    int expBottom = d["bottomOutput"] | -1;
-    if (expTop < 0 || expTop >= MAX_DEVICES)
-      expTop = -1;
-    if (expBottom < 0 || expBottom >= MAX_DEVICES)
-      expBottom = -1;
+    int expTop = d["topPin"] | -1;
+    int expBottom = d["bottomPin"] | -1;
     bool expReserved = d["reserved"] | false;
     String expOwner = d["reservedOwner"] | String("");
 
@@ -125,8 +121,8 @@ static bool verifyImportedConfig(JsonDocument &importedDoc) {
         cfg.devices[i].model != expModel || cfg.devices[i].name != expName ||
         cfg.devices[i].pin != expPin ||
         cfg.devices[i].deviceModel != expDeviceModel ||
-        cfg.devices[i].topOutput != expTop ||
-        cfg.devices[i].bottomOutput != expBottom) {
+        cfg.devices[i].topPin != expTop ||
+        cfg.devices[i].bottomPin != expBottom) {
       mismatch = true;
     }
     if (outputReservations[i].reserved != expReserved ||

@@ -1,5 +1,6 @@
 #include "DeviceModels.h"
 #include "Actions.h"
+#include "Debug.h"
 #include "MqttClient.h"
 #include "Outputs.h"
 
@@ -41,11 +42,24 @@ static bool buttonLeave(uint8_t idx) {
 static bool buttonReset(uint8_t idx) {
   return startButtonAction(idx, 9, 4, "factory reset");
 }
+// cfg.devices[idx].state tracks the DUT power state implied by the last
+// top (on) / bottom (off) press so Toggle alternates between the buttons.
 static bool buttonTop(uint8_t idx) {
-  return startButtonAction(idx, 1, 0, "top button");
+  bool ok = startButtonAction(idx, 1, 0, "top button");
+  if (ok)
+    cfg.devices[idx].state = true;
+  return ok;
 }
 static bool buttonBottom(uint8_t idx) {
-  return startButtonAction(idx, 0, 1, "bottom button");
+  bool ok = startButtonAction(idx, 0, 1, "bottom button");
+  if (ok)
+    cfg.devices[idx].state = false;
+  return ok;
+}
+static bool buttonToggle(uint8_t idx) {
+  bool on = cfg.devices[idx].state;
+  DBG("[MODEL] output=%u toggle -> %s button", idx + 1, on ? "bottom" : "top");
+  return on ? buttonBottom(idx) : buttonTop(idx);
 }
 static bool buttonReboot(uint8_t idx) {
   return startButtonAction(idx, 15, 0, "reboot");
@@ -54,9 +68,9 @@ const DeviceModel DEVICE_MODELS[] = {
     {MODEL_VIBRANT, "Control4 Vibrant", false, bulbOn, bulbLeave, bulbReset,
      bulbOn, bulbOff, bulbToggle, bulbReboot},
     {MODEL_CONTROL4_GEN3, "Control4 Gen3", true, buttonIdentify, buttonLeave,
-     buttonReset, buttonTop, buttonBottom, buttonTop, buttonReboot},
+     buttonReset, buttonTop, buttonBottom, buttonToggle, buttonReboot},
     {MODEL_CONTROL4_GEN4, "Control4 Gen4", true, buttonIdentify, buttonLeave,
-     buttonReset, buttonTop, buttonBottom, buttonTop, buttonReboot}};
+     buttonReset, buttonTop, buttonBottom, buttonToggle, buttonReboot}};
 const size_t DEVICE_MODEL_COUNT = sizeof(DEVICE_MODELS) / sizeof(DEVICE_MODELS[0]);
 bool isValidDeviceModel(int type) {
   for (size_t i = 0; i < DEVICE_MODEL_COUNT; ++i)

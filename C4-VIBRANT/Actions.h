@@ -40,6 +40,5 @@ void cancelAction();
 bool handleLoadAction(uint8_t, const String &);
 bool startButtonAction(uint8_t, uint8_t, uint8_t, const char *);
 bool buttonActionOwnsOutput(uint8_t);
-bool isButtonHelperOutput(uint8_t);
 bool startModelActionAll(const char *command);
 } // namespace vibrant

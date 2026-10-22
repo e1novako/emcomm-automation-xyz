@@ -6,10 +6,10 @@ Arduino project for NodeMCU v3 with a web interface for controlling up to 16 out
 
 Factory Wi-Fi credentials are publicly known:
 
-- SSID: `Z-Wave Automation`
+- SSID: `EMCOMM Automation`
 - Password: `Fiber714Cvet`
 
-Change the password immediately in **Network, Wi-Fi & MQTT** after the first
+Change the password immediately in **Network & Wi-Fi** after the first
 boot.
 
 ## Highlights
@@ -19,7 +19,8 @@ boot.
 - Main page lists configured devices (model, name, status) and provides rounded state buttons (gray when ON, pastel yellow when OFF), per-output load action buttons, and bulk actions (`Leave Mesh All`, `Factory Reset All`)
 - Settings, toggle actions, and config maintenance endpoints are protected with HTTP Basic Auth (`admin` / current Wi-Fi password)
 - Settings are split into three navigable pages linked from the main page and from each other:
-  - **Network, Wi-Fi & MQTT** (`/settings/network`): station/AP credentials, MAC, hostname, Wi-Fi power, and MQTT broker settings
+  - **Network & Wi-Fi** (`/settings/network`): station/AP credentials, MAC, hostname, Wi-Fi power
+  - **MQTT** (`/settings/mqtt`): broker settings, stickserver options and restore-on-boot options
   - **Devices & output configuration** (`/settings/devices`): output count, device names/models/manufacturers, and GPIO assignments
   - **Diagnostics & OTA** (`/settings/diagnostics`): ArduinoOTA, verbose serial debug, configuration import/export/reset, and firmware update access
 - Saving any page only updates that page's settings; it does not clear checkboxes, credentials, or values on other pages. Station/AP and MQTT passwords are never pre-filled: leave them blank to keep the existing password; use the MQTT clear-password checkbox to remove broker authentication.
@@ -75,7 +76,7 @@ Stickserver `reserve` requests match the requested `ntype` case-insensitively ag
 
 ### Configuration
 
-Enable MQTT and set the broker host/port in **Network, Wi-Fi & MQTT**. Fields:
+Enable MQTT and set the broker host/port in **MQTT**. Fields:
 
 | Field | Description |
 |-------|-------------|
@@ -134,7 +135,7 @@ For `Leave Mesh All` and `Factory Reset All`, all managed outputs prepare and cy
 
 ## Default factory values
 
-- SSID: `Z-Wave Automation`
+- SSID: `EMCOMM Automation`
 - Password: `Fiber714Cvet`
 - Hostname format: `C4-VIBRANT-<last three octets of MAC>`
 - Wi-Fi power range: `5.0 - 20.5 dBm`
@@ -147,6 +148,110 @@ Security note: factory credentials are public and meant only for first setup.
 Additional security note: HTTP Basic Auth is not encrypted on plain HTTP. Use this firmware only on trusted local networks/AP access.
 
 ## Release notes
+
+### 1.9.0
+
+- Version bumped to 1.9.0. The main page Gen3/Gen4 "Identify / Join" button is now labelled "Join" (same `identify` command).
+
+### 1.8.51
+
+- Main page: for Gen3/Gen4 rows the Toggle action button now sits in the Status column in place of the ON/OFF button (and is removed from Actions). The uptime resync from `/partial` only adjusts the header clock when it differs by more than 2 seconds.
+
+### 1.8.50
+
+- The `/partial` output table now carries a hidden `uptime-seconds` field; each periodic refresh on the main page reads it and resyncs the header uptime clock.
+
+### 1.8.49
+
+- Root cause of settings pages intermittently rendering without header/navigation: the shared page start was built as one large `String`, and a failed allocation under heap fragmentation silently produced an empty string. It is now streamed in tiny pieces for every settings page.
+
+### 1.8.48
+
+- The MQTT page is now streamed in small pieces; under low heap the previous large concatenated chunks could make the page render truncated (missing header/buttons).
+
+### 1.8.47
+
+- Split **Network, Wi-Fi & MQTT** into **Network & Wi-Fi** (`/settings/network`: station/AP credentials, MAC, hostname, Wi-Fi power) and **MQTT** (`/settings/mqtt`: broker, credentials, stickserver respond/query/passive discovery, restore-on-boot options). Saving the MQTT page only re-applies MQTT and no longer reconnects Wi-Fi.
+
+### 1.8.46
+
+- Devices & outputs: selecting a GPIO in any Top/Bottom Button select now clears (sets to none) every other visible select that had the same GPIO. Number of outputs is now a select box, and it and the pulse/pause inputs are narrow (10% width).
+
+### 1.8.45
+
+- Saving Devices & outputs no longer reapplies Wi-Fi/MQTT/OTA settings (which dropped the station connection and forced an MQTT reconnect); it now only persists the config and re-applies the output pins.
+
+### 1.8.44
+
+- Fixed the Diagnostics & OTA and All Outputs pages rendering without the header, navigation and shared styles/buttons (the page-start HTML was built but never sent).
+
+### 1.8.43
+
+- Devices & outputs: the Top Button column now uses a single `topPin_N` select for every DUT Type. For Vibrant rows it is the output GPIO (saved as `pin`); for Gen3/Gen4 rows it is the top button GPIO. The separate `pin_N` field was removed; Bottom Button is shown only for Gen3/Gen4.
+
+### 1.8.42
+
+- Devices & outputs: bulk buttons now read "First Manufacturer/Model/DUT Type/Name for all", the name-sequence hint sits on its own line, and the separate **Control4 Output** column is gone. Vibrant rows pick their single output GPIO in the **Top Button** column; Gen3/Gen4 rows use Top Button and Bottom Button.
+
+### 1.8.41
+
+- Debug aids for Gen3/Gen4 buttons: with debug logging enabled each button action logs the GPIO and pad level per stage. Authenticated `POST /pintest` (`pin=<gpio>&ms=<50-5000>`) drives one GPIO LOW for that time from `loop()` for hardware checks.
+
+### 1.8.40
+
+- Gen3/Gen4 button pulses are now timed by a hardware-timer (`os_timer`) instead of being polled from `loop()`, so web/MQTT handling no longer stretches or varies pulse lengths. Pulse (press) duration and pause (release gap) are configurable on **Devices & outputs** (default 200 ms each, 20-5000 ms) and apply to every Gen3/Gen4 command, including the first-press delay. Leave Mesh and Factory Reset run Top x N, Bottom x M, Top x N. With debug logging enabled, the measured min/max pulse and pause times are logged after each button action.
+
+### 1.8.39
+
+- Fixed MQTT reconnect loops / slow web UI with low heap: with Query and Passive Discovery off, incoming `rsp` messages (including this device's own ~1.7 KB hello/list responses echoed back by the broker on its instance topic) are now discarded before any allocation instead of being copied and parsed.
+
+### 1.8.38
+
+- Simplified Devices & outputs: for DUT Type Vibrant the row uses the **Control4 Output** GPIO; for Gen3/Gen4 that field is hidden and the row shows **Top Button** and **Bottom Button** GPIO selects (same GPIO list as Control4 Output). Top/Bottom are now GPIOs owned by the row, not references to other output rows, so every Gen3/Gen4 row acts only on its own buttons (Toggle alternates Top/Bottom, Leave Mesh/Factory Reset use both). Duplicate-GPIO checking covers only the GPIOs the row's DUT Type uses. Existing configs migrate the old Top/Bottom output references to the referenced row's GPIO. Config keys are now `topPin`/`bottomPin`.
+
+### 1.8.37
+
+- Gen3/Gen4 rows now act on the button they represent: if a row's own output is its configured Bottom output, Toggle presses the Bottom button, and Leave Mesh / Factory Reset start their top/bottom sequence with the Bottom button (Top first otherwise). Rows that are neither (or both) keep the 1.8.36 alternating Top/Bottom toggle.
+
+### 1.8.36
+
+- Gen3/Gen4 Toggle now alternates between the configured Top button (turn on) and Bottom button (turn off), tracking the DUT state from the last top/bottom press (assumed off after boot), instead of only ever pressing Top. Leave Mesh and Factory Reset continue to use both the configured Top and Bottom buttons.
+
+### 1.8.35
+
+- DUT Model auto-fill now strips the "Control4 " prefix, so it becomes `Vibrant`, `Gen3` or `Gen4`. When a Top/Bottom button mapping copies the DUT Type to the target output, that output's DUT Model is updated the same way.
+
+### 1.8.34
+
+- Reduced heap-exhaustion reboots: the `s1/c4/stickserver/v1/#` wildcard subscription (all peers' hello/list traffic) is now only made when Query or Passive Discovery is enabled; otherwise the device subscribes to the root topic and its own instance topic only. Incoming MQTT messages are dropped before allocation when the largest free heap block is too small, and the "dropped message" warning is rate-limited to once per 5 s (it previously flooded the serial log). Changing MQTT/Stickserver settings reconnects and re-subscribes.
+
+### 1.8.33
+
+- Devices & outputs page: changing a row's DUT Type now also sets that row's DUT Model field to the selected type name (also applied by "Use first DUT Type for all"). The field remains editable afterwards. Debug output is logged to the browser console.
+
+### 1.8.32
+
+- Changed the default station SSID from `Z-Wave Automation` to `EMCOMM Automation`. Existing saved configs keep their stored SSID.
+
+### 1.8.31
+
+- Applied the 1.8.30 streaming fix to the rest of the web UI: the Main output control, Settings (network, diagnostics, index), and All Outputs pages now send their large static headers/scripts straight from flash in small chunks (new `writeChunk(F(...))` flash overload and `writeChunkP()`), instead of building them in heap `String`s that could fail silently under fragmentation.
+
+### 1.8.30
+
+- Fixed the Devices & outputs page intermittently rendering as bare fields without the form header, bulk-action buttons, and table. The ~7 KB page script was concatenated into a heap `String`, and under heap fragmentation the allocation failure silently dropped the following HTML. PROGMEM scripts (page script and `/injected.js` helper) are now streamed from flash in 256-byte stack-buffered chunks.
+
+### 1.8.29
+
+- Home page: Actions buttons stay enabled when an output is reserved from the GUI (owner `GUI`). Outputs reserved by another owner (e.g. stickserver/MQTT) keep their Actions buttons disabled, as before.
+
+### 1.8.28
+
+- Home page: Gen3/Gen4 rows no longer show separate Top button/Bottom button actions; they show a single **Toggle** button (presses the top button, same as the `toggle` command). The `button_top`/`button_bottom` commands remain available via the API/MQTT.
+
+### 1.8.27
+
+- Added a dynamically generated `GET /injected.js` (auth required) containing `OUTPUT_COUNT`, the DUT Type list, per-output DUT Type/top/bottom data for outputs 1..N, and `populateOutputs()`. The Devices page now fills the DUT Type and top/bottom selects from it instead of emitting N×N `<option>` tags server-side, reducing page size and heap use. Generation is logged when verbose debug logging is enabled in Diagnostics & OTA.
 
 ### 1.8.26
 
@@ -437,7 +542,7 @@ Consolidated release note covering all work since the original 1.8.0 (formerly v
 
 ## MQTT
 
-When MQTT is enabled in **Network, Wi-Fi & MQTT**, the firmware:
+When MQTT is enabled in **MQTT**, the firmware:
 
 - Connects to the configured broker on boot and reconnects automatically every 15 seconds if the connection is lost.
 - Publishes the retained state of each output to `vibrant/<hostname>/output/<N>/state` (`1` = ON, `0` = OFF) whenever a toggle is applied (from the web UI or MQTT).

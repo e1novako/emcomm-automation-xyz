@@ -7,6 +7,7 @@ extern "C" {
 #include "Config.h"
 #include "Debug.h"
 #include "MqttClient.h"
+#include "Outputs.h"
 #include "Reservations.h"
 #include "WifiManager.h"
 
@@ -14,7 +15,7 @@ namespace vibrant {
 
 const char CONFIG_PATH[] = "/vibrant_config.json";
 const char IMPORT_CONFIG_PATH[] = "/vibrant_config_upload.json";
-const char DEFAULT_STA_SSID[] = "Z-Wave Automation";
+const char DEFAULT_STA_SSID[] = "EMCOMM Automation";
 const char DEFAULT_STA_PASSWORD[] = "Fiber714Cvet";
 const char DEFAULT_AP_PASSWORD[] = "Fiber714Cvet";
 const char DEFAULT_DEVICE_MANUFACTURER[] = "Control4";
@@ -104,13 +105,15 @@ void setFactoryDefaults() {
   cfg.apPassword = DEFAULT_AP_PASSWORD;
   cfg.wifiPower = 20.5f;
   cfg.numOutputs = DEFAULT_NUM_OUTPUTS;
+  cfg.buttonPulseMs = 200;
+  cfg.buttonPauseMs = 200;
 
   for (uint8_t i = 0; i < MAX_DEVICES; ++i) {
     cfg.devices[i].manufacturer = DEFAULT_DEVICE_MANUFACTURER;
     cfg.devices[i].model = DEFAULT_DEVICE_MODEL;
     cfg.devices[i].deviceModel = MODEL_VIBRANT;
-    cfg.devices[i].topOutput = i;
-    cfg.devices[i].bottomOutput = -1;
+    cfg.devices[i].topPin = -1;
+    cfg.devices[i].bottomPin = -1;
     cfg.devices[i].name = String(F("Output ")) + String(i + 1);
     // Map first DEFAULT_D0_D7_COUNT outputs to D0-D7 by default; rest
     // unassigned. Compile-time static_assert above guarantees
@@ -149,6 +152,8 @@ bool saveConfig() {
   doc["apPassword"] = cfg.apPassword;
   doc["wifiPower"] = cfg.wifiPower;
   doc["numOutputs"] = cfg.numOutputs;
+  doc["buttonPulseMs"] = cfg.buttonPulseMs;
+  doc["buttonPauseMs"] = cfg.buttonPauseMs;
   doc["mqttEnabled"] = cfg.mqttEnabled;
   doc["mqttHost"] = cfg.mqttHost;
   doc["mqttPort"] = cfg.mqttPort;
@@ -169,8 +174,8 @@ bool saveConfig() {
     d["manufacturer"] = cfg.devices[i].manufacturer;
     d["model"] = cfg.devices[i].model;
     d["deviceModel"] = static_cast<uint8_t>(cfg.devices[i].deviceModel);
-    d["topOutput"] = cfg.devices[i].topOutput;
-    d["bottomOutput"] = cfg.devices[i].bottomOutput;
+    d["topPin"] = cfg.devices[i].topPin;
+    d["bottomPin"] = cfg.devices[i].bottomPin;
     d["name"] = cfg.devices[i].name;
     d["pin"] = cfg.devices[i].pin;
     d["state"] = cfg.devices[i].state;
@@ -193,6 +198,26 @@ bool saveConfig() {
   file.close();
   logStatus(F("Configuration saved to LittleFS."));
   return true;
+}
+
+static uint16_t clampButtonMs(int ms) {
+  return static_cast<uint16_t>(ms < 20 ? 20 : (ms > 5000 ? 5000 : ms));
+}
+
+// Reads a button GPIO. Configs saved before 1.8.38 stored an output-row index
+// (legacyKey); migrate it to that row's GPIO.
+static int8_t loadButtonPin(JsonArray devices, JsonObject d, const char *key,
+                            const char *legacyKey) {
+  if (!d[key].isNull()) {
+    int pin = d[key] | -1;
+    return isValidOutputPin(pin) ? static_cast<int8_t>(pin) : -1;
+  }
+  int legacy = d[legacyKey] | -1;
+  if (legacy >= 0 && legacy < static_cast<int>(devices.size())) {
+    int pin = devices[legacy]["pin"] | -1;
+    return isValidOutputPin(pin) ? static_cast<int8_t>(pin) : -1;
+  }
+  return -1;
 }
 
 bool loadConfig() {
@@ -236,23 +261,23 @@ bool loadConfig() {
                                         static_cast<uint8_t>(MAX_DEVICES));
   if (cfg.numOutputs < 1 || cfg.numOutputs > MAX_DEVICES)
     cfg.numOutputs = MAX_DEVICES;
+  cfg.buttonPulseMs = clampButtonMs(doc["buttonPulseMs"] | 200);
+  cfg.buttonPauseMs = clampButtonMs(doc["buttonPauseMs"] | 200);
   cfg.restoreOutputStateOnBoot = doc["restoreOutputStateOnBoot"] | false;
   cfg.restoreReservationsOnBoot = doc["restoreReservationsOnBoot"] | false;
 
   JsonArray devices = doc["devices"].as<JsonArray>();
   for (uint8_t i = 0; i < MAX_DEVICES; ++i) {
     cfg.devices[i].deviceModel = MODEL_VIBRANT;
-    cfg.devices[i].topOutput = i;
-    cfg.devices[i].bottomOutput = -1;
+    cfg.devices[i].topPin = -1;
+    cfg.devices[i].bottomPin = -1;
     if (i < devices.size()) {
       JsonObject d = devices[i];
       cfg.devices[i].deviceModel =
           getDeviceModel(d["deviceModel"] | 0).type;
-      int top = d["topOutput"] | static_cast<int>(i);
-      int bottom = d["bottomOutput"] | -1;
-      cfg.devices[i].topOutput = top >= 0 && top < MAX_DEVICES ? top : -1;
-      cfg.devices[i].bottomOutput =
-          bottom >= 0 && bottom < MAX_DEVICES ? bottom : -1;
+      cfg.devices[i].topPin = loadButtonPin(devices, d, "topPin", "topOutput");
+      cfg.devices[i].bottomPin =
+          loadButtonPin(devices, d, "bottomPin", "bottomOutput");
       cfg.devices[i].manufacturer =
           d["manufacturer"] | String(DEFAULT_DEVICE_MANUFACTURER);
       cfg.devices[i].model = d["model"] | String(DEFAULT_DEVICE_MODEL);

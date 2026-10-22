@@ -25,21 +25,25 @@ String pinLabel(int8_t pin) {
 
 bool isValidOutputPin(int8_t pin) { return findPinMapping(pin) != nullptr; }
 
+void setButtonPin(int8_t pin, bool pressed) {
+  if (!isValidOutputPin(pin))
+    return;
+  pinMode(pin, OUTPUT);
+  // Active-low like the other outputs: pressed -> LOW, released -> HIGH.
+  digitalWrite(pin, pressed ? LOW : HIGH);
+}
+
 void applyOutputsNow() {
   logStatus(F("Applying output states..."));
-  if (!isActionRunning()) {
-    for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
-      if (!getDeviceModel(cfg.devices[i].deviceModel).usesButtons)
-        continue;
-      int top = cfg.devices[i].topOutput;
-      int bottom = cfg.devices[i].bottomOutput;
-      if (top >= 0 && top < cfg.numOutputs)
-        cfg.devices[top].state = false;
-      if (bottom >= 0 && bottom < cfg.numOutputs)
-        cfg.devices[bottom].state = false;
-    }
-  }
   for (uint8_t i = 0; i < MAX_DEVICES; ++i) {
+    if (getDeviceModel(cfg.devices[i].deviceModel).usesButtons) {
+      // Button rows have no level output; hold both button contacts released.
+      if (!isActionRunning() || i != bgAction.deviceIdx) {
+        setButtonPin(cfg.devices[i].topPin, false);
+        setButtonPin(cfg.devices[i].bottomPin, false);
+      }
+      continue;
+    }
     int8_t pin = cfg.devices[i].pin;
     if (!isValidOutputPin(pin)) {
       continue;
@@ -105,7 +109,8 @@ void setOutputDirect(uint8_t idx, bool state) {
     return;
   DeviceEntry &d = cfg.devices[idx];
   d.state = state;
-  if (outputsActivated && isValidOutputPin(d.pin)) {
+  if (outputsActivated && !getDeviceModel(d.deviceModel).usesButtons &&
+      isValidOutputPin(d.pin)) {
     pinMode(d.pin, OUTPUT);
     // Inverted output logic: logical ON -> LOW, logical OFF -> HIGH
     // (active-low).
@@ -114,7 +119,12 @@ void setOutputDirect(uint8_t idx, bool state) {
 }
 
 bool isManagedOutput(uint8_t idx) {
-  return idx < cfg.numOutputs && isValidOutputPin(cfg.devices[idx].pin);
+  if (idx >= cfg.numOutputs)
+    return false;
+  const DeviceEntry &d = cfg.devices[idx];
+  if (getDeviceModel(d.deviceModel).usesButtons)
+    return isValidOutputPin(d.topPin) || isValidOutputPin(d.bottomPin);
+  return isValidOutputPin(d.pin);
 }
 
 bool actionOwnsOutput(uint8_t idx) {
