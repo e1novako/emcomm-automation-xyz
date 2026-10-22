@@ -288,12 +288,6 @@ void sendChunkedHtml(int code, const String &html) {
   endChunkedHtml();
 }
 
-String pinOption(int selectedPin, const PinMapping &mapping) {
-  String selected = (selectedPin == mapping.gpio) ? " selected" : "";
-  return "<option value=\"" + String(mapping.gpio) + "\"" + selected + ">" +
-         String(mapping.label) + "</option>";
-}
-
 bool parsePinValue(const String &raw, int &pin) {
   if (raw == "-1") {
     pin = -1;
@@ -1191,12 +1185,28 @@ void handleInjectedJs() {
     piece += "{id:" + String(static_cast<int>(DEVICE_MODELS[t].type)) +
              ",name:'" + DEVICE_MODELS[t].name + "'}";
   }
-  piece += "];window.OUTPUT_DATA=[";
+  piece += "];window.GPIO_PINS=[";
+  for (size_t p = 0; p < OUTPUT_PIN_MAPPING_COUNT; ++p) {
+    if (p)
+      piece += ",";
+    piece += "{gpio:" + String(OUTPUT_PIN_MAPPINGS[p].gpio) + ",label:'" +
+             OUTPUT_PIN_MAPPINGS[p].label + "'}";
+  }
+  piece += "];";
+  writeChunk(piece);
+  piece = "window.OUTPUT_DATA=[";
   for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
+    const DeviceEntry &d = cfg.devices[i];
+    bool buttons = getDeviceModel(d.deviceModel).usesButtons;
     if (i)
       piece += ",";
-    piece += "{model:" + String(static_cast<int>(cfg.devices[i].deviceModel)) +
-             "}";
+    piece += "{model:" + String(static_cast<int>(d.deviceModel)) +
+             ",top:" + String(buttons ? d.topPin : d.pin) +
+             ",bottom:" + String(d.bottomPin) + "}";
+    if (piece.length() > 400) {
+      writeChunk(piece);
+      piece = "";
+    }
   }
   piece += "];";
   writeChunk(piece);
@@ -1256,21 +1266,12 @@ void handleDeviceSettingsGet() {
             "' onchange='syncModelFromType(this);updateButtonSelectors(this.form)'>";
     piece += F("</select></td>");
     writeChunk(piece);
-    for (uint8_t button = 0; button < 2; ++button) {
-      int selectedPin = button ? cfg.devices[i].bottomPin
-                       : (getDeviceModel(cfg.devices[i].deviceModel).usesButtons
-                              ? cfg.devices[i].topPin
-                              : cfg.devices[i].pin);
-      piece = "<td><select name='" + String(button ? "bottomPin_" : "topPin_") +
-              String(i) + "'>";
-      piece += selectedPin < 0 ? "<option value='-1' selected>none</option>"
-                               : "<option value='-1'>none</option>";
-      for (size_t p = 0; p < OUTPUT_PIN_MAPPING_COUNT; ++p)
-        piece += pinOption(selectedPin, OUTPUT_PIN_MAPPINGS[p]);
-      piece += F("</select>");
-      writeChunk(piece);
-      writeChunk(F("</td>"));
-    }
+    // Options and selection are filled client-side from /injected.js, so the
+    // static GPIO list is sent once instead of once per select.
+    piece = "<td><select name='topPin_" + String(i) +
+            "'></select></td><td><select name='bottomPin_" + String(i) +
+            "'></select></td>";
+    writeChunk(piece);
     writeChunk(F("</tr>"));
   }
   writeChunk(F("</table><button type='submit'>Save device settings</button>"

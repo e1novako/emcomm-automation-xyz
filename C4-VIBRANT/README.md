@@ -149,6 +149,10 @@ Additional security note: HTTP Basic Auth is not encrypted on plain HTTP. Use th
 
 ## Release notes
 
+### 1.9.1
+
+- Devices & outputs: the static GPIO list is defined once (`window.GPIO_PINS` in `/injected.js`, from `OUTPUT_PIN_MAPPINGS`) and `populateOutputs()` fills every Top/Bottom Button select and its selection (`OUTPUT_DATA[i].top/bottom`) client-side, instead of the firmware sending the option list for every select. The page is much smaller and needs less heap.
+
 ### 1.9.0
 
 - Version bumped to 1.9.0. The main page Gen3/Gen4 "Identify / Join" button is now labelled "Join" (same `identify` command).

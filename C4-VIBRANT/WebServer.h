@@ -8,7 +8,6 @@ String htmlEscape(const String &);
 String jsonEscape(const String &);
 String formatUptimeHHMMSS(unsigned long);
 void sendChunkedHtml(int, const String &);
-String pinOption(int, const PinMapping &);
 bool parsePinValue(const String &, int &);
 bool parseIndexValue(const String &, int &);
 bool parseFloatValue(const String &, float &);
