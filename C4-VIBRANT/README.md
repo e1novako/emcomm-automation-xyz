@@ -149,6 +149,14 @@ Additional security note: HTTP Basic Auth is not encrypted on plain HTTP. Use th
 
 ## Release notes
 
+### 1.9.7
+
+- Devices & outputs: swapped the order of the **First DUT Type for all** and **First Name for all** buttons.
+
+### 1.9.6
+
+- Devices & outputs: **First DUT Type for all** now only copies the DUT Type selection; it no longer rewrites each row's Model text. (Model is still auto-filled when a row's DUT Type is changed by hand.)
+
 ### 1.9.5
 
 - New defaults: MQTT enabled with host `192.168.1.6`; button pulse and pause 100 ms (previously MQTT off, 200 ms). Existing saved configs keep their values; factory reset / missing keys use the new defaults.

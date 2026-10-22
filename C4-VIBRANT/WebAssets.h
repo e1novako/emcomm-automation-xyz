@@ -65,7 +65,7 @@ static const char SETTINGS_PAGE_SCRIPT[] PROGMEM =
     "const form=document.getElementById('device-form');if(!form)return;"
     "const first=form.elements['deviceModel_0'];if(!first)return;"
     "form.querySelectorAll(\"select[name^='deviceModel_']\").forEach("
-    "(field)=>{field.value=first.value;syncModelFromType(field);});"
+    "(field)=>{field.value=first.value;});"
     "updateButtonSelectors(form);}"
     "function syncModelFromType(select){"
     "const form=select.form;if(!form)return;"
