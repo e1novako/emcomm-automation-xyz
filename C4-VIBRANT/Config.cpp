@@ -105,8 +105,8 @@ void setFactoryDefaults() {
   cfg.apPassword = DEFAULT_AP_PASSWORD;
   cfg.wifiPower = 20.5f;
   cfg.numOutputs = DEFAULT_NUM_OUTPUTS;
-  cfg.buttonPulseMs = 200;
-  cfg.buttonPauseMs = 200;
+  cfg.buttonPulseMs = 100;
+  cfg.buttonPauseMs = 100;
 
   for (uint8_t i = 0; i < MAX_DEVICES; ++i) {
     cfg.devices[i].manufacturer = DEFAULT_DEVICE_MANUFACTURER;
@@ -125,8 +125,8 @@ void setFactoryDefaults() {
     cfg.devices[i].reservedOwner = "";
   }
 
-  cfg.mqttEnabled = false;
-  cfg.mqttHost = "";
+  cfg.mqttEnabled = true;
+  cfg.mqttHost = "192.168.1.6";
   cfg.mqttPort = DEFAULT_MQTT_PORT;
   cfg.mqttUser = "";
   cfg.mqttPassword = "";
@@ -261,8 +261,8 @@ bool loadConfig() {
                                         static_cast<uint8_t>(MAX_DEVICES));
   if (cfg.numOutputs < 1 || cfg.numOutputs > MAX_DEVICES)
     cfg.numOutputs = MAX_DEVICES;
-  cfg.buttonPulseMs = clampButtonMs(doc["buttonPulseMs"] | 200);
-  cfg.buttonPauseMs = clampButtonMs(doc["buttonPauseMs"] | 200);
+  cfg.buttonPulseMs = clampButtonMs(doc["buttonPulseMs"] | 100);
+  cfg.buttonPauseMs = clampButtonMs(doc["buttonPauseMs"] | 100);
   cfg.restoreOutputStateOnBoot = doc["restoreOutputStateOnBoot"] | false;
   cfg.restoreReservationsOnBoot = doc["restoreReservationsOnBoot"] | false;
 
@@ -325,8 +325,8 @@ bool loadConfig() {
   if (cfg.hostname.isEmpty())
     cfg.hostname = defaultHostnameFromMac(cfg.mac);
 
-  cfg.mqttEnabled = doc["mqttEnabled"] | false;
-  cfg.mqttHost = doc["mqttHost"] | String("");
+  cfg.mqttEnabled = doc["mqttEnabled"] | true;
+  cfg.mqttHost = doc["mqttHost"] | String("192.168.1.6");
   cfg.mqttPort = static_cast<uint16_t>(
       doc["mqttPort"] | static_cast<uint16_t>(DEFAULT_MQTT_PORT));
   cfg.mqttUser = doc["mqttUser"] | String("");

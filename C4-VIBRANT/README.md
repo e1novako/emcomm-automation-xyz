@@ -139,7 +139,7 @@ For `Leave Mesh All` and `Factory Reset All`, all managed outputs prepare and cy
 - Password: `Fiber714Cvet`
 - Hostname format: `C4-VIBRANT-<last three octets of MAC>`
 - Wi-Fi power range: `5.0 - 20.5 dBm`
-- MQTT: disabled by default
+- MQTT: enabled by default, broker host `192.168.1.6`, port `1883`
 - Default GPIO assignments: outputs 1–8 mapped to D0–D7 (GPIO16, GPIO5, GPIO4, GPIO0, GPIO2, GPIO14, GPIO12, GPIO13)
 - ArduinoOTA: enabled by default; disable it from **Diagnostics & OTA** when not needed
 
@@ -148,6 +148,10 @@ Security note: factory credentials are public and meant only for first setup.
 Additional security note: HTTP Basic Auth is not encrypted on plain HTTP. Use this firmware only on trusted local networks/AP access.
 
 ## Release notes
+
+### 1.9.5
+
+- New defaults: MQTT enabled with host `192.168.1.6`; button pulse and pause 100 ms (previously MQTT off, 200 ms). Existing saved configs keep their values; factory reset / missing keys use the new defaults.
 
 ### 1.9.4
 
