@@ -420,6 +420,10 @@ void cancelAction() {
   }
 }
 
+static bool buttonChannel(uint8_t idx) {
+  return startButtonAction(idx, 7, 0, "channel");
+}
+
 bool handleLoadAction(uint8_t idx, const String &cmd) {
   if (idx >= cfg.numOutputs || !isManagedOutput(idx))
     return false;
@@ -439,6 +443,8 @@ bool handleLoadAction(uint8_t idx, const String &cmd) {
     action = model.factory_reset;
   else if (cmd == F("reboot"))
     action = model.reboot;
+  else if (model.usesButtons && cmd == F("channel"))
+    action = buttonChannel;
   else if (model.usesButtons && cmd == F("button_top"))
     action = model.turn_on;
   else if (model.usesButtons && cmd == F("button_bottom"))

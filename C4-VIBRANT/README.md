@@ -149,6 +149,18 @@ Additional security note: HTTP Basic Auth is not encrypted on plain HTTP. Use th
 
 ## Release notes
 
+### 1.9.3
+
+- Main page: Gen3/Gen4 rows get **Channel** (7 top-button presses) and **Reboot** (15 top-button presses) action buttons.
+
+### 1.9.2
+
+- C4-NodeMCU compatible HTTP API (unauthenticated GET, `relay` = 0-based output index, replies `200 OK`):
+  - `/update?relay=N&state=1|0` – power on/off (Gen3/Gen4: top/bottom button).
+  - `/update?relay=N&function=` `toggle`, `control4_identify`, `control4_leave_mesh` (also `control4_puck_leave_mesh`), `control4_factory_reset`, `control4_channel` (7 top presses, new), `control4_reboot` (15 top presses). Unknown functions redirect to `/`; bad index returns 400; busy returns 409.
+  - `/c4get_gpio.txt` – JSON `{"port_N": true|false|-1, ..., "uptime": seconds}` (`-1` = unmanaged output).
+- Calls are logged with the `[LEGACY]` debug prefix (disable via the Diagnostics debug setting).
+
 ### 1.9.1
 
 - Devices & outputs: the static GPIO list is defined once (`window.GPIO_PINS` in `/injected.js`, from `OUTPUT_PIN_MAPPINGS`) and `populateOutputs()` fills every Top/Bottom Button select and its selection (`OUTPUT_DATA[i].top/bottom`) client-side, instead of the firmware sending the option list for every select. The page is much smaller and needs less heap.

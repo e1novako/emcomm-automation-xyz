@@ -18,6 +18,8 @@ void handleHome();
 void handleHomePartial();
 void handleToggle();
 void handleAction();
+void handleLegacyUpdate();
+void handleLegacyGpio();
 void handleCancelAction();
 void handleActionStatus();
 void handleAllOn();

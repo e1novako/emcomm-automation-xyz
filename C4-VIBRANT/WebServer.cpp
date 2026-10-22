@@ -29,6 +29,8 @@ void registerWebRoutes() {
   server.on("/partial", HTTP_GET, handleHomePartial);
   server.on("/toggle", HTTP_POST, handleToggle);
   server.on("/action", HTTP_POST, handleAction);
+  server.on("/update", HTTP_GET, handleLegacyUpdate);
+  server.on("/c4get_gpio.txt", HTTP_GET, handleLegacyGpio);
   server.on("/action/cancel", HTTP_POST, handleCancelAction);
   server.on("/action/status", HTTP_GET, handleActionStatus);
   server.on("/action/all-on", HTTP_POST, handleAllOn);
@@ -501,6 +503,15 @@ static void renderHomeContent() {
                      "'><input type='hidden' name='cmd' value='identify'>"
                      "<button type='submit'" + disabledAttr +
                      ">Join</button></form>");
+          static const char *const extraCmds[][2] = {{"channel", "Channel"},
+                                                    {"reboot", "Reboot"}};
+          for (const auto &c : extraCmds)
+            writeChunk("<form method='post' action='/action' "
+                       "style='display:inline;margin:0;'>"
+                       "<input type='hidden' name='idx' value='" + String(i) +
+                       "'><input type='hidden' name='cmd' value='" + c[0] +
+                       "'><button type='submit'" + disabledAttr + ">" + c[1] +
+                       "</button></form>");
         }
         piece += "<form method='post' action='/action' "
                  "style='display:inline;margin:0;'>"
@@ -708,6 +719,75 @@ void handleAction() {
   }
   server.sendHeader("Location", "/");
   server.send(303);
+}
+
+// C4-NodeMCU compatible API (unauthenticated, like the original).
+void handleLegacyUpdate() {
+  if (!server.hasArg("relay")) {
+    server.sendHeader("Location", "/");
+    server.send(302);
+    return;
+  }
+  int idx = -1;
+  if (!parseIndexValue(server.arg("relay"), idx) || idx < 0 ||
+      idx >= cfg.numOutputs) {
+    DBG("[LEGACY] invalid relay '%s'", server.arg("relay").c_str());
+    server.send(400, "text/plain", "Invalid output index");
+    return;
+  }
+  String cmd;
+  if (server.hasArg("state")) {
+    if (server.arg("state") == "1")
+      cmd = F("power_on");
+    else if (server.arg("state") == "0")
+      cmd = F("power_off");
+  } else if (server.hasArg("function")) {
+    const String f = server.arg("function");
+    if (f == F("toggle"))
+      cmd = F("toggle");
+    else if (f == F("control4_identify"))
+      cmd = F("identify");
+    else if (f == F("control4_leave_mesh") || f == F("control4_puck_leave_mesh"))
+      cmd = F("leave_mesh");
+    else if (f == F("control4_factory_reset"))
+      cmd = F("factory_reset");
+    else if (f == F("control4_channel"))
+      cmd = F("channel");
+    else if (f == F("control4_reboot"))
+      cmd = F("reboot");
+  }
+  if (!cmd.length()) {
+    DBG("[LEGACY] relay=%d unsupported request", idx);
+    server.sendHeader("Location", "/");
+    server.send(302);
+    return;
+  }
+  bool ok = handleLoadAction(static_cast<uint8_t>(idx), cmd);
+  DBG("[LEGACY] relay=%d cmd=%s -> %s", idx, cmd.c_str(), ok ? "ok" : "failed");
+  if (!ok) {
+    server.send(isActionRunning() ? 409 : 400, "text/plain",
+                isActionRunning() ? "Another action is already running"
+                                  : "Unknown command or invalid output");
+    return;
+  }
+  if (!outputsActivated)
+    applyOutputsWhenSafe();
+  server.send(200, "text/plain", "OK");
+}
+
+void handleLegacyGpio() {
+  String out = F("{\n");
+  for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
+    out += F("   \"port_");
+    out += String(i);
+    out += F("\": ");
+    out += !isManagedOutput(i) ? F("-1") : (cfg.devices[i].state ? F("true") : F("false"));
+    out += F(",\n");
+  }
+  out += F("   \"uptime\": ");
+  out += String(millis() / 1000);
+  out += F("\n}");
+  server.send(200, "application/json", out);
 }
 
 void handleCancelAction() {
