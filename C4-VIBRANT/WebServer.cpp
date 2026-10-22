@@ -412,6 +412,8 @@ static void renderHomeContent() {
   for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
     const DeviceEntry &d = cfg.devices[i];
     bool mapped = isManagedOutput(i);
+    if (!mapped)
+      continue;
     bool thisActionRunning = actionOwnsOutput(i);
     bool otherActionRunning = actionRunning && !thisActionRunning;
     bool reserved = outputReservations[i].reserved;

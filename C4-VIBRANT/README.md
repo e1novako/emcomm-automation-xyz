@@ -149,6 +149,10 @@ Additional security note: HTTP Basic Auth is not encrypted on plain HTTP. Use th
 
 ## Release notes
 
+### 1.9.4
+
+- Main page: outputs without an assigned GPIO are no longer listed (row numbers keep the output number).
+
 ### 1.9.3
 
 - Main page: Gen3/Gen4 rows get **Channel** (7 top-button presses) and **Reboot** (15 top-button presses) action buttons.
