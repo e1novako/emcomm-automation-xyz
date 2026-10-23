@@ -6,10 +6,10 @@ Arduino project for NodeMCU v3 with a web interface for controlling up to 16 out
 
 Factory Wi-Fi credentials are publicly known:
 
-- SSID: `Z-Wave Automation`
+- SSID: `EMCOMM Automation`
 - Password: `Fiber714Cvet`
 
-Change the password immediately in **Network, Wi-Fi & MQTT** after the first
+Change the password immediately in **Network & Wi-Fi** after the first
 boot.
 
 ## Highlights
@@ -19,7 +19,8 @@ boot.
 - Main page lists configured devices (model, name, status) and provides rounded state buttons (gray when ON, pastel yellow when OFF), per-output load action buttons, and bulk actions (`Leave Mesh All`, `Factory Reset All`)
 - Settings, toggle actions, and config maintenance endpoints are protected with HTTP Basic Auth (`admin` / current Wi-Fi password)
 - Settings are split into three navigable pages linked from the main page and from each other:
-  - **Network, Wi-Fi & MQTT** (`/settings/network`): station/AP credentials, MAC, hostname, Wi-Fi power, and MQTT broker settings
+  - **Network & Wi-Fi** (`/settings/network`): station/AP credentials, MAC, hostname, Wi-Fi power
+  - **MQTT** (`/settings/mqtt`): broker settings, stickserver options and restore-on-boot options
   - **Devices & output configuration** (`/settings/devices`): output count, device names/models/manufacturers, and GPIO assignments
   - **Diagnostics & OTA** (`/settings/diagnostics`): ArduinoOTA, verbose serial debug, configuration import/export/reset, and firmware update access
 - Saving any page only updates that page's settings; it does not clear checkboxes, credentials, or values on other pages. Station/AP and MQTT passwords are never pre-filled: leave them blank to keep the existing password; use the MQTT clear-password checkbox to remove broker authentication.
@@ -28,6 +29,9 @@ boot.
   - DHCP hostname (up to 32 letters, digits or hyphens; empty uses the MAC-based default)
   - MQTT broker host, port, username, and password (enable/disable toggle)
 - The Devices page supports:
+  - Per-device **DUT Type** selection: Control4 Vibrant (default), Control4 Gen3, or Control4 Gen4, plus copying the first selection to every visible row
+  - Gen3/Gen4 **Top button output** and **Bottom button output** mappings. These select existing output rows (not GPIO numbers); configure their Control output GPIOs separately. Top defaults to the device's own row; bottom defaults to `none`. Use distinct GPIOs connected to the device's button contacts, not its mains supply.
+  - Top/bottom selectors are enabled only for Gen3/Gen4, including after changing DUT Type or bulk-copying it. Changing A's top or bottom output to another row B copies A's DUT Type, top output, and bottom output to B, so both rows describe the same device. Selecting `none` or the same row copies nothing. Copied values in disabled rows are preserved on save.
   - Bulk-copying the first Manufacturer/Model/Name to all visible rows (`#<number>` in the first name continues from the parsed starting number)
   - Clearing all Manufacturer, Model, and Name fields without changing Control output selections
   - Reversing GPIO assignments across the currently configured output rows
@@ -72,7 +76,7 @@ Stickserver `reserve` requests match the requested `ntype` case-insensitively ag
 
 ### Configuration
 
-Enable MQTT and set the broker host/port in **Network, Wi-Fi & MQTT**. Fields:
+Enable MQTT and set the broker host/port in **MQTT**. Fields:
 
 | Field | Description |
 |-------|-------------|
@@ -131,11 +135,11 @@ For `Leave Mesh All` and `Factory Reset All`, all managed outputs prepare and cy
 
 ## Default factory values
 
-- SSID: `Z-Wave Automation`
+- SSID: `EMCOMM Automation`
 - Password: `Fiber714Cvet`
 - Hostname format: `C4-VIBRANT-<last three octets of MAC>`
 - Wi-Fi power range: `5.0 - 20.5 dBm`
-- MQTT: disabled by default
+- MQTT: enabled by default, broker host `192.168.1.6`, port `1883`
 - Default GPIO assignments: outputs 1–8 mapped to D0–D7 (GPIO16, GPIO5, GPIO4, GPIO0, GPIO2, GPIO14, GPIO12, GPIO13)
 - ArduinoOTA: enabled by default; disable it from **Diagnostics & OTA** when not needed
 
@@ -144,6 +148,168 @@ Security note: factory credentials are public and meant only for first setup.
 Additional security note: HTTP Basic Auth is not encrypted on plain HTTP. Use this firmware only on trusted local networks/AP access.
 
 ## Release notes
+
+### 1.9.7
+
+- Devices & outputs: swapped the order of the **First DUT Type for all** and **First Name for all** buttons.
+
+### 1.9.6
+
+- Devices & outputs: **First DUT Type for all** now only copies the DUT Type selection; it no longer rewrites each row's Model text. (Model is still auto-filled when a row's DUT Type is changed by hand.)
+
+### 1.9.5
+
+- New defaults: MQTT enabled with host `192.168.1.6`; button pulse and pause 100 ms (previously MQTT off, 200 ms). Existing saved configs keep their values; factory reset / missing keys use the new defaults.
+
+### 1.9.4
+
+- Main page: outputs without an assigned GPIO are no longer listed (row numbers keep the output number).
+
+### 1.9.3
+
+- Main page: Gen3/Gen4 rows get **Channel** (7 top-button presses) and **Reboot** (15 top-button presses) action buttons.
+
+### 1.9.2
+
+- C4-NodeMCU compatible HTTP API (unauthenticated GET, `relay` = 0-based output index, replies `200 OK`):
+  - `/update?relay=N&state=1|0` – power on/off (Gen3/Gen4: top/bottom button).
+  - `/update?relay=N&function=` `toggle`, `control4_identify`, `control4_leave_mesh` (also `control4_puck_leave_mesh`), `control4_factory_reset`, `control4_channel` (7 top presses, new), `control4_reboot` (15 top presses). Unknown functions redirect to `/`; bad index returns 400; busy returns 409.
+  - `/c4get_gpio.txt` – JSON `{"port_N": true|false|-1, ..., "uptime": seconds}` (`-1` = unmanaged output).
+- Calls are logged with the `[LEGACY]` debug prefix (disable via the Diagnostics debug setting).
+
+### 1.9.1
+
+- Devices & outputs: the static GPIO list is defined once (`window.GPIO_PINS` in `/injected.js`, from `OUTPUT_PIN_MAPPINGS`) and `populateOutputs()` fills every Top/Bottom Button select and its selection (`OUTPUT_DATA[i].top/bottom`) client-side, instead of the firmware sending the option list for every select. The page is much smaller and needs less heap.
+
+### 1.9.0
+
+- Version bumped to 1.9.0. The main page Gen3/Gen4 "Identify / Join" button is now labelled "Join" (same `identify` command).
+
+### 1.8.51
+
+- Main page: for Gen3/Gen4 rows the Toggle action button now sits in the Status column in place of the ON/OFF button (and is removed from Actions). The uptime resync from `/partial` only adjusts the header clock when it differs by more than 2 seconds.
+
+### 1.8.50
+
+- The `/partial` output table now carries a hidden `uptime-seconds` field; each periodic refresh on the main page reads it and resyncs the header uptime clock.
+
+### 1.8.49
+
+- Root cause of settings pages intermittently rendering without header/navigation: the shared page start was built as one large `String`, and a failed allocation under heap fragmentation silently produced an empty string. It is now streamed in tiny pieces for every settings page.
+
+### 1.8.48
+
+- The MQTT page is now streamed in small pieces; under low heap the previous large concatenated chunks could make the page render truncated (missing header/buttons).
+
+### 1.8.47
+
+- Split **Network, Wi-Fi & MQTT** into **Network & Wi-Fi** (`/settings/network`: station/AP credentials, MAC, hostname, Wi-Fi power) and **MQTT** (`/settings/mqtt`: broker, credentials, stickserver respond/query/passive discovery, restore-on-boot options). Saving the MQTT page only re-applies MQTT and no longer reconnects Wi-Fi.
+
+### 1.8.46
+
+- Devices & outputs: selecting a GPIO in any Top/Bottom Button select now clears (sets to none) every other visible select that had the same GPIO. Number of outputs is now a select box, and it and the pulse/pause inputs are narrow (10% width).
+
+### 1.8.45
+
+- Saving Devices & outputs no longer reapplies Wi-Fi/MQTT/OTA settings (which dropped the station connection and forced an MQTT reconnect); it now only persists the config and re-applies the output pins.
+
+### 1.8.44
+
+- Fixed the Diagnostics & OTA and All Outputs pages rendering without the header, navigation and shared styles/buttons (the page-start HTML was built but never sent).
+
+### 1.8.43
+
+- Devices & outputs: the Top Button column now uses a single `topPin_N` select for every DUT Type. For Vibrant rows it is the output GPIO (saved as `pin`); for Gen3/Gen4 rows it is the top button GPIO. The separate `pin_N` field was removed; Bottom Button is shown only for Gen3/Gen4.
+
+### 1.8.42
+
+- Devices & outputs: bulk buttons now read "First Manufacturer/Model/DUT Type/Name for all", the name-sequence hint sits on its own line, and the separate **Control4 Output** column is gone. Vibrant rows pick their single output GPIO in the **Top Button** column; Gen3/Gen4 rows use Top Button and Bottom Button.
+
+### 1.8.41
+
+- Debug aids for Gen3/Gen4 buttons: with debug logging enabled each button action logs the GPIO and pad level per stage. Authenticated `POST /pintest` (`pin=<gpio>&ms=<50-5000>`) drives one GPIO LOW for that time from `loop()` for hardware checks.
+
+### 1.8.40
+
+- Gen3/Gen4 button pulses are now timed by a hardware-timer (`os_timer`) instead of being polled from `loop()`, so web/MQTT handling no longer stretches or varies pulse lengths. Pulse (press) duration and pause (release gap) are configurable on **Devices & outputs** (default 200 ms each, 20-5000 ms) and apply to every Gen3/Gen4 command, including the first-press delay. Leave Mesh and Factory Reset run Top x N, Bottom x M, Top x N. With debug logging enabled, the measured min/max pulse and pause times are logged after each button action.
+
+### 1.8.39
+
+- Fixed MQTT reconnect loops / slow web UI with low heap: with Query and Passive Discovery off, incoming `rsp` messages (including this device's own ~1.7 KB hello/list responses echoed back by the broker on its instance topic) are now discarded before any allocation instead of being copied and parsed.
+
+### 1.8.38
+
+- Simplified Devices & outputs: for DUT Type Vibrant the row uses the **Control4 Output** GPIO; for Gen3/Gen4 that field is hidden and the row shows **Top Button** and **Bottom Button** GPIO selects (same GPIO list as Control4 Output). Top/Bottom are now GPIOs owned by the row, not references to other output rows, so every Gen3/Gen4 row acts only on its own buttons (Toggle alternates Top/Bottom, Leave Mesh/Factory Reset use both). Duplicate-GPIO checking covers only the GPIOs the row's DUT Type uses. Existing configs migrate the old Top/Bottom output references to the referenced row's GPIO. Config keys are now `topPin`/`bottomPin`.
+
+### 1.8.37
+
+- Gen3/Gen4 rows now act on the button they represent: if a row's own output is its configured Bottom output, Toggle presses the Bottom button, and Leave Mesh / Factory Reset start their top/bottom sequence with the Bottom button (Top first otherwise). Rows that are neither (or both) keep the 1.8.36 alternating Top/Bottom toggle.
+
+### 1.8.36
+
+- Gen3/Gen4 Toggle now alternates between the configured Top button (turn on) and Bottom button (turn off), tracking the DUT state from the last top/bottom press (assumed off after boot), instead of only ever pressing Top. Leave Mesh and Factory Reset continue to use both the configured Top and Bottom buttons.
+
+### 1.8.35
+
+- DUT Model auto-fill now strips the "Control4 " prefix, so it becomes `Vibrant`, `Gen3` or `Gen4`. When a Top/Bottom button mapping copies the DUT Type to the target output, that output's DUT Model is updated the same way.
+
+### 1.8.34
+
+- Reduced heap-exhaustion reboots: the `s1/c4/stickserver/v1/#` wildcard subscription (all peers' hello/list traffic) is now only made when Query or Passive Discovery is enabled; otherwise the device subscribes to the root topic and its own instance topic only. Incoming MQTT messages are dropped before allocation when the largest free heap block is too small, and the "dropped message" warning is rate-limited to once per 5 s (it previously flooded the serial log). Changing MQTT/Stickserver settings reconnects and re-subscribes.
+
+### 1.8.33
+
+- Devices & outputs page: changing a row's DUT Type now also sets that row's DUT Model field to the selected type name (also applied by "Use first DUT Type for all"). The field remains editable afterwards. Debug output is logged to the browser console.
+
+### 1.8.32
+
+- Changed the default station SSID from `Z-Wave Automation` to `EMCOMM Automation`. Existing saved configs keep their stored SSID.
+
+### 1.8.31
+
+- Applied the 1.8.30 streaming fix to the rest of the web UI: the Main output control, Settings (network, diagnostics, index), and All Outputs pages now send their large static headers/scripts straight from flash in small chunks (new `writeChunk(F(...))` flash overload and `writeChunkP()`), instead of building them in heap `String`s that could fail silently under fragmentation.
+
+### 1.8.30
+
+- Fixed the Devices & outputs page intermittently rendering as bare fields without the form header, bulk-action buttons, and table. The ~7 KB page script was concatenated into a heap `String`, and under heap fragmentation the allocation failure silently dropped the following HTML. PROGMEM scripts (page script and `/injected.js` helper) are now streamed from flash in 256-byte stack-buffered chunks.
+
+### 1.8.29
+
+- Home page: Actions buttons stay enabled when an output is reserved from the GUI (owner `GUI`). Outputs reserved by another owner (e.g. stickserver/MQTT) keep their Actions buttons disabled, as before.
+
+### 1.8.28
+
+- Home page: Gen3/Gen4 rows no longer show separate Top button/Bottom button actions; they show a single **Toggle** button (presses the top button, same as the `toggle` command). The `button_top`/`button_bottom` commands remain available via the API/MQTT.
+
+### 1.8.27
+
+- Added a dynamically generated `GET /injected.js` (auth required) containing `OUTPUT_COUNT`, the DUT Type list, per-output DUT Type/top/bottom data for outputs 1..N, and `populateOutputs()`. The Devices page now fills the DUT Type and top/bottom selects from it instead of emitting N×N `<option>` tags server-side, reducing page size and heap use. Generation is logged when verbose debug logging is enabled in Diagnostics & OTA.
+
+### 1.8.26
+
+- Renamed the `DUT_Type` label to `DUT Type`.
+- Changing a row's top or bottom output now copies that row's DUT Type, top output, and bottom output to the selected output row (replaces the 1.8.25 reciprocal-only update).
+
+### 1.8.25
+
+- Renamed the device type selector column and bulk-copy label to `DUT_Type`.
+- Enabled top/bottom mapping selectors only for Gen3/Gen4 and added reciprocal top/bottom selection updates. Disabled rows retain their mappings on save, including reciprocal updates. Existing JSON field names and model IDs are unchanged.
+- Mapping-save debug details use the existing Diagnostics & OTA verbose logging checkbox.
+
+### 1.8.24
+
+- Button action forms submit commands as hidden inputs so the main page's asynchronous form handler includes them. Action status reports remaining button presses as well as bulb power cycles.
+- Applying settings releases configured button contacts when idle, including when converting a previously powered bulb output to a button model.
+
+### 1.8.23
+
+- Added an extensible `DeviceModels.h/.cpp` registry. Control4 Vibrant retains its existing power-on/off, leave-mesh, reset, and reboot behavior; identify/join powers it on.
+- Control4 Gen3 and Gen4 currently share non-blocking button functions: identify/join presses top 4 times; leave mesh presses top 13, bottom 4, top 13; factory reset presses top 9, bottom 4, top 9; reboot presses top 15 times. Each press and release lasts 150 ms, with contacts released for 800 ms before starting. Actions end and cancel with contacts released.
+- For button models, power-on, toggle, and `button_top` press top once; power-off and `button_bottom` press bottom once. These commands simulate button presses, not measured lamp state. The displayed ON/OFF value is the relay contact state, not the light's actual state. Identify/top/bottom buttons are available on the main page.
+- JSON device entries now store numeric `deviceModel` (`0` = Vibrant, `1` = Gen3, `2` = Gen4), and zero-based `topOutput`/`bottomOutput` (`-1` = none). Existing configs and factory defaults select Vibrant. Invalid stored model IDs fall back to Vibrant; invalid stored mappings become unassigned. Backup/export/import preserves these fields.
+- Mixed-model bulk actions run sequentially using each device's model. Rows referenced as another device's button contacts are skipped as standalone bulk targets. All-Vibrant leave/reset retains simultaneous operation. Missing, inactive, or reserved secondary outputs reject the button action; a bulk action logs and skips invalid mappings.
+- Button contacts start released even when output-state restoration is enabled. Output configuration changes are rejected while an action runs; importing/resetting config cancels it first. Model/command and press-stage debug logs use the existing GUI-controlled verbose logging setting on Diagnostics & OTA.
+- To add a model, assign a stable numeric ID and add a registry entry with the common function interface. Existing state-machine helpers can be reused; no HTTP dispatch changes are needed.
 
 ### 1.8.22
 
@@ -408,7 +574,7 @@ Consolidated release note covering all work since the original 1.8.0 (formerly v
 
 ## MQTT
 
-When MQTT is enabled in **Network, Wi-Fi & MQTT**, the firmware:
+When MQTT is enabled in **MQTT**, the firmware:
 
 - Connects to the configured broker on boot and reconnects automatically every 15 seconds if the connection is lost.
 - Publishes the retained state of each output to `vibrant/<hostname>/output/<N>/state` (`1` = ON, `0` = OFF) whenever a toggle is applied (from the web UI or MQTT).

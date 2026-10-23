@@ -1,9 +1,14 @@
 #pragma once
 #include <Arduino.h>
+#include "DeviceModels.h"
 namespace vibrant {
 enum : uint8_t { MAX_DEVICES = 16 };
 struct DeviceEntry {
   String manufacturer, model, name;
+  DeviceModelType deviceModel = MODEL_VIBRANT;
+  // GPIO numbers driving a Gen3/Gen4 DUT's top/bottom buttons; -1 means
+  // unassigned. Unused (-1) for Vibrant rows, which use `pin` instead.
+  int8_t topPin = -1, bottomPin = -1;
   int8_t pin;
   bool state;
   // Output reservation, persisted alongside output state so it can
@@ -20,6 +25,9 @@ struct DeviceConfig {
   String hostname, staSsid, staPassword, apPassword;
   float wifiPower;
   uint8_t numOutputs;
+  // Gen3/Gen4 button timing: how long each press is held and the release
+  // gap between presses (ms).
+  uint16_t buttonPulseMs, buttonPauseMs;
   DeviceEntry devices[MAX_DEVICES];
   bool mqttEnabled;
   String mqttHost;

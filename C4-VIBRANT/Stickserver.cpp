@@ -1145,7 +1145,7 @@ void handleStickserverMessage(const String &topicStr,
     }
     String mappedCmd;
     if (cmd == F("join")) {
-      mappedCmd = F("power_on");
+      mappedCmd = F("join");
     } else {
       mappedCmd = F("reboot");
     }
@@ -1163,7 +1163,8 @@ void handleStickserverMessage(const String &topicStr,
 
   // Commands routed by euid: power_on, power_off, factory_reset
   if (cmd == F("power_on") || cmd == F("power_off") ||
-      cmd == F("factory_reset")) {
+      cmd == F("factory_reset") || cmd == F("identify") ||
+      cmd == F("toggle") || cmd == F("button_top") || cmd == F("button_bottom")) {
     String euid;
     int idx = resolveRequestedEuid(request["euid"], euid);
     if (idx == -2) {

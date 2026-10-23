@@ -6,6 +6,7 @@ extern unsigned long bootStartMillis;
 const PinMapping *findPinMapping(int);
 String pinLabel(int8_t);
 bool isValidOutputPin(int8_t);
+void setButtonPin(int8_t, bool);
 void logDeviceSummary();
 void applyOutputsNow();
 bool outputActivationDelayElapsed();

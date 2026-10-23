@@ -29,6 +29,8 @@ void registerWebRoutes() {
   server.on("/partial", HTTP_GET, handleHomePartial);
   server.on("/toggle", HTTP_POST, handleToggle);
   server.on("/action", HTTP_POST, handleAction);
+  server.on("/update", HTTP_GET, handleLegacyUpdate);
+  server.on("/c4get_gpio.txt", HTTP_GET, handleLegacyGpio);
   server.on("/action/cancel", HTTP_POST, handleCancelAction);
   server.on("/action/status", HTTP_GET, handleActionStatus);
   server.on("/action/all-on", HTTP_POST, handleAllOn);
@@ -38,6 +40,8 @@ void registerWebRoutes() {
   server.on("/settings", HTTP_GET, handleSettingsGet);
   server.on("/settings/network", HTTP_GET, handleNetworkSettingsGet);
   server.on("/settings/network", HTTP_POST, handleNetworkSettingsPost);
+  server.on("/settings/mqtt", HTTP_GET, handleMqttSettingsGet);
+  server.on("/settings/mqtt", HTTP_POST, handleMqttSettingsPost);
   server.on("/settings/devices", HTTP_GET, handleDeviceSettingsGet);
   server.on("/settings/devices", HTTP_POST, handleDeviceSettingsPost);
   server.on("/settings/diagnostics", HTTP_GET, handleDiagnosticsGet);
@@ -47,6 +51,7 @@ void registerWebRoutes() {
   server.on("/device/reboot", HTTP_POST, handleRebootDevice);
   server.on("/reservation/release", HTTP_POST, handleReleaseReservation);
   server.on("/reservation/reserve", HTTP_POST, handleGuiReserveOutput);
+  server.on("/injected.js", HTTP_GET, handleInjectedJs);
   server.on("/fleet", HTTP_GET, handleStickserverFleetGet);
   server.on("/fleet/data", HTTP_GET, handleStickserverFleetData);
   server.on("/fleet/toggle", HTTP_POST, handleFleetOutputToggle);
@@ -135,7 +140,7 @@ static String pageHeaderHtml() {
   html += formatUptimeHHMMSS(millis() / 1000UL);
   html += F("</span></p></div><script>(function(){var s=");
   html += String(millis() / 1000UL);
-  html += F(";function pad(n){return (n<10?'0':'')+n;}function "
+  html += F(";window.setUptime=function(v){if(Math.abs(v-s)>2)s=v;};function pad(n){return (n<10?'0':'')+n;}function "
             "fmt(t){var h=Math.floor(t/3600);var "
             "m=Math.floor((t%3600)/60);var sec=t%60;return "
             "pad(h)+':'+pad(m)+':'+pad(sec);}function tick(){var "
@@ -244,6 +249,27 @@ void writeChunk(const String &piece) {
   }
 }
 
+// Streams a PROGMEM string in small stack-buffered chunks so large static
+// scripts never need a heap String (a failed allocation silently dropped
+// the following page sections).
+void writeChunkP(PGM_P data) {
+  char buf[256];
+  size_t total = strlen_P(data);
+  for (size_t off = 0; off < total; off += sizeof(buf) - 1) {
+    size_t n = total - off < sizeof(buf) - 1 ? total - off : sizeof(buf) - 1;
+    memcpy_P(buf, data + off, n);
+    buf[n] = 0;
+    if (gChunkedActive)
+      writeRaw(buf, n);
+    else
+      gChunkedFallback += buf;
+  }
+}
+
+void writeChunk(const __FlashStringHelper *piece) {
+  writeChunkP(reinterpret_cast<PGM_P>(piece));
+}
+
 void endChunkedHtml() {
   if (gChunkedActive) {
     server.chunkedResponseFinalize();
@@ -262,12 +288,6 @@ void sendChunkedHtml(int code, const String &html) {
   beginChunkedHtml(code);
   writeChunk(html);
   endChunkedHtml();
-}
-
-String pinOption(int selectedPin, const PinMapping &mapping) {
-  String selected = (selectedPin == mapping.gpio) ? " selected" : "";
-  return "<option value=\"" + String(mapping.gpio) + "\"" + selected + ">" +
-         String(mapping.label) + "</option>";
 }
 
 bool parsePinValue(const String &raw, int &pin) {
@@ -332,7 +352,9 @@ static void renderHomeContent() {
 
   // Action-status banner rendered server-side on every refresh (full page
   // load or partial poll) so it always reflects current state.
-  String piece = "<div id='action-status'>";
+  // Hidden uptime so every /partial refresh can resync the header clock.
+  String piece = "<input type='hidden' id='uptime-seconds' value='" +
+                 String(millis() / 1000UL) + "'><div id='action-status'>";
   if (actionRunning) {
     String phaseDetail = isInCyclePhase()
                              ? String(F(" (cycles remaining: ")) +
@@ -389,17 +411,39 @@ static void renderHomeContent() {
   // never needs to be held in RAM at once.
   for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
     const DeviceEntry &d = cfg.devices[i];
-    bool mapped = isValidOutputPin(d.pin);
+    bool mapped = isManagedOutput(i);
+    if (!mapped)
+      continue;
     bool thisActionRunning = actionOwnsOutput(i);
     bool otherActionRunning = actionRunning && !thisActionRunning;
     bool reserved = outputReservations[i].reserved;
+    // Reservations made from the GUI do not lock the Actions buttons; only
+    // reservations held by another owner (e.g. stickserver) do.
+    bool actionsLocked = reserved && outputReservations[i].owner != "GUI";
 
     piece = "<tr><td>" + String(i + 1) + "</td><td>" +
             htmlEscape(d.manufacturer) + "</td><td>" + htmlEscape(d.model) +
             "</td><td>" + htmlEscape(d.name) + "</td><td>";
 
-    if (mapped) {
-      const char *toggleDisabledAttr = reserved ? " disabled" : "";
+    if (mapped && getDeviceModel(d.deviceModel).usesButtons) {
+      // Gen3/Gen4 have no level output; the Toggle action takes the place of
+      // the ON/OFF button.
+      if (thisActionRunning) {
+        piece += F("<em>Running...</em>");
+      } else {
+        piece += "<form method='post' action='/action' "
+                 "style='display:inline;margin:0;'>"
+                 "<input type='hidden' name='idx' value='" +
+                 String(i) +
+                 "'><input type='hidden' name='cmd' value='toggle'>"
+                 "<button type='submit'" +
+                 String((otherActionRunning || actionsLocked) ? " disabled"
+                                                              : "") +
+                 ">Toggle</button></form>";
+      }
+    } else if (mapped) {
+      const char *toggleDisabledAttr =
+          reserved ? " disabled" : "";
       piece += "<form method='post' action='/toggle' style='margin:0;'>"
                "<input type='hidden' name='idx' value='" +
                String(i) +
@@ -451,7 +495,26 @@ static void renderHomeContent() {
         piece += F("<em>Running...</em>");
       } else {
         const char *disabledAttr =
-            (otherActionRunning || reserved) ? " disabled" : "";
+            (otherActionRunning || actionsLocked) ? " disabled" : "";
+        if (getDeviceModel(d.deviceModel).usesButtons) {
+          writeChunk(piece);
+          piece = "";
+          writeChunk("<form method='post' action='/action' "
+                     "style='display:inline;margin:0;'>"
+                     "<input type='hidden' name='idx' value='" + String(i) +
+                     "'><input type='hidden' name='cmd' value='identify'>"
+                     "<button type='submit'" + disabledAttr +
+                     ">Join</button></form>");
+          static const char *const extraCmds[][2] = {{"channel", "Channel"},
+                                                    {"reboot", "Reboot"}};
+          for (const auto &c : extraCmds)
+            writeChunk("<form method='post' action='/action' "
+                       "style='display:inline;margin:0;'>"
+                       "<input type='hidden' name='idx' value='" + String(i) +
+                       "'><input type='hidden' name='cmd' value='" + c[0] +
+                       "'><button type='submit'" + disabledAttr + ">" + c[1] +
+                       "</button></form>");
+        }
         piece += "<form method='post' action='/action' "
                  "style='display:inline;margin:0;'>"
                  "<input type='hidden' name='idx' value='" +
@@ -527,6 +590,8 @@ void handleHome() {
       "fetch('/partial').then(function(r){return r.text();})"
       ".then(function(html){"
       "document.getElementById('home-content').innerHTML=html;"
+      "var u=document.getElementById('uptime-seconds');"
+      "if(u&&window.setUptime)window.setUptime(parseInt(u.value,10)||0);"
       "}).catch(function(){})"
       ".then(function(){homeInFlightCount--;});"
       "}"
@@ -609,27 +674,25 @@ void handleToggle() {
   }
 
   DeviceEntry &d = cfg.devices[idx];
-  if (!isValidOutputPin(d.pin)) {
+  if (!isManagedOutput(static_cast<uint8_t>(idx))) {
     logError(String(F("Toggle request for unmapped output: ")) + d.name);
     server.sendHeader("Location", "/");
     server.send(303);
     return;
   }
 
-  // Abort any running sequence action on this output
-  if (actionOwnsOutput(static_cast<uint8_t>(idx))) {
-    cancelAction();
+  if (!handleLoadAction(static_cast<uint8_t>(idx),
+                        server.arg("state") == "1" ? F("power_on")
+                                                   : F("power_off"))) {
+    server.send(409, "text/plain", "Another action is already running");
+    return;
   }
-
-  setOutputDirect(static_cast<uint8_t>(idx), server.arg("state") == "1");
   if (!outputsActivated)
     applyOutputsWhenSafe();
-  mqttPublishOutputState(static_cast<uint8_t>(idx));
   Serial.print(F("[INFO] Output toggled: "));
   Serial.print(d.name);
   Serial.print(F(" -> "));
   Serial.println(d.state ? F("ON") : F("OFF"));
-  maybePersistOutputState();
   server.sendHeader("Location", "/");
   server.send(303);
 }
@@ -658,6 +721,75 @@ void handleAction() {
   }
   server.sendHeader("Location", "/");
   server.send(303);
+}
+
+// C4-NodeMCU compatible API (unauthenticated, like the original).
+void handleLegacyUpdate() {
+  if (!server.hasArg("relay")) {
+    server.sendHeader("Location", "/");
+    server.send(302);
+    return;
+  }
+  int idx = -1;
+  if (!parseIndexValue(server.arg("relay"), idx) || idx < 0 ||
+      idx >= cfg.numOutputs) {
+    DBG("[LEGACY] invalid relay '%s'", server.arg("relay").c_str());
+    server.send(400, "text/plain", "Invalid output index");
+    return;
+  }
+  String cmd;
+  if (server.hasArg("state")) {
+    if (server.arg("state") == "1")
+      cmd = F("power_on");
+    else if (server.arg("state") == "0")
+      cmd = F("power_off");
+  } else if (server.hasArg("function")) {
+    const String f = server.arg("function");
+    if (f == F("toggle"))
+      cmd = F("toggle");
+    else if (f == F("control4_identify"))
+      cmd = F("identify");
+    else if (f == F("control4_leave_mesh") || f == F("control4_puck_leave_mesh"))
+      cmd = F("leave_mesh");
+    else if (f == F("control4_factory_reset"))
+      cmd = F("factory_reset");
+    else if (f == F("control4_channel"))
+      cmd = F("channel");
+    else if (f == F("control4_reboot"))
+      cmd = F("reboot");
+  }
+  if (!cmd.length()) {
+    DBG("[LEGACY] relay=%d unsupported request", idx);
+    server.sendHeader("Location", "/");
+    server.send(302);
+    return;
+  }
+  bool ok = handleLoadAction(static_cast<uint8_t>(idx), cmd);
+  DBG("[LEGACY] relay=%d cmd=%s -> %s", idx, cmd.c_str(), ok ? "ok" : "failed");
+  if (!ok) {
+    server.send(isActionRunning() ? 409 : 400, "text/plain",
+                isActionRunning() ? "Another action is already running"
+                                  : "Unknown command or invalid output");
+    return;
+  }
+  if (!outputsActivated)
+    applyOutputsWhenSafe();
+  server.send(200, "text/plain", "OK");
+}
+
+void handleLegacyGpio() {
+  String out = F("{\n");
+  for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
+    out += F("   \"port_");
+    out += String(i);
+    out += F("\": ");
+    out += !isManagedOutput(i) ? F("-1") : (cfg.devices[i].state ? F("true") : F("false"));
+    out += F(",\n");
+  }
+  out += F("   \"uptime\": ");
+  out += String(millis() / 1000);
+  out += F("\n}");
+  server.send(200, "application/json", out);
 }
 
 void handleCancelAction() {
@@ -695,17 +827,7 @@ void handleAllOn() {
     return;
   }
   logStatus(F("Turn ON all outputs requested."));
-  bool first = true;
-  for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
-    if (!isManagedOutput(i))
-      continue;
-    if (!first)
-      delay(50);
-    setOutputDirect(i, true);
-    mqttPublishOutputState(i);
-    first = false;
-  }
-  maybePersistOutputState();
+  startModelActionAll("power_on");
   server.sendHeader("Location", "/");
   server.send(303);
 }
@@ -718,17 +840,7 @@ void handleAllOff() {
     return;
   }
   logStatus(F("Turn OFF all outputs requested."));
-  bool first = true;
-  for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
-    if (!isManagedOutput(i))
-      continue;
-    if (!first)
-      delay(50);
-    setOutputDirect(i, false);
-    mqttPublishOutputState(i);
-    first = false;
-  }
-  maybePersistOutputState();
+  startModelActionAll("power_off");
   server.sendHeader("Location", "/");
   server.send(303);
 }
@@ -742,7 +854,7 @@ void handleFactoryResetAll() {
   }
   logStatus(F("Factory reset ALL outputs requested."));
   if (managedOutputCount())
-    startSequence(PROFILE_FACTORY_RESET, 0, true);
+    startModelActionAll("factory_reset");
   server.sendHeader("Location", "/");
   server.send(303);
 }
@@ -756,21 +868,22 @@ void handleLeaveMeshAll() {
   }
   logStatus(F("Leave mesh ALL outputs requested."));
   if (managedOutputCount())
-    startSequence(PROFILE_LEAVE_MESH, 0, true);
+    startModelActionAll("leave_mesh");
   server.sendHeader("Location", "/");
   server.send(303);
 }
 
 static String pageNavigation(const char *activePage) {
   String html = F("<nav class='settings-nav' aria-label='Page navigation'>");
-  const char *paths[] = {"/", "/settings/network", "/settings/devices",
-                         "/settings/diagnostics", "/fleet"};
-  const char *labels[] = {"Main output control", "Network, Wi-Fi & MQTT",
+  const char *paths[] = {"/", "/settings/network", "/settings/mqtt",
+                         "/settings/devices", "/settings/diagnostics",
+                         "/fleet"};
+  const char *labels[] = {"Main output control", "Network & Wi-Fi", "MQTT",
                           "Devices & outputs", "Diagnostics & OTA",
                           "All Outputs"};
-  const char *pages[] = {"home", "network", "devices", "diagnostics",
+  const char *pages[] = {"home", "network", "mqtt", "devices", "diagnostics",
                          "fleet"};
-  for (uint8_t i = 0; i < 5; ++i) {
+  for (uint8_t i = 0; i < 6; ++i) {
     html += "<a class='nav-btn";
     if (String(activePage) == pages[i])
       html += " current";
@@ -783,21 +896,73 @@ static String pageNavigation(const char *activePage) {
   return html;
 }
 
-static String settingsPageStart(const char *activePage) {
-  String html = FPSTR(SETTINGS_PAGE_HEADER);
-  html += "</head><body>";
-  html += pageHeaderHtml();
-  html += pageNavigation(activePage);
+// Streams the shared settings page header (styles, title block, uptime
+// script, navigation, password warning) as many tiny writes. Building it as
+// one String could fail to allocate under heap fragmentation and silently
+// produce a page with no header or navigation.
+static void writeSettingsPageStart(const char *activePage) {
+  writeChunkP(SETTINGS_PAGE_HEADER);
+  writeChunk(F("</head><body><div class='page-header'><h1>"));
+  writeChunk(defaultHostnameFromMac(cfg.mac));
+  writeChunk(F(" Output Control</h1><p>FW: "));
+  writeChunk(String(SOFTWARE_VERSION));
+  writeChunk(F(", Uptime: <span id='uptime-value'>"));
+  writeChunk(formatUptimeHHMMSS(millis() / 1000UL));
+  writeChunk(F("</span></p></div><script>(function(){var s="));
+  writeChunk(String(millis() / 1000UL));
+  writeChunk(F(";window.setUptime=function(v){if(Math.abs(v-s)>2)s=v;};function pad(n){return (n<10?'0':'')+n;}function "
+               "fmt(t){var h=Math.floor(t/3600);var "
+               "m=Math.floor((t%3600)/60);var sec=t%60;return "
+               "pad(h)+':'+pad(m)+':'+pad(sec);}function tick(){var "
+               "el=document.getElementById('uptime-value');if(el)"
+               "el.textContent=fmt(s);s++;}tick();setInterval(tick,1000);})();"
+               "</script>"));
+  writeChunk(F("<nav class='settings-nav' aria-label='Page navigation'>"));
+  static const char *const kPaths[] = {"/", "/settings/network",
+                                       "/settings/mqtt", "/settings/devices",
+                                       "/settings/diagnostics", "/fleet"};
+  static const char *const kLabels[] = {"Main output control",
+                                        "Network &amp; Wi-Fi", "MQTT",
+                                        "Devices &amp; outputs",
+                                        "Diagnostics &amp; OTA", "All Outputs"};
+  static const char *const kPages[] = {"home", "network", "mqtt", "devices",
+                                       "diagnostics", "fleet"};
+  for (uint8_t i = 0; i < 6; ++i) {
+    bool current = String(activePage) == kPages[i];
+    writeChunk(F("<a class='nav-btn"));
+    if (current)
+      writeChunk(F(" current"));
+    writeChunk(F("' href='"));
+    writeChunk(String(kPaths[i]));
+    writeChunk(F("'"));
+    if (current)
+      writeChunk(F(" aria-current='page'"));
+    writeChunk(F(">"));
+    writeChunk(String(kLabels[i]));
+    writeChunk(F("</a>"));
+  }
+  writeChunk(F("</nav>"));
   if (usingFactoryPassword())
-    html += passwordWarningHtml();
-  return html;
+    writeChunk(passwordWarningHtml());
 }
 
-static void finishSettingsSave(const char *logMessage, const char *redirect) {
+enum class SaveScope : uint8_t { All, Outputs, Mqtt };
+
+static void finishSettingsSave(const char *logMessage, const char *redirect,
+                               SaveScope scope = SaveScope::All) {
   logStatus(logMessage);
   if (!saveConfig())
     restartDevice(F("Failed to persist updated settings."));
-  applyRuntimeSettings();
+  // Device/output edits must not drop Wi-Fi or MQTT, and MQTT edits must not
+  // touch the Wi-Fi connection.
+  if (scope == SaveScope::Outputs) {
+    refreshOutputsForCurrentBootPhase();
+  } else if (scope == SaveScope::Mqtt) {
+    applyMqttSettings();
+    mqttEnsureConnected();
+  } else {
+    applyRuntimeSettings();
+  }
   server.sendHeader("Location", redirect);
   server.send(303);
 }
@@ -816,11 +981,11 @@ void handleSettingsGet() {
   // full before sending) to keep peak heap usage low on this memory
   // constrained device; see beginChunkedHtml() for why that matters.
   beginChunkedHtml(200);
-  writeChunk(settingsPageStart(""));
+  writeSettingsPageStart("");
   writeChunk(F("<p class='page-intro'>Choose a settings page to configure the "
                "network, outputs, or diagnostics and firmware updates.</p>"
-               "<ul><li><a href='/settings/network'>Network, Wi-Fi &amp; "
-               "MQTT</a></li><li><a href='/settings/devices'>Devices &amp; "
+               "<ul><li><a href='/settings/network'>Network &amp; "
+               "Wi-Fi</a></li><li><a href='/settings/mqtt'>MQTT</a></li><li><a href='/settings/devices'>Devices &amp; "
                "outputs</a></li><li><a href='/settings/diagnostics'>Diagnostics "
                "&amp; OTA</a></li></ul></body></html>"));
   endChunkedHtml();
@@ -833,10 +998,10 @@ void handleNetworkSettingsGet() {
   // built in full before sending) to keep peak heap usage low on this
   // memory constrained device; see beginChunkedHtml() for why that matters.
   beginChunkedHtml(200);
-  writeChunk(settingsPageStart("network"));
+  writeSettingsPageStart("network");
   writeChunk(
-      "<p class='page-intro'>Network and broker changes are saved without "
-      "altering device or diagnostics settings.</p>"
+      "<p class='page-intro'>Network changes are saved without altering MQTT, "
+      "device or diagnostics settings.</p>"
       "<form method='post' action='/settings/network'>"
       "<fieldset><legend>Station network</legend>"
       "<label>Station SSID <input name='staSsid' value='" +
@@ -869,24 +1034,59 @@ void handleNetworkSettingsGet() {
       "type='number' min='5' max='20.5' step='0.1' value='" +
       String(cfg.wifiPower, 1) +
       "'></label></fieldset>");
-  writeChunk(
-      "<fieldset><legend>MQTT</legend>"
-      "<label><input type='checkbox' name='mqttEnabled' value='1'" +
-      String(cfg.mqttEnabled ? " checked" : "") +
-      "> Enable MQTT</label>"
-      "<label for='mqttHost'>MQTT server host</label>"
-      "<input id='mqttHost' name='mqttHost' value='" +
-      htmlEscape(cfg.mqttHost) +
-      "' placeholder='e.g. 192.168.1.6'>"
-      "<label for='mqttPort'>MQTT port</label>"
-      "<input id='mqttPort' name='mqttPort' type='number' min='1' max='65535' "
-      "value='" +
-      String(cfg.mqttPort) +
-      "'>"
-      "<label for='mqttUser'>MQTT user (optional)</label>"
-      "<input id='mqttUser' name='mqttUser' value='" +
-      htmlEscape(cfg.mqttUser) +
-      "'>"
+  writeChunk(F("<button type='submit'>Save network settings</button></form>"
+               "</body></html>"));
+  endChunkedHtml();
+}
+
+// Streams a labelled checkbox in tiny pieces so no large String is needed
+// while heap is fragmented.
+static void writeCheckbox(const __FlashStringHelper *name, bool checked,
+                          const __FlashStringHelper *label) {
+  writeChunk(F("<label><input type='checkbox' name='"));
+  writeChunk(name);
+  writeChunk(checked ? F("' value='1' checked> ") : F("' value='1'> "));
+  writeChunk(label);
+  writeChunk(F("</label>"));
+}
+
+static void writeTextField(const __FlashStringHelper *label,
+                           const __FlashStringHelper *name, const char *type,
+                           const String &value, const __FlashStringHelper *extra) {
+  writeChunk(F("<label for='"));
+  writeChunk(name);
+  writeChunk(F("'>"));
+  writeChunk(label);
+  writeChunk(F("</label><input id='"));
+  writeChunk(name);
+  writeChunk(F("' name='"));
+  writeChunk(name);
+  writeChunk(F("' type='"));
+  writeChunk(String(type));
+  writeChunk(F("' value='"));
+  writeChunk(htmlEscape(value));
+  writeChunk(F("' "));
+  writeChunk(extra);
+  writeChunk(F(">"));
+}
+
+void handleMqttSettingsGet() {
+  if (!ensureAuthorized())
+    return;
+  beginChunkedHtml(200);
+  writeSettingsPageStart("mqtt");
+  writeChunk(F("<p class='page-intro'>MQTT changes are saved and applied "
+               "without reconnecting Wi-Fi.</p>"
+               "<form method='post' action='/settings/mqtt'>"
+               "<fieldset><legend>MQTT</legend>"));
+  writeCheckbox(F("mqttEnabled"), cfg.mqttEnabled, F("Enable MQTT"));
+  writeTextField(F("MQTT server host"), F("mqttHost"), "text", cfg.mqttHost,
+                 F("placeholder='e.g. 192.168.1.6'"));
+  writeTextField(F("MQTT port"), F("mqttPort"), "number", String(cfg.mqttPort),
+                 F("min='1' max='65535'"));
+  writeTextField(F("MQTT user (optional)"), F("mqttUser"), "text", cfg.mqttUser,
+                 F(""));
+  writeChunk(F(
       "<label for='mqttPassword'>MQTT password (optional)</label>"
       "<input id='mqttPassword' name='mqttPassword' type='password' value='' "
       "placeholder='Leave empty to keep current'"
@@ -895,43 +1095,32 @@ void handleNetworkSettingsGet() {
       "<label><input type='checkbox' id='mqttPasswordClear' "
       "name='mqttPasswordClear' value='1'"
       " onchange=\"if(this.checked)document.getElementById('mqttPassword')."
-      "value='';\"> Clear MQTT password (remove broker authentication)</label>");
-  writeChunk(
-      "<label><input type='checkbox' name='stickserverRespondEnabled' "
-      "value='1'" +
-      String(cfg.stickserverRespondEnabled ? " checked" : "") +
-      "> Respond to stickserver hello/list requests (lets peers discover "
-      "and control this device)</label>"
-      "<label><input type='checkbox' name='stickserverQueryEnabled' "
-      "value='1'" +
-      String(cfg.stickserverQueryEnabled ? " checked" : "") +
-      "> Query for stickservers (broadcast hello/list requests to actively "
-      "discover other stickservers and their outputs)</label>"
-      "<label><input type='checkbox' "
-      "name='stickserverPassiveDiscoveryEnabled' value='1'" +
-      String(cfg.stickserverPassiveDiscoveryEnabled ? " checked" : "") +
-      "> Passively parse hello/list responses observed on the bus "
-      "(required for the All Outputs page)</label>"
-      "<label><input type='checkbox' name='restoreOutputStateOnBoot' "
-      "value='1'" +
-      String(cfg.restoreOutputStateOnBoot ? " checked" : "") +
-      "> Restore output ON/OFF state after boot/reboot (otherwise all "
-      "outputs always start OFF)</label>"
-      "<label><input type='checkbox' name='restoreReservationsOnBoot' "
-      "value='1'" +
-      String(cfg.restoreReservationsOnBoot ? " checked" : "") +
-      "> Restore output reservations after boot/reboot (otherwise all "
-      "reservations are cleared)</label>");
-  writeChunk(
-      "<p style='font-size:0.9em;color:#555;'>Device control is handled "
-      "exclusively via the Stickserver protocol, which subscribes to "
-      "<code>" +
-      htmlEscape(String(STICKSERVER_ROOT_TOPIC)) +
-      "</code> and replies on the device topic (hello / list / reserve / "
-      "release / status / join / leave / power_on / power_off / "
-      "factory_reset / reboot).</p></fieldset>"
-      "<button type='submit'>Save network settings</button></form>"
-      "</body></html>");
+      "value='';\"> Clear MQTT password (remove broker authentication)</label>"));
+  writeCheckbox(F("stickserverRespondEnabled"), cfg.stickserverRespondEnabled,
+                F("Respond to stickserver hello/list requests (lets peers "
+                  "discover and control this device)"));
+  writeCheckbox(F("stickserverQueryEnabled"), cfg.stickserverQueryEnabled,
+                F("Query for stickservers (broadcast hello/list requests to "
+                  "actively discover other stickservers and their outputs)"));
+  writeCheckbox(F("stickserverPassiveDiscoveryEnabled"),
+                cfg.stickserverPassiveDiscoveryEnabled,
+                F("Passively parse hello/list responses observed on the bus "
+                  "(required for the All Outputs page)"));
+  writeCheckbox(F("restoreOutputStateOnBoot"), cfg.restoreOutputStateOnBoot,
+                F("Restore output ON/OFF state after boot/reboot (otherwise "
+                  "all outputs always start OFF)"));
+  writeCheckbox(F("restoreReservationsOnBoot"), cfg.restoreReservationsOnBoot,
+                F("Restore output reservations after boot/reboot (otherwise "
+                  "all reservations are cleared)"));
+  writeChunk(F("<p style='font-size:0.9em;color:#555;'>Device control is "
+               "handled exclusively via the Stickserver protocol, which "
+               "subscribes to <code>"));
+  writeChunk(htmlEscape(String(STICKSERVER_ROOT_TOPIC)));
+  writeChunk(F("</code> and replies on the device topic (hello / list / "
+               "reserve / release / status / join / leave / power_on / "
+               "power_off / factory_reset / reboot).</p></fieldset>"
+               "<button type='submit'>Save MQTT settings</button></form>"
+               "</body></html>"));
   endChunkedHtml();
 }
 
@@ -939,9 +1128,7 @@ void handleNetworkSettingsPost() {
   if (!ensureAuthorized())
     return;
   if (!server.hasArg("staSsid") || !server.hasArg("mac") ||
-      !server.hasArg("hostname") || !server.hasArg("wifiPower") ||
-      !server.hasArg("mqttHost") || !server.hasArg("mqttPort") ||
-      !server.hasArg("mqttUser")) {
+      !server.hasArg("hostname") || !server.hasArg("wifiPower")) {
     logError(F("Network settings save rejected: required field missing."));
     server.send(400, "text/plain", "Missing required network setting");
     return;
@@ -1006,6 +1193,20 @@ void handleNetworkSettingsPost() {
   cfg.staPassword = stationPassword;
   cfg.apPassword = apPassword;
   cfg.wifiPower = constrain(parsedPower, MIN_WIFI_POWER, MAX_WIFI_POWER);
+  logSettingsDebug("network");
+  finishSettingsSave("Network settings updated from web UI.",
+                     "/settings/network");
+}
+
+void handleMqttSettingsPost() {
+  if (!ensureAuthorized())
+    return;
+  if (!server.hasArg("mqttHost") || !server.hasArg("mqttPort") ||
+      !server.hasArg("mqttUser")) {
+    logError(F("MQTT settings save rejected: required field missing."));
+    server.send(400, "text/plain", "Missing required MQTT setting");
+    return;
+  }
   cfg.mqttEnabled =
       server.hasArg("mqttEnabled") && server.arg("mqttEnabled") == "1";
   cfg.mqttHost = server.arg("mqttHost");
@@ -1048,43 +1249,93 @@ void handleNetworkSettingsPost() {
       server.hasArg("restoreReservationsOnBoot") &&
       server.arg("restoreReservationsOnBoot") == "1";
 
-  logSettingsDebug("network");
-  finishSettingsSave("Network settings updated from web UI.",
-                     "/settings/network");
+  logSettingsDebug("mqtt");
+  finishSettingsSave("MQTT settings updated from web UI.", "/settings/mqtt",
+                     SaveScope::Mqtt);
+}
+
+// Generated helper script: output count, DUT Type list and per-row DUT Type.
+void handleInjectedJs() {
+  if (!ensureAuthorized())
+    return;
+  beginChunkedHtml(200, "application/javascript");
+  String piece = "window.OUTPUT_COUNT=" + String(cfg.numOutputs) +
+                 ";window.DEVICE_TYPES=[";
+  for (size_t t = 0; t < DEVICE_MODEL_COUNT; ++t) {
+    if (t)
+      piece += ",";
+    piece += "{id:" + String(static_cast<int>(DEVICE_MODELS[t].type)) +
+             ",name:'" + DEVICE_MODELS[t].name + "'}";
+  }
+  piece += "];window.GPIO_PINS=[";
+  for (size_t p = 0; p < OUTPUT_PIN_MAPPING_COUNT; ++p) {
+    if (p)
+      piece += ",";
+    piece += "{gpio:" + String(OUTPUT_PIN_MAPPINGS[p].gpio) + ",label:'" +
+             OUTPUT_PIN_MAPPINGS[p].label + "'}";
+  }
+  piece += "];";
+  writeChunk(piece);
+  piece = "window.OUTPUT_DATA=[";
+  for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
+    const DeviceEntry &d = cfg.devices[i];
+    bool buttons = getDeviceModel(d.deviceModel).usesButtons;
+    if (i)
+      piece += ",";
+    piece += "{model:" + String(static_cast<int>(d.deviceModel)) +
+             ",top:" + String(buttons ? d.topPin : d.pin) +
+             ",bottom:" + String(d.bottomPin) + "}";
+    if (piece.length() > 400) {
+      writeChunk(piece);
+      piece = "";
+    }
+  }
+  piece += "];";
+  writeChunk(piece);
+  writeChunkP(INJECTED_JS_POPULATE);
+  endChunkedHtml();
 }
 
 void handleDeviceSettingsGet() {
   if (!ensureAuthorized())
     return;
   beginChunkedHtml(200);
-  String piece = settingsPageStart("devices");
-  piece += FPSTR(SETTINGS_PAGE_SCRIPT);
-  piece += "<p>Each active output must use a different GPIO. TX/RX disable "
-           "serial communication; GPIO0 (FLASH) and GPIO15 affect boot.</p>"
-           "<form id='device-form' method='post' action='/settings/devices'>"
-           "<label>Number of outputs (1 - 16) <input name='numOutputs' "
-           "type='number' min='1' max='16' step='1' value='" +
-           String(cfg.numOutputs) +
-           "'></label>"
-           "<div class='bulk-actions'><button type='button' "
-           "onclick='copyFirstManufacturerToAll()'>Use first Manufacturer for "
-           "all</button>"
-           "<button type='button' onclick='copyFirstModelToAll()'>Use first "
-           "Model for all</button>"
-           "<button type='button' onclick='copyFirstNameToAll()'>Use first "
-           "Name for all</button>"
-           "<button type='button' onclick='clearAllFieldsExceptOutput()'>"
-           "Clear all fields</button>"
-           "<button type='button' onclick='reverseGpioAssignments()'>Reverse "
-           "GPIO assignments</button>"
-           "<span>If the first Name contains #5, copy keeps the first row at "
-           "#5 and fills later rows as #6, #7, and so on.</span></div>"
-           "<table><tr><th>#</th><th>DUT Manufacturer</th><th>DUT Model</"
-           "th><th>DUT Name</th><th>Control output</th></tr>";
+  writeSettingsPageStart("devices");
+  String piece;
+  writeChunkP(SETTINGS_PAGE_SCRIPT);
+  piece = "<p>Each active output must use a different GPIO. TX/RX disable "
+          "serial communication; GPIO0 (FLASH) and GPIO15 affect boot.</p>"
+          "<form id='device-form' method='post' action='/settings/devices'>"
+          "<label>Number of outputs <select name='numOutputs' "
+          "style='width:10%;min-width:70px'>";
+  for (uint8_t n = 1; n <= MAX_DEVICES; ++n)
+    piece += "<option value='" + String(n) + "'" +
+             (n == cfg.numOutputs ? " selected" : "") + ">" + String(n) +
+             "</option>";
+  piece +=
+          "</select></label>"
+          "<label>Gen3/Gen4 button pulse (ms, 20-5000) <input "
+          "name='buttonPulseMs' type='number' min='20' max='5000' step='1' "
+          "style='width:10%;min-width:70px' value='" + String(cfg.buttonPulseMs) +
+          "'></label>"
+          "<label>Gen3/Gen4 pause between pulses (ms, 20-5000) <input "
+          "name='buttonPauseMs' type='number' min='20' max='5000' step='1' "
+          "style='width:10%;min-width:70px' value='" + String(cfg.buttonPauseMs) +
+          "'></label>"
+          "<div class='bulk-actions'><button type='button' "
+          "onclick='copyFirstManufacturerToAll()'>First Manufacturer for all</button>"
+          "<button type='button' onclick='copyFirstModelToAll()'>First Model for all</button>"
+          "<button type='button' onclick='copyFirstNameToAll()'>First Name for all</button>"
+          "<button type='button' onclick='copyFirstDeviceModelToAll()'>First DUT Type for all</button>"
+          "<button type='button' onclick='clearAllFieldsExceptOutput()'>Clear all fields</button>"
+          "<button type='button' onclick='reverseGpioAssignments()'>Reverse GPIO assignments</button>"
+          "<br><span>If the first Name contains #5, copy keeps the first row at "
+          "#5 and fills later rows as #6, #7, and so on.</span></div>"
+          "<table><tr><th>#</th><th>DUT Manufacturer</th><th>DUT Model</th>"
+          "<th>DUT Name</th><th>DUT Type</th>"
+          "<th>Top Button</th><th>Bottom Button</th></tr>";
   writeChunk(piece);
 
-  // Each output row is flushed independently so the whole form table never
-  // needs to be held in RAM at once.
   for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
     piece = "<tr><td>" + String(i + 1) +
             "</td><td><input name='manufacturer_" + String(i) + "' value='" +
@@ -1093,23 +1344,32 @@ void handleDeviceSettingsGet() {
             htmlEscape(cfg.devices[i].model) +
             "'></td><td><input name='name_" + String(i) + "' value='" +
             htmlEscape(cfg.devices[i].name) +
-            "'></td><td><select name='pin_" + String(i) + "'>";
-    piece += (cfg.devices[i].pin < 0)
-                 ? "<option value='-1' selected>none</option>"
-                 : "<option value='-1'>none</option>";
-    for (size_t pinIndex = 0; pinIndex < OUTPUT_PIN_MAPPING_COUNT; ++pinIndex)
-      piece += pinOption(cfg.devices[i].pin, OUTPUT_PIN_MAPPINGS[pinIndex]);
-    piece += F("</select></td></tr>");
+            "'></td><td><select name='deviceModel_" + String(i) +
+            "' onchange='syncModelFromType(this);updateButtonSelectors(this.form)'>";
+    piece += F("</select></td>");
     writeChunk(piece);
+    // Options and selection are filled client-side from /injected.js, so the
+    // static GPIO list is sent once instead of once per select.
+    piece = "<td><select name='topPin_" + String(i) +
+            "'></select></td><td><select name='bottomPin_" + String(i) +
+            "'></select></td>";
+    writeChunk(piece);
+    writeChunk(F("</tr>"));
   }
   writeChunk(F("</table><button type='submit'>Save device settings</button>"
-               "</form></body></html>"));
+               "</form><script src='/injected.js'></script>"
+               "<script>if(window.populateOutputs)populateOutputs();"
+               "</script></body></html>"));
   endChunkedHtml();
 }
 
 void handleDeviceSettingsPost() {
   if (!ensureAuthorized())
     return;
+  if (isActionRunning()) {
+    server.send(409, "text/plain", "Cancel the running action before changing outputs");
+    return;
+  }
   int parsedOutputs = -1;
   if (!server.hasArg("numOutputs") ||
       !parseIndexValue(server.arg("numOutputs"), parsedOutputs) ||
@@ -1118,9 +1378,20 @@ void handleDeviceSettingsPost() {
     server.send(400, "text/plain", "Number of outputs must be 1-16");
     return;
   }
+  int pulseMs = cfg.buttonPulseMs, pauseMs = cfg.buttonPauseMs;
+  if ((server.hasArg("buttonPulseMs") &&
+       (!parseIndexValue(server.arg("buttonPulseMs"), pulseMs) ||
+        pulseMs < 20 || pulseMs > 5000)) ||
+      (server.hasArg("buttonPauseMs") &&
+       (!parseIndexValue(server.arg("buttonPauseMs"), pauseMs) ||
+        pauseMs < 20 || pauseMs > 5000))) {
+    server.send(400, "text/plain", "Button pulse/pause must be 20-5000 ms");
+    return;
+  }
   bool usedPins[17] = {false};
   for (int i = 0; i < parsedOutputs; ++i) {
-    String pinArgName = "pin_" + String(i);
+    String index = String(i);
+    String pinArgName = "topPin_" + index;
     if (!server.hasArg(pinArgName)) {
       if (i < cfg.numOutputs) {
         logError(F("Device settings save rejected: output field missing."));
@@ -1129,24 +1400,42 @@ void handleDeviceSettingsPost() {
       }
       continue;
     }
-    int pin = -1;
-    if (!parsePinValue(server.arg(pinArgName), pin)) {
+    int modelType = static_cast<int>(cfg.devices[i].deviceModel);
+    if (server.hasArg("deviceModel_" + index) &&
+        (!parseIndexValue(server.arg("deviceModel_" + index), modelType) ||
+         !isValidDeviceModel(modelType))) {
+      server.send(400, "text/plain", "Invalid device model");
+      return;
+    }
+    // Only the GPIOs the row's DUT Type actually uses count toward the
+    // duplicate check: Control4 Output for Vibrant, Top/Bottom for Gen3/Gen4.
+    int pins[2] = {-1, -1};
+    if (getDeviceModel(modelType).usesButtons) {
+      const char *fields[] = {"topPin_", "bottomPin_"};
+      for (uint8_t b = 0; b < 2; ++b) {
+        String field = String(fields[b]) + index;
+        if (server.hasArg(field) && !parsePinValue(server.arg(field), pins[b])) {
+          logError(F("Device settings save rejected: invalid button pin."));
+          server.send(400, "text/plain", "Invalid button pin");
+          return;
+        }
+      }
+    } else if (!parsePinValue(server.arg(pinArgName), pins[0])) {
       logError(F("Device settings save rejected: invalid output pin."));
       server.send(400, "text/plain", "Invalid output pin");
       return;
     }
-    if (pin >= 0) {
-      if (usedPins[pin]) {
+    for (uint8_t b = 0; b < 2; ++b) {
+      if (pins[b] < 0)
+        continue;
+      if (usedPins[pins[b]]) {
         logError(F("Device settings save rejected: duplicate GPIO."));
         server.send(400, "text/plain",
                     "Duplicate GPIO assignment among active outputs");
         return;
       }
-      usedPins[pin] = true;
+      usedPins[pins[b]] = true;
     }
-  }
-  for (int i = 0; i < parsedOutputs; ++i) {
-    String index = String(i);
     if (i < cfg.numOutputs &&
         (!server.hasArg("manufacturer_" + index) ||
          !server.hasArg("model_" + index) || !server.hasArg("name_" + index))) {
@@ -1157,6 +1446,8 @@ void handleDeviceSettingsPost() {
   }
 
   cfg.numOutputs = static_cast<uint8_t>(parsedOutputs);
+  cfg.buttonPulseMs = static_cast<uint16_t>(pulseMs);
+  cfg.buttonPauseMs = static_cast<uint16_t>(pauseMs);
   for (uint8_t i = 0; i < cfg.numOutputs; ++i) {
     String index = String(i);
     cfg.devices[i].manufacturer =
@@ -1166,6 +1457,9 @@ void handleDeviceSettingsPost() {
     cfg.devices[i].model = server.hasArg("model_" + index)
                                ? server.arg("model_" + index)
                                : String(DEFAULT_DEVICE_MODEL);
+    if (server.hasArg("deviceModel_" + index))
+      cfg.devices[i].deviceModel =
+          getDeviceModel(server.arg("deviceModel_" + index).toInt()).type;
     String manufacturer = cfg.devices[i].manufacturer;
     String model = cfg.devices[i].model;
     manufacturer.trim();
@@ -1177,16 +1471,29 @@ void handleDeviceSettingsPost() {
     cfg.devices[i].name =
         server.hasArg("name_" + index) ? server.arg("name_" + index) : "";
     int pin = -1;
-    String pinArgName = "pin_" + index;
-    if (server.hasArg(pinArgName))
-      parsePinValue(server.arg(pinArgName), pin);
+    int topPin = -1, bottomPin = -1;
+    int topArg = -1;
+    if (server.hasArg("topPin_" + index))
+      parsePinValue(server.arg("topPin_" + index), topArg);
+    if (!getDeviceModel(cfg.devices[i].deviceModel).usesButtons) {
+      pin = topArg;
+    } else {
+      topPin = topArg;
+      if (server.hasArg("bottomPin_" + index))
+        parsePinValue(server.arg("bottomPin_" + index), bottomPin);
+    }
     cfg.devices[i].pin = pin;
-    if (!isValidOutputPin(cfg.devices[i].pin))
+    cfg.devices[i].topPin = topPin;
+    cfg.devices[i].bottomPin = bottomPin;
+    DBG("[MODEL] settings output=%u DUT Type=%u pin=%d topGPIO=%d bottomGPIO=%d",
+        i + 1, static_cast<unsigned>(cfg.devices[i].deviceModel), pin, topPin,
+        bottomPin);
+    if (!isManagedOutput(i))
       cfg.devices[i].state = false;
   }
   logSettingsDebug("devices");
   finishSettingsSave("Device settings updated from web UI.",
-                     "/settings/devices");
+                     "/settings/devices", SaveScope::Outputs);
 }
 
 void handleDiagnosticsGet() {
@@ -1196,7 +1503,7 @@ void handleDiagnosticsGet() {
   // built in full before sending) to keep peak heap usage low on this
   // memory constrained device; see beginChunkedHtml() for why that matters.
   beginChunkedHtml(200);
-  writeChunk(settingsPageStart("diagnostics"));
+  writeSettingsPageStart("diagnostics");
   writeChunk(
       "<p class='page-intro'>Control verbose serial diagnostics and update "
       "the firmware.</p><form method='post' "
@@ -1489,8 +1796,9 @@ static void renderFleetDataJson() {
 void handleStickserverFleetGet() {
   if (!ensureAuthorized())
     return;
-  String piece = settingsPageStart("fleet");
-  piece += F(
+  beginChunkedHtml(200);
+  writeSettingsPageStart("fleet");
+  writeChunk(F(
       "<p class='page-intro'>Discovered stickserver instances and their "
       "outputs, gathered passively over MQTT (hello/list). Each column is "
       "one stickserver; each row is one output slot. Buttons reflect live "
@@ -1628,8 +1936,8 @@ void handleStickserverFleetGet() {
       "setTimeout(refreshFleetContent,1000);});"
       "});"
       "});"
-      "})();</script></body></html>");
-  sendChunkedHtml(200, piece);
+      "})();</script></body></html>"));
+  endChunkedHtml();
 }
 
 // Lightweight REST endpoint returning the full "All Outputs" state as JSON

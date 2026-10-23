@@ -43,12 +43,27 @@ bool deviceModelMatches(const String &modelField, const String &ntype) {
 // changes do not need to be edited.
 void mqttPublishOutputState(uint8_t) {}
 
+static const size_t MQTT_MIN_HEADROOM_BYTES = 768;
+
 void mqttCallback(char *topic, byte *payload, unsigned int length) {
   if (topic == nullptr || payload == nullptr)
     return;
   if (length == 0) {
     logWarning(F("MQTT: dropped empty payload."));
     return;
+  }
+  // Response messages (including this device's own hello/list responses,
+  // which the broker echoes back on our instance topic) are only useful for
+  // discovery. Skip them before any allocation when discovery is off; they
+  // can be ~1.7 KB each and previously exhausted the heap. Envelopes start
+  // with {"rsp":..., so a short prefix scan is enough.
+  if (!cfg.stickserverQueryEnabled && !cfg.stickserverPassiveDiscoveryEnabled) {
+    static const char kRsp[] = "\"rsp\"";
+    size_t scan = length < 40 ? length : 40;
+    for (size_t i = 0; i + 5 <= scan; ++i) {
+      if (memcmp(payload + i, kRsp, 5) == 0)
+        return;
+    }
   }
   String topicStr(topic);
   if (topicStr.isEmpty()) {
@@ -58,10 +73,29 @@ void mqttCallback(char *topic, byte *payload, unsigned int length) {
   // MQTT payload bytes are not null-terminated; copy to String using explicit
   // length. reserve() pre-allocates so concat does not reallocate; failure
   // means low memory.
+  // Drop before allocating when the largest free block cannot hold the
+  // payload plus headroom for parsing; the warning is rate-limited so a
+  // burst of dropped messages cannot flood the serial log and starve the
+  // watchdog.
+  static unsigned long lastDropWarnMs = 0;
+  if (ESP.getMaxFreeBlockSize() < length + MQTT_MIN_HEADROOM_BYTES) {
+    unsigned long now = millis();
+    if (now - lastDropWarnMs >= 5000) {
+      lastDropWarnMs = now;
+      logWarning(String(F("MQTT: dropped message -- low heap (payload ")) +
+                 String(length) + F(" B, max free block ") +
+                 String(ESP.getMaxFreeBlockSize()) + F(" B)."));
+    }
+    return;
+  }
   String payloadStr;
   payloadStr.reserve(length);
   if (!payloadStr.concat(reinterpret_cast<const char *>(payload), length)) {
-    logWarning(F("MQTT: dropped message -- payload allocation failed."));
+    unsigned long now = millis();
+    if (now - lastDropWarnMs >= 5000) {
+      lastDropWarnMs = now;
+      logWarning(F("MQTT: dropped message -- payload allocation failed."));
+    }
     return;
   }
 
@@ -188,9 +222,17 @@ bool mqttDoConnect() {
   // other stickserver instances' requests/responses for discovery purposes.
   DBG("[MQTT] Subscribing -> %s", STICKSERVER_ROOT_TOPIC);
   mqttClient.subscribe(STICKSERVER_ROOT_TOPIC);
-  String wildcardTopic = String(STICKSERVER_ROOT_TOPIC) + F("/#");
-  DBG("[MQTT] Subscribing -> %s", wildcardTopic.c_str());
-  mqttClient.subscribe(wildcardTopic.c_str());
+  // The wildcard delivers every peer's traffic (~1.7 KB hello/list bursts),
+  // which exhausts the heap; it is only needed for discovery. Otherwise
+  // subscribe to just our own instance topic.
+  if (cfg.stickserverQueryEnabled || cfg.stickserverPassiveDiscoveryEnabled) {
+    String wildcardTopic = String(STICKSERVER_ROOT_TOPIC) + F("/#");
+    DBG("[MQTT] Subscribing -> %s", wildcardTopic.c_str());
+    mqttClient.subscribe(wildcardTopic.c_str());
+  } else {
+    DBG("[MQTT] Subscribing -> %s", stickserverInstanceTopic().c_str());
+    mqttClient.subscribe(stickserverInstanceTopic().c_str());
+  }
   logStatus(String(F("MQTT connected. Host: ")) + cfg.mqttHost + F(" port: ") +
             String(cfg.mqttPort));
   return true;
