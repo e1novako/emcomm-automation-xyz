@@ -149,6 +149,16 @@ Additional security note: HTTP Basic Auth is not encrypted on plain HTTP. Use th
 
 ## Release notes
 
+### 1.9.8
+
+- Reduced static RAM by ~6 KB: fleet-discovery output tables are now allocated only for servers actually discovered (nothing is allocated while discovery is disabled).
+- MQTT hello/list responses are parsed directly from the MQTT buffer, so the ~1.7 KB payload is no longer copied to the heap for each message in a discovery burst.
+- Discovery no longer allocates new data when the largest free heap block is below 6 KB, and periodic hello/list requests are built on the stack instead of with `String`/JSON objects (removes per-loop heap churn).
+- New health monitor: if free heap drops below 4 KB (or largest block below 3.5 KB) discovered fleet data is dropped to recover memory; if the heap stays exhausted for 60 s the device restarts cleanly with a recorded reason.
+- **Diagnostics & OTA** now shows the last reboot cause (power/watchdog/exception with `exccause`/`epc1`, or the recorded software-restart reason such as Wi-Fi recovery, reboot from web UI, firmware update), lowest free heap, lowest largest block, longest loop stall and load-shed count since boot; the same values are in `/settings/diagnostics/data`.
+- Configuration import rejects uploads larger than 16 KB and removes the partial temporary file.
+- Discovered fleet data is now released when both discovery options are turned off (previously it stayed in RAM until reboot).
+
 ### 1.9.7
 
 - Devices & outputs: swapped the order of the **First DUT Type for all** and **First Name for all** buttons.

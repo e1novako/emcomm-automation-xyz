@@ -1,5 +1,6 @@
 #include "Debug.h"
 #include "Config.h"
+#include "Health.h"
 #include "Outputs.h"
 #include "Version.h"
 #include "WifiManager.h"
@@ -13,6 +14,7 @@ void restartDevice(const String &reason) {
   Serial.println(F("[FATAL] Unrecoverable condition encountered."));
   Serial.print(F("[FATAL] Reason: "));
   Serial.println(reason);
+  recordRestartReason(reason.c_str());
   Serial.println(F("[FATAL] Restarting device in 2 seconds..."));
   delay(2000);
   ESP.restart();

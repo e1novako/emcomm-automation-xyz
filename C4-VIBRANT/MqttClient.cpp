@@ -70,6 +70,25 @@ void mqttCallback(char *topic, byte *payload, unsigned int length) {
     logWarning(F("MQTT: dropped message with empty topic."));
     return;
   }
+  if (cfg.debugSerial) {
+    // Truncate into a fixed stack buffer rather than building a String: this
+    // log line runs on the hottest path in the firmware (every MQTT message,
+    // including the ~14-16-message hello/list bursts).
+    char logBuf[MQTT_PAYLOAD_LOG_MAX_LEN + 1];
+    size_t copyLen = length < MQTT_PAYLOAD_LOG_MAX_LEN
+                         ? length
+                         : MQTT_PAYLOAD_LOG_MAX_LEN;
+    memcpy(logBuf, payload, copyLen);
+    logBuf[copyLen] = '\0';
+    DBG("[MQTT] Received -> topic: %s payload[%u]: %s%s", topicStr.c_str(),
+        length, logBuf, length > MQTT_PAYLOAD_LOG_MAX_LEN ? "...(truncated)" : "");
+  }
+
+  // Hello/list responses (the bulk of bus traffic) are consumed directly from
+  // the MQTT buffer, so the ~1.7 KB payload is never copied to the heap.
+  if (handleStickserverFastPath(topicStr, payload, length))
+    return;
+
   // MQTT payload bytes are not null-terminated; copy to String using explicit
   // length. reserve() pre-allocates so concat does not reallocate; failure
   // means low memory.
@@ -97,24 +116,6 @@ void mqttCallback(char *topic, byte *payload, unsigned int length) {
       logWarning(F("MQTT: dropped message -- payload allocation failed."));
     }
     return;
-  }
-
-  if (cfg.debugSerial) {
-    // Truncate into a fixed stack buffer rather than
-    // payloadStr.substring(...), which would heap-allocate a fresh String
-    // on every single message observed on the bus -- this log line runs on
-    // the hottest path in the firmware (every MQTT message, including the
-    // ~14-16-message hello/list bursts) and was a measured contributor to
-    // heap fragmentation when debugSerial is left on for diagnostics.
-    char logBuf[MQTT_PAYLOAD_LOG_MAX_LEN + 1];
-    size_t copyLen = payloadStr.length() < MQTT_PAYLOAD_LOG_MAX_LEN
-                        ? payloadStr.length()
-                        : MQTT_PAYLOAD_LOG_MAX_LEN;
-    memcpy(logBuf, payloadStr.c_str(), copyLen);
-    logBuf[copyLen] = '\0';
-    DBG("[MQTT] Received -> topic: %s payload[%u]: %s%s", topicStr.c_str(),
-        length, logBuf,
-        payloadStr.length() > MQTT_PAYLOAD_LOG_MAX_LEN ? "...(truncated)" : "");
   }
 
   // Subscribed via root topic + wildcard (root/#), so this also receives

@@ -4,6 +4,7 @@
 #include "BootDiagnostics.h"
 #include "Config.h"
 #include "Debug.h"
+#include "Health.h"
 #include "MqttClient.h"
 #include "OtaService.h"
 #include "Outputs.h"
@@ -1530,6 +1531,13 @@ void handleDiagnosticsGet() {
       " bytes (fragmentation: " + String(ESP.getHeapFragmentation()) +
       "%, largest free block: " + String(ESP.getMaxFreeBlockSize()) +
       " bytes)</span></p>"
+      "<p>Since boot: lowest free heap <span id='diag-minheap'>" +
+      String(health.minFreeHeap) + "</span> bytes, lowest largest block <span "
+      "id='diag-minblock'>" + String(health.minMaxBlock) +
+      "</span> bytes, longest loop stall <span id='diag-loopgap'>" +
+      String(health.maxLoopGapMs) + "</span> ms, load-shed events <span "
+      "id='diag-shed'>" + String(health.loadShedCount) + "</span></p>"
+      "<p>Last reboot cause: " + htmlEscape(healthBootCause()) + "</p>"
       "<form method='post' action='/device/reboot' "
       "onsubmit=\"return confirm('Reboot the device now?');\">"
       "<button type='submit'>Reboot device</button></form>"
@@ -1541,6 +1549,14 @@ void handleDiagnosticsGet() {
       "var h=document.getElementById('diag-heap');if(h)h.textContent=d."
       "freeHeap+' bytes (fragmentation: '+d.heapFragmentation+'%, largest "
       "free block: '+d.maxFreeBlockSize+' bytes)';"
+      "var m=document.getElementById('diag-minheap');if(m)m.textContent=d."
+      "minFreeHeap;"
+      "m=document.getElementById('diag-minblock');if(m)m.textContent=d."
+      "minMaxBlock;"
+      "m=document.getElementById('diag-loopgap');if(m)m.textContent=d."
+      "maxLoopGapMs;"
+      "m=document.getElementById('diag-shed');if(m)m.textContent=d."
+      "loadShedCount;"
       "}).catch(function(){});}"
       "refresh();setInterval(refresh,5000);})();</script>");
   writeChunk(
@@ -1579,6 +1595,11 @@ void handleDiagnosticsData() {
                 "\",\"freeHeap\":" + String(ESP.getFreeHeap()) +
                 ",\"heapFragmentation\":" + String(ESP.getHeapFragmentation()) +
                 ",\"maxFreeBlockSize\":" + String(ESP.getMaxFreeBlockSize()) +
+                ",\"minFreeHeap\":" + String(health.minFreeHeap) +
+                ",\"minMaxBlock\":" + String(health.minMaxBlock) +
+                ",\"maxLoopGapMs\":" + String(health.maxLoopGapMs) +
+                ",\"loadShedCount\":" + String(health.loadShedCount) +
+                ",\"bootCause\":\"" + jsonEscape(healthBootCause()) + "\"" +
                 ",\"arduinoOtaEnabled\":" +
                 String(cfg.arduinoOtaEnabled ? "true" : "false") +
                 ",\"debugSerial\":" +
@@ -1676,6 +1697,7 @@ void handleRebootDevice() {
               "<script>setTimeout(function(){window.location='/';},8000);"
               "</script></body></html>");
   server.client().flush();
+  recordRestartReason("Reboot requested from web UI.");
   delay(200);
   ESP.restart();
 }
@@ -1772,11 +1794,11 @@ static void renderFleetDataJson() {
       const DiscoveredOutputEntry &o = s.outputs[row];
       if (!o.valid)
         continue;
-      String label2 = o.name.isEmpty() ? String(F("Output ")) + String(row + 1)
-                                        : o.name;
+      String label2 = o.name[0] ? String(o.name)
+                                : String(F("Output ")) + String(row + 1);
       piece = row == 0 ? "{" : ",{";
       piece.reserve(200);
-      piece += "\"euid\":\"" + jsonEscape(o.euid) + "\",\"name\":\"" +
+      piece += "\"euid\":\"" + jsonEscape(String(o.euid)) + "\",\"name\":\"" +
                jsonEscape(label2) + "\",\"on\":" +
                String(o.state ? "true" : "false") + "}";
       writeChunk(piece);

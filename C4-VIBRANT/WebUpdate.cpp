@@ -1,6 +1,7 @@
 #include "WebUpdate.h"
 #include "Config.h"
 #include "Debug.h"
+#include "Health.h"
 #include "WebServer.h"
 #include <ESP8266WebServer.h>
 #include <Updater.h>
@@ -127,6 +128,7 @@ void handleFirmwareUpdateDone() {
   // Flush the TCP send buffer and allow time for the HTTP response to reach the
   // client.
   server.client().flush();
+  recordRestartReason("Firmware update completed.");
   delay(200);
   ESP.restart();
 }

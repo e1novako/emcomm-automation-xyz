@@ -8,9 +8,11 @@ extern const uint8_t STICKSERVER_PROTOCOL_VERSION;
 // Discovery of other stickserver instances on the MQTT network (used to
 // render a fleet-wide output table). Populated passively from hello/list
 // responses observed on the stickserver root wildcard subscription.
+// Fixed-size char buffers (not String) so each entry is one flat block with
+// no per-field heap allocations.
 struct DiscoveredOutputEntry {
-  String euid;
-  String name;
+  char euid[40] = {0};
+  char name[24] = {0};
   bool state = false;
   bool valid = false;
 };
@@ -21,12 +23,37 @@ struct DiscoveredServer {
   String ipAddress;
   unsigned long lastSeenMs = 0;
   unsigned long lastListRequestMs = 0;
-  DiscoveredOutputEntry outputs[MAX_DEVICES];
+  // Allocated on demand and grown in steps of OUTPUT_GROW_STEP: a table
+  // sized for MAX_DEVICES in every slot cost ~7 KB even when most peers
+  // have only a few outputs.
+  DiscoveredOutputEntry *outputs = nullptr;
   uint8_t outputCount = 0;
+  uint8_t outputCapacity = 0;
+  DiscoveredServer() = default;
+  DiscoveredServer(const DiscoveredServer &) = delete;
+  DiscoveredServer &operator=(const DiscoveredServer &) = delete;
+  ~DiscoveredServer() { reset(); }
+  void reset() {
+    delete[] outputs;
+    outputs = nullptr;
+    outputCount = 0;
+    outputCapacity = 0;
+    active = false;
+    instanceTopic = String();
+    hostname = String();
+    ipAddress = String();
+    lastSeenMs = 0;
+    lastListRequestMs = 0;
+  }
 };
 constexpr uint8_t MAX_DISCOVERED_SERVERS = 16;
 extern DiscoveredServer discoveredServers[MAX_DISCOVERED_SERVERS];
 void maintainStickserverDiscovery();
+// Handles this firmware's own hello/list responses straight from the raw MQTT
+// payload without copying it to the heap. Returns true if the message was
+// consumed.
+bool handleStickserverFastPath(const String &topic, const uint8_t *payload,
+                               size_t len);
 
 // Fixed-size (no heap allocation) ring buffer of recent per-message heap
 // snapshots, recorded in handleStickserverMessage() when cfg.debugSerial is

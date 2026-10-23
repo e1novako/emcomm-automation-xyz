@@ -6,6 +6,7 @@ extern "C" {
 }
 #include "Config.h"
 #include "Debug.h"
+#include "Health.h"
 #include "MqttClient.h"
 #include "Outputs.h"
 #include "Reservations.h"
@@ -357,6 +358,7 @@ void performFactoryResetAndRestart(const String &reason) {
     restartDevice(
         F("Failed to persist factory defaults during requested reset."));
   }
+  recordRestartReason(reason.c_str());
   delay(500);
   ESP.restart();
 }

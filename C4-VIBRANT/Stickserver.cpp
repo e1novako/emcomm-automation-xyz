@@ -7,11 +7,17 @@
 #include "Reservations.h"
 #include <ArduinoJson.h>
 #include <ctype.h>
+#include <new>
 #include <string.h>
 
 namespace vibrant {
 
 namespace {
+
+// New discovery data (a server slot or output table) is only allocated while
+// the largest free heap block is at least this big.
+constexpr uint32_t DISCOVERY_MIN_FREE_BLOCK_BYTES = 6144;
+constexpr uint8_t OUTPUT_GROW_STEP = 4;
 
 // Restricts parsing of the incoming `request` document to only the fields
 // actually read anywhere in this file (see handleStickserverMessage() and
@@ -359,7 +365,7 @@ int allocateDiscoveredServerSlot(const String &topic) {
     return idx;
   for (uint8_t i = 0; i < MAX_DISCOVERED_SERVERS; ++i) {
     if (!discoveredServers[i].active) {
-      discoveredServers[i] = DiscoveredServer();
+      discoveredServers[i].reset();
       discoveredServers[i].active = true;
       discoveredServers[i].instanceTopic = topic;
       return i;
@@ -371,7 +377,7 @@ int allocateDiscoveredServerSlot(const String &topic) {
     if (discoveredServers[i].lastSeenMs < discoveredServers[oldest].lastSeenMs)
       oldest = i;
   }
-  discoveredServers[oldest] = DiscoveredServer();
+  discoveredServers[oldest].reset();
   discoveredServers[oldest].active = true;
   discoveredServers[oldest].instanceTopic = topic;
   return oldest;
@@ -389,7 +395,7 @@ void applyDiscoveredOutputFields(uint8_t idx, const char *euid,
   // were already known, which is the bug this merge logic fixes.
   int slot = -1;
   for (uint8_t i = 0; i < server.outputCount; ++i) {
-    if (server.outputs[i].valid && server.outputs[i].euid == euid) {
+    if (server.outputs[i].valid && strcmp(server.outputs[i].euid, euid) == 0) {
       slot = i;
       break;
     }
@@ -397,10 +403,29 @@ void applyDiscoveredOutputFields(uint8_t idx, const char *euid,
   if (slot < 0) {
     if (server.outputCount >= MAX_DEVICES)
       return;
+    // Don't grow discovery data when the heap is already tight; the entry
+    // is simply learned again from the next hello/list.
+    if (ESP.getMaxFreeBlockSize() < DISCOVERY_MIN_FREE_BLOCK_BYTES)
+      return;
+    if (server.outputCount >= server.outputCapacity) {
+      uint8_t newCap = server.outputCapacity + OUTPUT_GROW_STEP;
+      if (newCap > MAX_DEVICES)
+        newCap = MAX_DEVICES;
+      DiscoveredOutputEntry *grown =
+          new (std::nothrow) DiscoveredOutputEntry[newCap];
+      if (!grown)
+        return;
+      for (uint8_t i = 0; i < server.outputCount; ++i)
+        grown[i] = server.outputs[i];
+      delete[] server.outputs;
+      server.outputs = grown;
+      server.outputCapacity = newCap;
+    }
     slot = server.outputCount++;
+    strlcpy(server.outputs[slot].euid, euid, sizeof(server.outputs[slot].euid));
   }
-  server.outputs[slot].euid = euid;
-  server.outputs[slot].name = name ? name : "";
+  strlcpy(server.outputs[slot].name, name ? name : "",
+          sizeof(server.outputs[slot].name));
   server.outputs[slot].state = stateStr && strcmp(stateStr, "ON") == 0;
   server.outputs[slot].valid = true;
 }
@@ -571,6 +596,41 @@ void handleStickserverHelloListFast(const String &topicStr,
   }
 }
 
+// Zero-heap-allocation fast path for this firmware's own hello/list
+// responses (see handleStickserverHelloListFast() above) -- the dominant,
+// bursty traffic pattern on this bus. Called straight from the MQTT callback
+// on the raw payload buffer so these ~1.7 KB messages are never copied to
+// the heap. Returns false for anything that doesn't match that exact shape
+// (commands, action responses, foreign/malformed traffic); the caller then
+// falls back to the general ArduinoJson path.
+bool handleStickserverFastPath(const String &topicStr, const uint8_t *payload,
+                               size_t len) {
+  const char *text = reinterpret_cast<const char *>(payload);
+  bool isFastHello = fastResponseIs(text, len, "hello");
+  bool isFastList = !isFastHello && fastResponseIs(text, len, "list");
+  if (!isFastHello && !isFastList)
+    return false;
+  bool heapTrace = cfg.debugSerial;
+  uint32_t heapBefore = 0, blockBefore = 0;
+  if (heapTrace) {
+    heapBefore = ESP.getFreeHeap();
+    blockBefore = ESP.getMaxFreeBlockSize();
+  }
+  handleStickserverHelloListFast(topicStr, text, len, isFastHello);
+  if (heapTrace) {
+    uint32_t heapAfter = ESP.getFreeHeap();
+    uint32_t blockAfter = ESP.getMaxFreeBlockSize();
+    Serial.printf("[HEAP] [MQTT] fast-path topic=%s len=%u free=%u maxBlock=%u "
+                  "deltaFree=%ld\n",
+                  topicStr.c_str(), static_cast<unsigned>(len), heapAfter,
+                  blockAfter, (long)heapAfter - (long)heapBefore);
+    uint8_t slot = recordHeapTraceBase(topicStr, len, heapBefore, blockBefore,
+                                       heapAfter, blockAfter);
+    recordHeapTraceDiscovery(slot, heapAfter, blockAfter);
+  }
+  return true;
+}
+
 void handleStickserverDiscoveryResponse(const String &topicStr,
                                         JsonDocument &response) {
   // Parse hello/list responses if either this device is actively querying
@@ -650,9 +710,20 @@ void handleStickserverDiscoveryResponse(const String &topicStr,
 unsigned long lastHelloCommandSeenMs = 0;
 
 void maintainStickserverDiscovery() {
+  unsigned long now = millis();
+  // With both discovery modes off nothing refreshes or prunes the table, so
+  // data gathered earlier (or before MQTT dropped) would hold heap forever.
+  static unsigned long lastReleaseCheckMs = 0;
+  if (!cfg.stickserverQueryEnabled && !cfg.stickserverPassiveDiscoveryEnabled &&
+      now - lastReleaseCheckMs >= 5000) {
+    lastReleaseCheckMs = now;
+    for (uint8_t i = 0; i < MAX_DISCOVERED_SERVERS; ++i) {
+      if (discoveredServers[i].active)
+        discoveredServers[i].reset();
+    }
+  }
   if (!cfg.mqttEnabled || !mqttClient.connected())
     return;
-  unsigned long now = millis();
   static unsigned long lastPruneMs = 0;
   const unsigned long kHelloIntervalMs = 5000;
   const unsigned long kListIntervalMs = 10000;
@@ -668,16 +739,15 @@ void maintainStickserverDiscovery() {
       // near-simultaneous loop iteration on this same device can't also
       // fire before the echo arrives.
       lastHelloCommandSeenMs = now;
-      JsonDocument req;
-      req["cmd"] = "hello";
-      req["ver"] = STICKSERVER_PROTOCOL_VERSION;
-      req["mid"] = String(F("disc-")) + String(now);
-      String payload;
-      serializeJson(req, payload);
-      mqttClient.publish(STICKSERVER_ROOT_TOPIC, payload.c_str());
+      // Built in a stack buffer: no heap use on this periodic path.
+      char payload[64];
+      snprintf(payload, sizeof(payload),
+               "{\"cmd\":\"hello\",\"ver\":%u,\"mid\":\"disc-%lu\"}",
+               static_cast<unsigned>(STICKSERVER_PROTOCOL_VERSION), now);
+      mqttClient.publish(STICKSERVER_ROOT_TOPIC, payload);
     }
 
-    String selfTopic = stickserverInstanceTopic();
+    const String &selfTopic = stickserverInstanceTopic();
     for (uint8_t i = 0; i < MAX_DISCOVERED_SERVERS; ++i) {
       if (!discoveredServers[i].active)
         continue;
@@ -689,14 +759,13 @@ void maintainStickserverDiscovery() {
         continue;
       if (now - discoveredServers[i].lastListRequestMs >= kListIntervalMs) {
         discoveredServers[i].lastListRequestMs = now;
-        JsonDocument req;
-        req["cmd"] = "list";
-        req["ver"] = STICKSERVER_PROTOCOL_VERSION;
-        req["mid"] = String(F("disc-list-")) + String(now) + "-" + String(i);
-        String payload;
-        serializeJson(req, payload);
+        char payload[80];
+        snprintf(payload, sizeof(payload),
+                 "{\"cmd\":\"list\",\"ver\":%u,\"mid\":\"disc-list-%lu-%u\"}",
+                 static_cast<unsigned>(STICKSERVER_PROTOCOL_VERSION), now,
+                 static_cast<unsigned>(i));
         mqttClient.publish(discoveredServers[i].instanceTopic.c_str(),
-                           payload.c_str());
+                           payload);
       }
     }
   }
@@ -711,7 +780,7 @@ void maintainStickserverDiscovery() {
     for (uint8_t i = 0; i < MAX_DISCOVERED_SERVERS; ++i) {
       if (discoveredServers[i].active &&
           now - discoveredServers[i].lastSeenMs > kStaleTimeoutMs) {
-        discoveredServers[i] = DiscoveredServer();
+        discoveredServers[i].reset();
       }
     }
   }
@@ -745,30 +814,10 @@ void handleStickserverMessage(const String &topicStr,
         topicStr.c_str(), payloadStr.length(), heapBefore, blockBefore);
   }
 
-  // Zero-heap-allocation fast path for this firmware's own hello/list
-  // responses (see handleStickserverHelloListFast() above) -- the
-  // dominant, bursty traffic pattern on this bus. Falls through to the
-  // general ArduinoJson parser below for anything that doesn't match that
-  // exact shape (commands, action responses, foreign/malformed traffic).
-  bool isFastHello = fastResponseIs(payloadStr.c_str(), payloadStr.length(), "hello");
-  bool isFastList = !isFastHello &&
-                    fastResponseIs(payloadStr.c_str(), payloadStr.length(), "list");
-  if (isFastHello || isFastList) {
-    handleStickserverHelloListFast(topicStr, payloadStr.c_str(),
-                                   payloadStr.length(), isFastHello);
-    if (heapTrace) {
-      uint32_t heapAfter = ESP.getFreeHeap();
-      uint32_t blockAfter = ESP.getMaxFreeBlockSize();
-      Serial.printf("[HEAP] [MQTT] fast-path (no alloc) free=%u maxBlock=%u "
-                    "deltaFree=%ld\n",
-                    heapAfter, blockAfter, (long)heapAfter - (long)heapBefore);
-      uint8_t slot = recordHeapTraceBase(topicStr, payloadStr.length(),
-                                        heapBefore, blockBefore, heapAfter,
-                                        blockAfter);
-      recordHeapTraceDiscovery(slot, heapAfter, blockAfter);
-    }
+  if (handleStickserverFastPath(
+          topicStr, reinterpret_cast<const uint8_t *>(payloadStr.c_str()),
+          payloadStr.length()))
     return;
-  }
 
   // `request` uses the default heap allocator (freed every call, costing no
   // static RAM) but is parsed with a field Filter (see

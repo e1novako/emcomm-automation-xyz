@@ -11,6 +11,10 @@ namespace vibrant {
 
 File importFile;
 bool importFailed = false;
+size_t importBytes = 0;
+// A real backup is a few KB; the cap stops an oversized upload from filling
+// flash or exhausting heap when it is parsed.
+constexpr size_t MAX_IMPORT_BYTES = 16384;
 
 void handleConfigExport() {
   if (!ensureAuthorized())
@@ -50,6 +54,7 @@ void handleConfigImportUpload() {
   HTTPUpload &upload = server.upload();
   if (upload.status == UPLOAD_FILE_START) {
     importFailed = false;
+    importBytes = 0;
     logStatus(F("Configuration import upload started."));
     if (LittleFS.exists(IMPORT_CONFIG_PATH)) {
       LittleFS.remove(IMPORT_CONFIG_PATH);
@@ -60,7 +65,12 @@ void handleConfigImportUpload() {
       logError(F("Failed to open temporary import file for writing."));
     }
   } else if (upload.status == UPLOAD_FILE_WRITE) {
-    if (importFile) {
+    importBytes += upload.currentSize;
+    if (importBytes > MAX_IMPORT_BYTES) {
+      if (!importFailed)
+        logError(F("Configuration import rejected: file too large."));
+      importFailed = true;
+    } else if (importFile) {
       if (importFile.write(upload.buf, upload.currentSize) !=
           upload.currentSize) {
         importFailed = true;
@@ -150,6 +160,8 @@ void handleConfigImportDone() {
   if (isActionRunning())
     cancelAction();
   if (importFailed) {
+    if (LittleFS.exists(IMPORT_CONFIG_PATH))
+      LittleFS.remove(IMPORT_CONFIG_PATH);
     logError(F("Configuration upload failed before validation."));
     server.send(500, "text/plain", "Configuration upload failed");
     return;

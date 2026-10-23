@@ -3,6 +3,7 @@
 #include "BootDiagnostics.h"
 #include "Config.h"
 #include "Debug.h"
+#include "Health.h"
 #include "MqttClient.h"
 #include "OtaService.h"
 #include "Outputs.h"
@@ -47,6 +48,8 @@ void setup() {
     logStatus(F("LittleFS mounted successfully."));
   }
 
+  healthBegin();
+
   WiFi.mode(WIFI_AP_STA);
   logStatus(F("Loading runtime configuration..."));
   if (!loadConfig()) {
@@ -74,6 +77,7 @@ void setup() {
 }
 
 void loop() {
+  maintainHealth();
   if (arduinoOtaActive) {
     ArduinoOTA.handle();
   }
