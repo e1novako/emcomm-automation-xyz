@@ -20,7 +20,7 @@ The WiFi password is the one password: it protects the web GUI (HTTP basic auth,
 
 ## Backup / restore
 
-Web GUI pages, reached from a rounded-button menu at the top: Status (`/`), WiFi (`/wifi`), MQTT (`/mqtt`), Time (`/time`), Users (`/users`), Backup/Restore (`/backup`: config backup/restore, users export/import as JSON via `/users/download` and `/users/restore`, last-rings export `/rings/download`, and a "Reboot only" button). Debug (`/debug`) shows uptime/reset reason, WiFi, MQTT, door address, dropped frames, the debug-logging toggle and memory (heap, fragmentation, sketch/flash, LittleFS, users buffer). Status shows the last 10 rings (kept across reboots in LittleFS `/rings.json`) (time, door/internal, serial, user). Users page holds up to 40 users; serials seen in a door or internal ring that are not in the list are added automatically as `n/a` (rename them on the Users page). Saving a page writes NVRAM and reboots. Backup/Restore: download the JSON (`/backup/download`, includes passwords) or upload one to `/restore`; it is applied, saved and the device reboots. All pages need the password.
+Web GUI pages, reached from a rounded-button menu at the top: Home (`/`: no menu, only a small Config button to Access; big "Unlock door" button and door-unlocked counter; viewable without a password, pressing the button still asks for it), Access (`/status`: last rings), WiFi (`/wifi`), MQTT (`/mqtt`), Time (`/time`), Statistics (`/rings`, door-ring count and last ring per user; counters live in `tcs_users.json` as `rings`/`last_ring` so they survive reboot/power loss), Users (`/users`), Backup/Restore (`/backup`: config backup/restore, users export/import as JSON via `/users/download` and `/users/restore`, last-rings export `/rings/download`, and a "Reboot only" button). Debug (`/debug`) shows uptime/reset reason, WiFi, MQTT, door address, dropped frames, the debug-logging toggle and memory (heap, fragmentation, sketch/flash, LittleFS, users buffer). Status shows the last 10 rings (kept across reboots in LittleFS `/rings.json`) (time, door/internal, serial, user). Users page holds up to 40 users; serials seen in a door or internal ring that are not in the list are added automatically as `n/a` (rename them on the Users page). Saving a page writes NVRAM and reboots. Backup/Restore: download the JSON (`/backup/download`, includes passwords) or upload one to `/restore`; it is applied, saved and the device reboots. All pages except Home need the password.
 
 ## Door-open address
 
@@ -49,6 +49,16 @@ Host-side protocol round-trip tests (no hardware needed):
 
 ## Changelog
 
+- 1.1.1: Rings page renamed Statistics (URL unchanged).
+- 1.0.28: 200 px empty space above the unlock button.
+- 1.0.27: unlock button at least 300 px wide.
+- 1.0.26: Home has no menu, just a small Config button (to Access); unlock button at least 200 px wide (300 px since 1.0.27).
+- 1.0.25: Home page needs no password (unlock button and all other pages still do); device-name line removed; narrower button.
+- 1.0.24: Status renamed Access (`/status`); new Home page at `/` with device name, big Unlock door button (`POST /unlock`, sends OPEN_DOOR to the tracked door address) and the Door unlocked counter (moved from Access).
+- 1.0.23: Rings page shows the serial when a user has no name; door-unlock counter (bus or MQTT/web OPEN_DOOR, once per 2 s) saved in LittleFS `/stats.json` and shown at the bottom of Status.
+- 1.0.22: menu order Status, Rings, Users, WiFi, MQTT, Time, Debug, Backup/Restore; Rings page sorted by flat number (no flat last).
+- 1.0.21: `Door`/`Internal` capitalised; Users page numbered; per-user door ring counter + last ring (persisted) and new Rings page.
+- 1.0.20: rings table shows `<flat>. <name>` (name column 3x wider); Users page columns Serial No., Flat No., Surname / Name.
 - 1.0.19: last-rings table with borders and equal-width columns, each centered.
 - 1.0.18: the Status (main) page auto-refreshes every 10 s.
 - 1.0.17: uptime shown under the page title on every page.
