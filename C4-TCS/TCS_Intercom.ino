@@ -20,13 +20,15 @@
 #include <PubSubClient.h>
 
 #include <time.h>
+#include <EEPROM.h>
+#include <libb64/cdecode.h>
 
-#define VERSION "1.0.6"
+#define VERSION "1.0.9"
 
 void publish_tcs_command(char *topic, CommandData data, bool direction);
 void mqtt_output(char *format, ...);
 
-const char* ntpServer = "pool.ntp.org";
+char ntp_server[48] = "pool.ntp.org";
 char tz[48] = "CET-1CEST,M3.5.0,M10.5.0/3"; // POSIX TZ string, configurable via config.json "tz"
 
 // Debug output can be switched on/off from the web GUI (http://<device>/) and is persisted in config.json
@@ -51,6 +53,8 @@ char tcs_command_topic[64] = "ucl/by-mqtt-client/intercom/command";
 char mqtt_client[32] = "anovakovic";
 char mqtt_user[32] = "";
 char mqtt_pass[32] = "";
+char wifi_ssid[33] = "";           // empty = use WiFiManager / stored credentials
+char admin_pass[64] = "";          // WiFi password; empty = use the WiFi password stored in the device. Also the GUI and OTA password
 
 uint32_t my_serial_number = 0x8c0b9;
 uint32_t last_bus_address = 3;      // address of the door station involved in the latest door-related frame
@@ -388,8 +392,55 @@ void publish_status() {
   client.publish(topic, msg);
 }
 
-void save_config() {
-  DynamicJsonDocument json(1024);
+// ---- Configuration in NVRAM (EEPROM emulation: its own flash sector, survives firmware and FS updates) ----
+#define NV_SIZE  2048
+#define NV_MAGIC 0x31534354UL // "TCS1"
+#define NV_HDR   12           // magic(4) len(2) reserved(2) crc(4)
+
+static uint32_t crc32_buf(const uint8_t *d, size_t n) {
+  uint32_t c = 0xFFFFFFFF;
+  for (size_t i = 0; i < n; i++) {
+    c ^= d[i];
+    for (int k = 0; k < 8; k++) c = (c >> 1) ^ (0xEDB88320 & -(c & 1));
+  }
+  return ~c;
+}
+
+static bool nv_read(String &out) {
+  uint32_t magic, crc;
+  uint16_t len;
+  EEPROM.get(0, magic);
+  EEPROM.get(4, len);
+  EEPROM.get(8, crc);
+  if (magic != NV_MAGIC || len == 0 || len > NV_SIZE - NV_HDR) return false;
+
+  std::unique_ptr<uint8_t[]> b(new uint8_t[len]);
+  for (uint16_t i = 0; i < len; i++) b[i] = EEPROM.read(NV_HDR + i);
+  if (crc32_buf(b.get(), len) != crc) return false;
+
+  out = "";
+  out.concat((const char*)b.get(), len);
+  return true;
+}
+
+static bool nv_write(const String &json) {
+  size_t len = json.length();
+  if (len == 0 || len > NV_SIZE - NV_HDR) return false;
+
+  uint32_t magic = NV_MAGIC;
+  uint32_t crc = crc32_buf((const uint8_t*)json.c_str(), len);
+  uint16_t l16 = len;
+  EEPROM.put(0, magic);
+  EEPROM.put(4, l16);
+  EEPROM.put(8, crc);
+  for (size_t i = 0; i < len; i++) EEPROM.write(NV_HDR + i, json[i]);
+  return EEPROM.commit();
+}
+
+static void config_to_json(JsonDocument &json) {
+  char serial[12];
+  snprintf(serial, sizeof(serial), "%x", (unsigned)my_serial_number);
+
   json["mqtt_server"] = mqtt_server;
   json["mqtt_port"] = mqtt_port;
   json["mqtt_topic"] = mqtt_topic;
@@ -400,15 +451,73 @@ void save_config() {
   json["control4_notify_topic"] = control4_notify_topic;
   json["tcs_command_topic"] = tcs_command_topic;
   json["tz"] = tz;
+  json["ntp_server"] = ntp_server;
   json["debug"] = debug_enabled;
+  json["serial_number"] = serial;
+  json["wifi_ssid"] = wifi_ssid;
+  json["password"] = admin_pass;
+}
 
-  File configFile = LittleFS.open("/config.json", "w");
-  if (!configFile) {
-    Serial.println("failed to open config file for writing");
-    return;
+// Applies any keys present; missing or invalid ones keep their current value
+// The one password: used to join WiFi and to protect the web GUI and OTA
+static String effective_pass() {
+  return admin_pass[0] ? String(admin_pass) : WiFi.psk();
+}
+
+static void apply_config(JsonDocument &json) {
+  load_str(json, "mqtt_server", mqtt_server, sizeof(mqtt_server));
+  load_str(json, "mqtt_port", mqtt_port, sizeof(mqtt_port));
+  load_str(json, "mqtt_topic", mqtt_topic, sizeof(mqtt_topic));
+  load_str(json, "mqtt_client", mqtt_client, sizeof(mqtt_client));
+  load_str(json, "mqtt_user", mqtt_user, sizeof(mqtt_user));
+  load_str(json, "mqtt_pass", mqtt_pass, sizeof(mqtt_pass));
+  load_str(json, "control4_command_topic", control4_command_topic, sizeof(control4_command_topic));
+  load_str(json, "control4_notify_topic", control4_notify_topic, sizeof(control4_notify_topic));
+  load_str(json, "tcs_command_topic", tcs_command_topic, sizeof(tcs_command_topic));
+  load_str(json, "tz", tz, sizeof(tz));
+  load_str(json, "ntp_server", ntp_server, sizeof(ntp_server));
+  load_str(json, "wifi_ssid", wifi_ssid, sizeof(wifi_ssid));
+  if (json["debug"].is<bool>()) debug_enabled = json["debug"];
+
+  const char *sn = json["serial_number"] | (const char*)nullptr;
+  if (sn) sscanf(sn, "%x", &my_serial_number);
+
+  // WPA2 needs 8..63 characters; empty means "use the stored WiFi password"
+  const char *pw = json["password"] | (const char*)nullptr;
+  if (pw && (!pw[0] || (strlen(pw) >= 8 && strlen(pw) <= 63))) strlcpy(admin_pass, pw, sizeof(admin_pass));
+}
+
+void save_config() {
+  JsonDocument json;
+  config_to_json(json);
+  String out;
+  serializeJson(json, out);
+  if (!nv_write(out)) Serial.println("failed to write config to NVRAM");
+}
+
+// NVRAM first; fall back to the legacy LittleFS /config.json and migrate it
+static void load_config() {
+  String s;
+  if (nv_read(s)) {
+    JsonDocument json;
+    if (!deserializeJson(json, s)) {
+      apply_config(json);
+      Serial.println("config loaded from NVRAM");
+      return;
+    }
   }
-  serializeJson(json, configFile);
-  configFile.close();
+
+  std::unique_ptr<char[]> buf = read_file("/config.json");
+  if (buf) {
+    JsonDocument json;
+    if (!deserializeJson(json, buf.get())) {
+      apply_config(json);
+      Serial.println("legacy config.json loaded, migrating to NVRAM");
+      save_config();
+      return;
+    }
+  }
+  Serial.println("no stored config, using defaults");
 }
 
 static String html_escape(const char *v) {
@@ -426,33 +535,128 @@ static String html_escape(const char *v) {
   return o;
 }
 
+// HTTP basic auth: any user name, only the password is checked
+static bool auth() {
+  String pass = effective_pass();
+  if (pass.length() == 0) return true; // open network and no password set
+
+  String hdr = web.header("Authorization");
+  if (hdr.startsWith("Basic ")) {
+    String b64 = hdr.substring(6);
+    char decoded[160];
+    if (b64.length() < 200) {
+      int n = base64_decode_chars(b64.c_str(), b64.length(), decoded);
+      decoded[n] = 0;
+      const char *colon = strchr(decoded, ':');
+      if (colon && pass == (colon + 1)) return true;
+    }
+  }
+  web.requestAuthentication();
+  return false;
+}
+
+// ---- Web GUI: pages share one layout with a pill-button menu on top ----
+static const char CSS[] =
+  "<style>body{font-family:sans-serif;margin:16px}"
+  "nav{margin-bottom:16px}"
+  "nav a,button{display:inline-block;padding:8px 18px;margin:2px;border:0;border-radius:20px;background:#e3e6ea;color:#222;text-decoration:none;font-size:14px;cursor:pointer}"
+  "nav a.on,button{background:#1a73e8;color:#fff}"
+  "input[type=text],input[type=password]{width:420px;max-width:95%;padding:6px;border:1px solid #bbb;border-radius:8px}"
+  "</style>";
+
+static String page_begin(const char *active) {
+  static const char *items[][2] = { {"/", "Status"}, {"/wifi", "WiFi"}, {"/mqtt", "MQTT"}, {"/time", "Time"}, {"/backup", "Backup/Restore"} };
+  String h = "<html><head><meta name='viewport' content='width=device-width,initial-scale=1'><title>TCS Intercom</title>";
+  h += CSS;
+  h += "</head><body><nav>";
+  for (auto &it : items) {
+    h += "<a href='" + String(it[0]) + "'" + (strcmp(it[0], active) == 0 ? " class='on'" : "") + ">" + it[1] + "</a>";
+  }
+  h += "</nav><h3>TCS Intercom " VERSION "</h3>";
+  return h;
+}
+
+static void send_page(const char *active, const String &body) {
+  web.send(200, "text/html", page_begin(active) + body + "</body></html>");
+}
+
+static void config_field(String &h, const char *label, const char *name, const char *value, bool password = false) {
+  h += "<p>" + String(label) + "<br><input name='" + name + "' type='" + (password ? "password" : "text") +
+       "' value='" + (password ? "" : html_escape(value)) + "'></p>";
+}
+
+uint32_t restart_at = 0;
+
+static void set_field(const char *name, char *dst, size_t size) {
+  if (web.hasArg(name)) strlcpy(dst, web.arg(name).c_str(), size);
+}
+
+static void save_and_reboot() {
+  save_config();
+  send_page("", "<p>Saved, rebooting...</p><p><a href='/'>Back to status</a></p>");
+  restart_at = millis() + 1500;
+}
+
 void handle_root() {
-  String h = "<html><body><h3>TCS Intercom " VERSION "</h3>";
+  if (!auth()) return;
+  String h = "<p>WiFi: " + html_escape(WiFi.SSID().c_str()) + " (" + WiFi.localIP().toString() + ", " + String(WiFi.RSSI()) + " dBm)</p>";
   h += "<p>MQTT: " + String(client.connected() ? "connected" : "disconnected") + "</p>";
   h += "<p>Door address: 0x" + String(last_bus_address, HEX) + " (changes: " + String(bus_address_changes) +
        ", updated " + String((millis() - last_bus_address_ms) / 1000) + " s ago)</p>";
   h += "<p>Dropped RX frames: " + String(isr_overruns) + ", dropped TX frames: " + String(tx_dropped) + "</p>";
   h += "<form method='POST' action='/debug'><p>Debug logging: <b>" + String(debug_enabled ? "ON" : "OFF") + "</b> ";
   h += "<button name='on' value='" + String(debug_enabled ? 0 : 1) + "'>Turn " + String(debug_enabled ? "off" : "on") + "</button></p></form>";
-  h += "<p><a href='/config'>Settings</a></p>";
-  h += "</body></html>";
-  web.send(200, "text/html", h);
+  send_page("/", h);
 }
 
 void handle_debug() {
+  if (!auth()) return;
   debug_enabled = web.arg("on") == "1";
   save_config();
   web.sendHeader("Location", "/");
   web.send(303);
 }
 
-static void config_field(String &h, const char *label, const char *name, const char *value, bool password = false) {
-  h += "<p>" + String(label) + "<br><input name='" + name + "' size='60' type='" + (password ? "password" : "text") +
-       "' value='" + (password ? "" : html_escape(value)) + "'></p>";
+void handle_wifi_get() {
+  if (!auth()) return;
+  String h = "<form method='POST' action='/wifi'>";
+  config_field(h, "WiFi SSID (blank = WiFiManager / stored network)", "wifi_ssid", wifi_ssid);
+  config_field(h, "WiFi password, also the GUI and OTA password, 8-63 chars (blank = keep)", "password", "", true);
+  h += "<p><label><input type='checkbox' name='use_wifi_pass' value='1'> Use the WiFi password already stored in the device</label></p>";
+  h += "<button>Save and reboot</button></form>";
+  send_page("/wifi", h);
 }
 
-void handle_config_get() {
-  String h = "<html><body><h3>TCS Intercom settings</h3><form method='POST' action='/config'>";
+void handle_wifi_post() {
+  if (!auth()) return;
+
+  String pw = web.arg("password");
+  if (pw.length() > 0 && (pw.length() < 8 || pw.length() > 63)) {
+    web.send(400, "text/plain", "Password must be 8-63 characters");
+    return;
+  }
+  if (web.arg("wifi_ssid").length() > 32) {
+    web.send(400, "text/plain", "SSID must be at most 32 characters");
+    return;
+  }
+  bool use_stored = web.arg("use_wifi_pass") == "1";
+  if (web.arg("wifi_ssid").length() > 0 && web.arg("wifi_ssid") != WiFi.SSID() && pw.length() == 0 && (use_stored || admin_pass[0] == 0)) {
+    web.send(400, "text/plain", "Enter the WiFi password for the new SSID");
+    return;
+  }
+
+  set_field("wifi_ssid", wifi_ssid, sizeof(wifi_ssid));
+  if (pw.length() > 0) strlcpy(admin_pass, pw.c_str(), sizeof(admin_pass));
+  else if (use_stored) admin_pass[0] = 0;
+  save_and_reboot();
+}
+
+void handle_mqtt_get() {
+  if (!auth()) return;
+  char serial[12];
+  snprintf(serial, sizeof(serial), "%x", (unsigned)my_serial_number);
+
+  String h = "<form method='POST' action='/mqtt'>";
   config_field(h, "MQTT server", "mqtt_server", mqtt_server);
   config_field(h, "MQTT port", "mqtt_port", mqtt_port);
   config_field(h, "MQTT topic", "mqtt_topic", mqtt_topic);
@@ -462,19 +666,13 @@ void handle_config_get() {
   config_field(h, "TCS command topic", "tcs_command_topic", tcs_command_topic);
   config_field(h, "Control4 command topic", "control4_command_topic", control4_command_topic);
   config_field(h, "Control4 notify topic", "control4_notify_topic", control4_notify_topic);
-  config_field(h, "Timezone (POSIX TZ)", "tz", tz);
-  h += "<p><label><input type='checkbox' name='debug' value='1'" + String(debug_enabled ? " checked" : "") + "> Debug logging</label></p>";
-  h += "<button>Save and reboot</button></form><p><a href='/'>Back</a></p></body></html>";
-  web.send(200, "text/html", h);
+  config_field(h, "This device's TCS serial number (hex)", "serial_number", serial);
+  h += "<button>Save and reboot</button></form>";
+  send_page("/mqtt", h);
 }
 
-uint32_t restart_at = 0;
-
-static void set_field(const char *name, char *dst, size_t size) {
-  if (web.hasArg(name)) strlcpy(dst, web.arg(name).c_str(), size);
-}
-
-void handle_config_post() {
+void handle_mqtt_post() {
+  if (!auth()) return;
   set_field("mqtt_server", mqtt_server, sizeof(mqtt_server));
   set_field("mqtt_port", mqtt_port, sizeof(mqtt_port));
   set_field("mqtt_topic", mqtt_topic, sizeof(mqtt_topic));
@@ -484,11 +682,77 @@ void handle_config_post() {
   set_field("tcs_command_topic", tcs_command_topic, sizeof(tcs_command_topic));
   set_field("control4_command_topic", control4_command_topic, sizeof(control4_command_topic));
   set_field("control4_notify_topic", control4_notify_topic, sizeof(control4_notify_topic));
+  if (web.arg("serial_number").length() > 0) sscanf(web.arg("serial_number").c_str(), "%x", &my_serial_number);
+  save_and_reboot();
+}
+
+void handle_time_get() {
+  if (!auth()) return;
+  time_t now = time(nullptr);
+  char buf[24] = "not synced yet";
+  if (now > 1000000000) {
+    struct tm t;
+    localtime_r(&now, &t);
+    strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &t);
+  }
+  String h = "<p>Current time: <b>" + String(buf) + "</b></p><form method='POST' action='/time'>";
+  config_field(h, "NTP server", "ntp_server", ntp_server);
+  config_field(h, "Timezone (POSIX TZ, e.g. CET-1CEST,M3.5.0,M10.5.0/3)", "tz", tz);
+  h += "<button>Save and reboot</button></form>";
+  send_page("/time", h);
+}
+
+void handle_time_post() {
+  if (!auth()) return;
+  if (web.arg("ntp_server").length() > 0) set_field("ntp_server", ntp_server, sizeof(ntp_server));
   if (web.arg("tz").length() > 0) set_field("tz", tz, sizeof(tz));
-  debug_enabled = web.arg("debug") == "1";
-  save_config();
-  web.send(200, "text/html", "<html><body>Saved, rebooting... <a href='/'>Back</a></body></html>");
-  restart_at = millis() + 1500;
+  save_and_reboot();
+}
+
+void handle_backup_page() {
+  if (!auth()) return;
+  String h = "<p><a href='/backup/download'><button type='button'>Download backup</button></a> (contains passwords)</p>";
+  h += "<form method='POST' action='/restore' enctype='multipart/form-data'><p><input type='file' name='file'> <button>Restore and reboot</button></p></form>";
+  send_page("/backup", h);
+}
+
+void handle_backup_download() {
+  if (!auth()) return;
+  JsonDocument json;
+  config_to_json(json);
+  String out;
+  serializeJsonPretty(json, out);
+  web.sendHeader("Content-Disposition", "attachment; filename=tcs-config.json");
+  web.send(200, "application/json", out);
+}
+
+// Restore uploads are buffered (max 4 KB) and only applied if the final handler authenticates
+static String restore_buf;
+static bool restore_overflow = false;
+
+void handle_restore_upload() {
+  HTTPUpload &u = web.upload();
+  if (u.status == UPLOAD_FILE_START) {
+    restore_buf = "";
+    restore_overflow = false;
+  } else if (u.status == UPLOAD_FILE_WRITE) {
+    if (restore_buf.length() + u.currentSize > 4096) restore_overflow = true;
+    else restore_buf.concat((const char*)u.buf, u.currentSize);
+  }
+}
+
+void handle_restore_done() {
+  if (!auth()) { restore_buf = ""; return; }
+
+  JsonDocument json;
+  DeserializationError err = restore_overflow ? DeserializationError::NoMemory : deserializeJson(json, restore_buf);
+  restore_buf = "";
+  if (err) {
+    web.send(400, "text/plain", String("Invalid backup: ") + err.c_str());
+    return;
+  }
+  apply_config(json);
+  save_and_reboot();
 }
 
 // Door-related frames carry the address of the door station currently in use; follow it as it changes
@@ -584,51 +848,20 @@ void setup()
     digitalWrite(outputPin, LOW);
     
     attachInterrupt(digitalPinToInterrupt(inputPin), analyzeCMD, CHANGE);
-    //read configuration from FS json
+    // Config lives in NVRAM; LittleFS only holds tcs_users.json (and the legacy config.json, migrated on first boot)
+    EEPROM.begin(NV_SIZE);
     Serial.println("mounting FS...");
+    bool fs_ok = LittleFS.begin();
+    load_config();
 
-    if (LittleFS.begin()) {
-        Serial.println("Read config file...");
-        if (LittleFS.exists("/config.json")) {
-            //file exists, reading and loading
-            Serial.println("reading config file");
-            std::unique_ptr<char[]> buf = read_file("/config.json");
-            if (buf) {
-                Serial.println("opened config file");
-                DynamicJsonDocument json(1024);
-                DeserializationError error = deserializeJson(json, buf.get());
-                if (!error) {
-                    Serial.println("parsed json");
-
-                    load_str(json, "mqtt_server", mqtt_server, sizeof(mqtt_server));
-                    load_str(json, "mqtt_port", mqtt_port, sizeof(mqtt_port));
-                    load_str(json, "mqtt_topic", mqtt_topic, sizeof(mqtt_topic));
-                    load_str(json, "mqtt_client", mqtt_client, sizeof(mqtt_client));
-                    load_str(json, "mqtt_user", mqtt_user, sizeof(mqtt_user));
-                    load_str(json, "mqtt_pass", mqtt_pass, sizeof(mqtt_pass));
-                    load_str(json, "control4_command_topic", control4_command_topic, sizeof(control4_command_topic));
-                    load_str(json, "control4_notify_topic", control4_notify_topic, sizeof(control4_notify_topic));
-                    load_str(json, "tcs_command_topic", tcs_command_topic, sizeof(tcs_command_topic));
-                    load_str(json, "tz", tz, sizeof(tz));
-                    debug_enabled = json["debug"] | debug_enabled;
-                } else {
-                    Serial.println("failed to load json config");
-                }
-            }
-        } else {
-          Serial.println("File config.json does not exist!");
-        }
-
+    if (fs_ok) {
         Serial.println("Read configured users...");
         if (LittleFS.exists("/tcs_users.json")) {
-            //file exists, reading and loading
-            Serial.println("reading users file");
             std::unique_ptr<char[]> buf = read_file("/tcs_users.json");
             if (buf) {
-                Serial.println("opened users file");
                 DeserializationError error = deserializeJson(intercomUsers, buf.get());
                 if (!error) {
-                    Serial.println("parsed json");
+                    Serial.println("parsed users json");
                 } else {
                     Serial.printf("failed to load users: %s\n", error.c_str());
                 }
@@ -636,12 +869,18 @@ void setup()
         } else {
           Serial.println("File tcs_users.json does not exist!");
         }
-
-
     }
     else
     {
         Serial.println("failed to mount FS");
+    }
+
+    // Join the configured network directly; WiFiManager below is the fallback
+    if (wifi_ssid[0]) {
+        Serial.printf("joining %s\n", wifi_ssid);
+        WiFi.mode(WIFI_STA);
+        WiFi.begin(wifi_ssid, effective_pass().c_str());
+        for (int i = 0; i < 40 && WiFi.status() != WL_CONNECTED; i++) delay(500);
     }
     //end read
 
@@ -701,7 +940,11 @@ void setup()
     //if it does not connect it starts an access point with the specified name
     //here  "AutoConnectAP"
     //and goes into a blocking loop awaiting configuration
-    if (!wifiManager.autoConnect("TCS  ", "intercom"))
+    char ap_name[16];
+    snprintf(ap_name, sizeof(ap_name), "TCS-%06x", (unsigned)ESP.getChipId());
+    String ap_pass = effective_pass();
+    if (ap_pass.length() < 8) ap_pass = "intercom"; // fallback AP only; WPA2 needs 8+ chars
+    if (WiFi.status() != WL_CONNECTED && !wifiManager.autoConnect(ap_name, ap_pass.c_str()))
     {
         Serial.println("failed to connect and hit timeout");
         delay(3000);
@@ -728,12 +971,20 @@ void setup()
         save_config();
     }
 
-    configTime(tz, ntpServer); // non-blocking; time syncs in the background
+    configTime(tz, ntp_server); // non-blocking; time syncs in the background
 
     web.on("/", HTTP_GET, handle_root);
     web.on("/debug", HTTP_POST, handle_debug);
-    web.on("/config", HTTP_GET, handle_config_get);
-    web.on("/config", HTTP_POST, handle_config_post);
+    web.on("/wifi", HTTP_GET, handle_wifi_get);
+    web.on("/wifi", HTTP_POST, handle_wifi_post);
+    web.on("/mqtt", HTTP_GET, handle_mqtt_get);
+    web.on("/mqtt", HTTP_POST, handle_mqtt_post);
+    web.on("/time", HTTP_GET, handle_time_get);
+    web.on("/time", HTTP_POST, handle_time_post);
+    web.on("/backup", HTTP_GET, handle_backup_page);
+    web.on("/backup/download", HTTP_GET, handle_backup_download);
+    web.on("/restore", HTTP_POST, handle_restore_done, handle_restore_upload);
+    web.collectHeaders("Authorization");
     web.begin();
 
     Serial.println("local ip");
@@ -791,6 +1042,8 @@ void setup()
             Serial.println("End Failed");
         }
     });
+    String ota_pass = effective_pass();
+    if (ota_pass.length() > 0) ArduinoOTA.setPassword(ota_pass.c_str());
     ArduinoOTA.begin();
 }
 
