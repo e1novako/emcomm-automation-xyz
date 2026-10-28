@@ -21,12 +21,10 @@
 
 #include <time.h>
 
-#define VERSION "1.0.4"
+#define VERSION "1.0.6"
 
-#define TCS_RING        0x00
-#define TCS_ANSWER      0x80
-#define TCS_ONHOOK      0x30000000
-#define TCS_ONERING     0x7F
+void publish_tcs_command(char *topic, CommandData data, bool direction);
+void mqtt_output(char *format, ...);
 
 const char* ntpServer = "pool.ntp.org";
 char tz[48] = "CET-1CEST,M3.5.0,M10.5.0/3"; // POSIX TZ string, configurable via config.json "tz"
@@ -88,11 +86,24 @@ bool shouldSaveConfig = false;
 #define oneBit      4
 #define zeroBit     2
 
-uint32_t nCMD = 0;
 volatile uint32_t CMD = 0;
-volatile uint32_t _CMD = -1;
 volatile uint8_t lengthCMD = 0;
 volatile bool cmdReady = false;
+
+// Transmit queue: frames are bit-banged by a hardware timer so the main loop never blocks
+#define TX_QUEUE_SIZE 4
+#define TX_MAX_STEPS  40
+#define TX_GAP_MS     20
+struct TxFrame { uint32_t cmd; bool is_long; };
+TxFrame tx_queue[TX_QUEUE_SIZE];
+uint8_t tx_q_head = 0;
+uint8_t tx_q_count = 0;
+uint32_t tx_dropped = 0;
+volatile uint16_t tx_steps[TX_MAX_STEPS]; // ms between edges
+volatile uint8_t tx_n = 0;
+volatile uint8_t tx_i = 0;
+volatile bool tx_busy = false;
+volatile bool tx_level = false;
 
 void get_tcsuser_data_by_addr(uint32_t u32_addr, char *_name, size_t name_size) {
 uint32_t _addr = 0;
@@ -113,15 +124,11 @@ uint32_t _addr = 0;
   }
 }
 
+// Short STOP_TALKING frame for the given bus address
 uint32_t stop_talking(uint32_t address) {
-uint32_t command = 0;
-//  case COMMAND_TYPE_STOP_TALKING:
+  uint32_t command = buildCommand(COMMAND_TYPE_STOP_TALKING, address).command;
 
-  command |= (3 << 12); // 3
-  command &= ~(1 << 7); // 00
-  command |= (address & 0x3F); // 0
-
-  Serial.println("Stop talking " + String(command));
+  DBG("Stop talking %08x\n", (unsigned)command);
 
   return command;
 }
@@ -139,6 +146,7 @@ struct tm current_time(char *mqtt_timestamp) {
 
 void ICACHE_RAM_ATTR analyzeCMD()
 {
+    if (tx_busy) return; // ignore our own edges
     static uint32_t curCMD;
     static uint32_t usLast;
     static byte curCRC;
@@ -240,40 +248,86 @@ void ICACHE_RAM_ATTR analyzeCMD()
     }
 }
 
-void send_command(uint32_t tcs_protocol_command, bool is_long) {
-  int length = is_long ? 32 : 16;
-  byte checksm = 1;
-  byte firstBit = is_long ? 1 : 0;
-  char helper[30];
-  //sprintf(helper, "Sending %s command: %08x", (length==16) ? "short" : "long", tcs_protocol_command);
-  //Serial.println(helper);
-
-  // Disable interrupt during command send
-  detachInterrupt(digitalPinToInterrupt(inputPin));
-
-  digitalWrite(outputPin, HIGH);
-  delay(startBit);
-  digitalWrite(outputPin, !digitalRead(outputPin));
-  delay(firstBit ? oneBit : zeroBit);
-  int curBit = 0;
-  for (byte i = length; i > 0; i--) {
-    curBit = bitRead(tcs_protocol_command, i - 1);
-    digitalWrite(outputPin, !digitalRead(outputPin));
-    delay(curBit ? oneBit : zeroBit);
-    checksm ^= curBit;
+void ICACHE_RAM_ATTR tx_timer_isr() {
+  tx_i++;
+  if (tx_i >= tx_n) {
+    GPOC = (1 << outputPin);
+    tx_busy = false;
+    return;
   }
-  digitalWrite(outputPin, !digitalRead(outputPin));
-  delay(checksm ? oneBit : zeroBit);
-  digitalWrite(outputPin, LOW);
-
-  // Enable interrupts after comand was sent
-  attachInterrupt(digitalPinToInterrupt(inputPin), analyzeCMD, CHANGE);
+  tx_level = !tx_level;
+  if (tx_level) GPOS = (1 << outputPin); else GPOC = (1 << outputPin);
+  timer1_write((uint32_t)tx_steps[tx_i] * 5000); // 5 MHz timer: 5000 ticks per ms
 }
 
-void control4_notify() {
-  client.publish(control4_notify_topic, "{\"value\":{\"ACMainsFault\":false,\"Alarm1\":true,\"Alarm2\":false,\"BatteryDefect\":false,\"BatteryLow\":false,\"RestoreNotify\":false,\"SupervisionNotify\":false,\"Tamper\":false,\"Test\":false,\"Trouble\":false}}");
-  client.publish(control4_notify_topic, "{\"value\":{\"ACMainsFault\":false,\"Alarm1\":false,\"Alarm2\":false,\"BatteryDefect\":false,\"BatteryLow\":false,\"RestoreNotify\":false,\"SupervisionNotify\":false,\"Tamper\":false,\"Test\":false,\"Trouble\":false}}");
-} 
+// Starts transmitting one frame; same waveform as before: start, length bit, 16/32 data bits, parity
+static void tx_start(uint32_t cmd, bool is_long) {
+  int length = is_long ? 32 : 16;
+  byte checksm = 1;
+  uint8_t n = 0;
+
+  tx_steps[n++] = startBit;
+  tx_steps[n++] = is_long ? oneBit : zeroBit;
+  for (int i = length; i > 0; i--) {
+    int bit = bitRead(cmd, i - 1);
+    tx_steps[n++] = bit ? oneBit : zeroBit;
+    checksm ^= bit;
+  }
+  tx_steps[n++] = checksm ? oneBit : zeroBit;
+
+  tx_n = n;
+  tx_i = 0;
+  tx_level = true;
+  tx_busy = true;
+  GPOS = (1 << outputPin);
+  timer1_attachInterrupt(tx_timer_isr);
+  timer1_enable(TIM_DIV16, TIM_EDGE, TIM_SINGLE);
+  timer1_write((uint32_t)tx_steps[0] * 5000);
+}
+
+bool queue_command(uint32_t cmd, bool is_long) {
+  if (tx_q_count >= TX_QUEUE_SIZE) {
+    tx_dropped++;
+    DBG("TX queue full, dropping %08x\n", (unsigned)cmd);
+    return false;
+  }
+  tx_queue[(tx_q_head + tx_q_count) % TX_QUEUE_SIZE] = { cmd, is_long };
+  tx_q_count++;
+  return true;
+}
+
+// Called from loop(): starts the next queued frame once the bus is idle
+void tx_service() {
+  static bool started = false;
+  static uint32_t end_ms = 0;
+
+  if (started && !tx_busy) {
+    started = false;
+    end_ms = millis();
+  }
+  if (!started && tx_q_count > 0 && millis() - end_ms >= TX_GAP_MS) {
+    TxFrame f = tx_queue[tx_q_head];
+    tx_q_head = (tx_q_head + 1) % TX_QUEUE_SIZE;
+    tx_q_count--;
+    DBG("TX %08x (%s)\n", (unsigned)f.cmd, f.is_long ? "long" : "short");
+    started = true;
+    tx_start(f.cmd, f.is_long);
+  }
+}
+
+// Pulses the Control4 IAS zone: set, then clear
+void control4_notify(bool alarm1, bool alarm2, const CommandData &d) {
+  char msg[200];
+  const char *fmt = "{\"value\":{\"ACMainsFault\":false,\"Alarm1\":%s,\"Alarm2\":%s,\"BatteryDefect\":false,\"BatteryLow\":false,\"RestoreNotify\":false,\"SupervisionNotify\":false,\"Tamper\":false,\"Test\":false,\"Trouble\":false}}";
+
+  snprintf(msg, sizeof(msg), fmt, alarm1 ? "true" : "false", alarm2 ? "true" : "false");
+  client.publish(control4_notify_topic, msg);
+  snprintf(msg, sizeof(msg), fmt, "false", "false");
+  client.publish(control4_notify_topic, msg);
+
+  mqtt_output((char*)"\"type\": \"control4_notify\", \"alarm\": \"%s\", \"address\": \"%02x\", \"serial_number\": \"%05x\"",
+              alarm1 ? "alarm1" : "alarm2", (unsigned)d.address, (unsigned)d.serial_number);
+}
 
 void mqtt_output(char *format, ...) {
     char mqtt_tmp[160];
@@ -294,21 +348,44 @@ void mqtt_output(char *format, ...) {
     client.publish(mqtt_topic, mqtt_msg);
 }
 
+// Retained "online"/"offline" availability, with offline as the last will
+static void topic_with_suffix(char *out, size_t size, const char *suffix) {
+  snprintf(out, size, "%s/%s", mqtt_topic, suffix);
+}
+
 // Single non-blocking attempt; the caller rate-limits retries
 bool connectToMqtt() {
-  char mcli[48];
-  snprintf(mcli, sizeof(mcli), "@%s-%d", mqtt_client, (int)random(100,999));
+  char mcli[64];
+  char avail[96];
+  // Stable client ID so the broker replaces the old session instead of piling up new ones
+  snprintf(mcli, sizeof(mcli), "%s-%06x", mqtt_client, (unsigned)ESP.getChipId());
+  topic_with_suffix(avail, sizeof(avail), "availability");
+
   DBG("connecting %s to MQTT...\n", mcli);
-  if (!client.connect(mcli, mqtt_user, mqtt_pass)) {
+  if (!client.connect(mcli, mqtt_user, mqtt_pass, avail, 0, true, "offline")) {
     DBG("MQTT connect failed, rc=%d\n", client.state());
     return false;
   }
 
   client.subscribe(tcs_command_topic);
   client.subscribe(control4_command_topic);
+  client.publish(avail, "online", true);
   DBG("MQTT connected, subscribed\n");
   mqtt_output((char*)"\"type\": \"sniffer_online\", \"version\": \"" VERSION "\"");
   return true;
+}
+
+// Periodic health report on <mqtt_topic>/status
+void publish_status() {
+  char topic[96];
+  char msg[256];
+  topic_with_suffix(topic, sizeof(topic), "status");
+  snprintf(msg, sizeof(msg),
+           "{ \"version\": \"" VERSION "\", \"uptime\": %lu, \"rssi\": %d, \"free_heap\": %u, \"rx_overruns\": %lu, "
+           "\"tx_dropped\": %lu, \"tx_queued\": %u, \"door_address\": \"%02x\", \"door_address_changes\": %lu }",
+           (unsigned long)(millis() / 1000), WiFi.RSSI(), (unsigned)ESP.getFreeHeap(), (unsigned long)isr_overruns,
+           (unsigned long)tx_dropped, (unsigned)tx_q_count, (unsigned)last_bus_address, (unsigned long)bus_address_changes);
+  client.publish(topic, msg);
 }
 
 void save_config() {
@@ -334,14 +411,30 @@ void save_config() {
   configFile.close();
 }
 
+static String html_escape(const char *v) {
+  String o;
+  for (; *v; v++) {
+    switch (*v) {
+      case '&': o += "&amp;"; break;
+      case '<': o += "&lt;"; break;
+      case '>': o += "&gt;"; break;
+      case '"': o += "&quot;"; break;
+      case '\'': o += "&#39;"; break;
+      default: o += *v;
+    }
+  }
+  return o;
+}
+
 void handle_root() {
   String h = "<html><body><h3>TCS Intercom " VERSION "</h3>";
   h += "<p>MQTT: " + String(client.connected() ? "connected" : "disconnected") + "</p>";
   h += "<p>Door address: 0x" + String(last_bus_address, HEX) + " (changes: " + String(bus_address_changes) +
        ", updated " + String((millis() - last_bus_address_ms) / 1000) + " s ago)</p>";
-  h += "<p>Dropped frames: " + String(isr_overruns) + "</p>";
+  h += "<p>Dropped RX frames: " + String(isr_overruns) + ", dropped TX frames: " + String(tx_dropped) + "</p>";
   h += "<form method='POST' action='/debug'><p>Debug logging: <b>" + String(debug_enabled ? "ON" : "OFF") + "</b> ";
   h += "<button name='on' value='" + String(debug_enabled ? 0 : 1) + "'>Turn " + String(debug_enabled ? "off" : "on") + "</button></p></form>";
+  h += "<p><a href='/config'>Settings</a></p>";
   h += "</body></html>";
   web.send(200, "text/html", h);
 }
@@ -351,6 +444,51 @@ void handle_debug() {
   save_config();
   web.sendHeader("Location", "/");
   web.send(303);
+}
+
+static void config_field(String &h, const char *label, const char *name, const char *value, bool password = false) {
+  h += "<p>" + String(label) + "<br><input name='" + name + "' size='60' type='" + (password ? "password" : "text") +
+       "' value='" + (password ? "" : html_escape(value)) + "'></p>";
+}
+
+void handle_config_get() {
+  String h = "<html><body><h3>TCS Intercom settings</h3><form method='POST' action='/config'>";
+  config_field(h, "MQTT server", "mqtt_server", mqtt_server);
+  config_field(h, "MQTT port", "mqtt_port", mqtt_port);
+  config_field(h, "MQTT topic", "mqtt_topic", mqtt_topic);
+  config_field(h, "MQTT client name", "mqtt_client", mqtt_client);
+  config_field(h, "MQTT user", "mqtt_user", mqtt_user);
+  config_field(h, "MQTT password (blank = keep)", "mqtt_pass", "", true);
+  config_field(h, "TCS command topic", "tcs_command_topic", tcs_command_topic);
+  config_field(h, "Control4 command topic", "control4_command_topic", control4_command_topic);
+  config_field(h, "Control4 notify topic", "control4_notify_topic", control4_notify_topic);
+  config_field(h, "Timezone (POSIX TZ)", "tz", tz);
+  h += "<p><label><input type='checkbox' name='debug' value='1'" + String(debug_enabled ? " checked" : "") + "> Debug logging</label></p>";
+  h += "<button>Save and reboot</button></form><p><a href='/'>Back</a></p></body></html>";
+  web.send(200, "text/html", h);
+}
+
+uint32_t restart_at = 0;
+
+static void set_field(const char *name, char *dst, size_t size) {
+  if (web.hasArg(name)) strlcpy(dst, web.arg(name).c_str(), size);
+}
+
+void handle_config_post() {
+  set_field("mqtt_server", mqtt_server, sizeof(mqtt_server));
+  set_field("mqtt_port", mqtt_port, sizeof(mqtt_port));
+  set_field("mqtt_topic", mqtt_topic, sizeof(mqtt_topic));
+  set_field("mqtt_client", mqtt_client, sizeof(mqtt_client));
+  set_field("mqtt_user", mqtt_user, sizeof(mqtt_user));
+  if (web.arg("mqtt_pass").length() > 0) set_field("mqtt_pass", mqtt_pass, sizeof(mqtt_pass));
+  set_field("tcs_command_topic", tcs_command_topic, sizeof(tcs_command_topic));
+  set_field("control4_command_topic", control4_command_topic, sizeof(control4_command_topic));
+  set_field("control4_notify_topic", control4_notify_topic, sizeof(control4_notify_topic));
+  if (web.arg("tz").length() > 0) set_field("tz", tz, sizeof(tz));
+  debug_enabled = web.arg("debug") == "1";
+  save_config();
+  web.send(200, "text/html", "<html><body>Saved, rebooting... <a href='/'>Back</a></body></html>");
+  restart_at = millis() + 1500;
 }
 
 // Door-related frames carry the address of the door station currently in use; follow it as it changes
@@ -422,28 +560,16 @@ void callback(char *topic, byte *payload, unsigned int length) {
     CommandData command_data = buildCommand(type, address, hex_field(doc, "payload"), hex_field(doc, "serial_number"));
     if (command_data.command > 0) {
       publish_tcs_command(mqtt_topic, command_data, true);
-      send_command(command_data.command, command_data.is_long);
+      queue_command(command_data.command, command_data.is_long);
     }
   } else if (String(topic) == String(control4_command_topic)) {
     CommandData command_data = buildCommand(COMMAND_TYPE_OPEN_DOOR, last_bus_address, 0, 0);
     DBG("Control4 open door, address 0x%02x\n", (unsigned)last_bus_address);
     if (command_data.command > 0) {
       publish_tcs_command(mqtt_topic, command_data, true);
-      send_command(command_data.command, command_data.is_long);
+      queue_command(command_data.command, command_data.is_long);
     }
   }
-}
-
-void printHEX(uint32_t DATA)
-{
-    uint8_t numChars = lengthCMD ? 8 : 4;
-    uint32_t mask = 0x0000000F;
-    mask = mask << 4 * (numChars - 1);
-    for (uint32_t i = numChars; i > 0; --i)
-    {
-        Serial.print(((DATA & mask) >> (i - 1) * 4), HEX);
-        mask = mask >> 4;
-    }
 }
 
 void setup()
@@ -606,6 +732,8 @@ void setup()
 
     web.on("/", HTTP_GET, handle_root);
     web.on("/debug", HTTP_POST, handle_debug);
+    web.on("/config", HTTP_GET, handle_config_get);
+    web.on("/config", HTTP_POST, handle_config_post);
     web.begin();
 
     Serial.println("local ip");
@@ -617,6 +745,7 @@ void setup()
     Serial.println(atoi(mqtt_port));
 
     client.setServer(mqtt_server, atoi(mqtt_port));
+    client.setBufferSize(512);
     client.setCallback(callback);
 
     ArduinoOTA.onStart([]() {
@@ -665,70 +794,36 @@ void setup()
     ArduinoOTA.begin();
 }
 
+// Appends formatted text to buf, truncating instead of overflowing
+static void append(char *buf, size_t size, const char *fmt, ...) {
+  size_t len = strlen(buf);
+  if (len >= size - 1) return;
+  va_list args;
+  va_start(args, fmt);
+  vsnprintf(buf + len, size - len, fmt, args);
+  va_end(args);
+}
+
 void publish_tcs_command(char *topic, CommandData data, bool direction) {
-struct tm timeinfo;
-char mqtt_time[20];
-char mqtt_timestamp[12];
-char format[350];
-char tcs_tmp[50];
+  char mqtt_time[12];
+  char msg[320];
 
-timeinfo=current_time((char*)&mqtt_time);
-strftime(mqtt_timestamp, 11, "%s", &timeinfo);
+  current_time(mqtt_time);
+  snprintf(msg, sizeof(msg), "{ \"ts\": \"%lu\", \"time\": \"%s\", \"direction\": \"%s\"",
+           (unsigned long)time(nullptr), mqtt_time, direction ? "output" : "input");
 
-sprintf(format, "{ \"ts\": \"%s\", \"time\": \"%s\"", mqtt_timestamp, mqtt_time);
+  if (data.command) append(msg, sizeof(msg), ", \"command\": \"%08x\"", (unsigned)data.command);
+  if (data.type) append(msg, sizeof(msg), ", \"type\": \"%s\"", command_type_to_string(data.type));
+  if (data.serial_number) append(msg, sizeof(msg), ", \"serial_number\": \"%08x\"", (unsigned)data.serial_number);
+  append(msg, sizeof(msg), ", \"address\": \"%02x\", \"payload\": \"%x\" }", data.address, (unsigned)data.payload);
 
-strcat(format, ", \"direction\": ");
-if (direction)
-  strcat(format, "\"output\"");
-else
-  strcat(format, "\"input\"");
-
-if (data.command) {
-  strcat(format, ", \"command\": ");
-  sprintf(tcs_tmp, "\"%08x\"", data.command);
-  strcat(format, tcs_tmp);
+  client.publish(topic, msg);
 }
-
-if (data.type) {
-  strcat(format, ", \"type\": ");
-  sprintf(tcs_tmp, "\"%s\"", command_type_to_string(data.type));
-  strcat(format, tcs_tmp);
-}
-
-if (data.serial_number) {
-  strcat(format, ", \"serial_number\": ");
-  sprintf(tcs_tmp, "\"%08x\"", data.serial_number);
-  strcat(format, tcs_tmp);
-
-/*
-  char *s_tmp; 
-  s_tmp = (char*)calloc(32 * sizeof(char), 0);
-  get_tcsuser_data_by_addr(data.serial_number, s_tmp);
-  if (s_tmp[0] != 0) {
-    strcat(format, ", \"flat\": ");
-    strcat(format, s_tmp);
-  }
-  free(s_tmp);
-*/
-}
-
-strcat(format, ", \"address\": ");
-sprintf(tcs_tmp, "\"%02x\"", data.address);
-strcat(format, tcs_tmp);
-
-strcat(format, ", \"payload\": ");
-sprintf(tcs_tmp, "\"%x\"", data.payload);
-strcat(format, tcs_tmp);
-
-strcat(format, " }");
-client.publish(topic, format);
-
-}
-
 
 void loop() {
     static uint32_t last_wifi_try = 0;
     static uint32_t last_mqtt_try = 0;
+    static uint32_t last_status = 0;
     uint32_t now = millis();
 
     // Never block: the bus must keep being sniffed while WiFi/MQTT recover
@@ -745,9 +840,15 @@ void loop() {
       }
     } else {
       client.loop();
+      if (now - last_status > 60000) {
+        last_status = now;
+        publish_status();
+      }
     }
     ArduinoOTA.handle();
     web.handleClient();
+    tx_service();
+    if (restart_at && (int32_t)(now - restart_at) >= 0) ESP.restart();
 
     // Take a consistent snapshot of the frame; the ISR may overwrite it at any time
     noInterrupts();
@@ -764,8 +865,11 @@ void loop() {
       DBG("RX %s %s addr=0x%02x\n", cmd_data.command_hex.c_str(), command_type_to_string(cmd_data.type), cmd_data.address);
       publish_tcs_command(mqtt_topic, cmd_data, false);
 
-      if ( cmd_data.serial_number == my_serial_number &&  cmd_data.type == COMMAND_TYPE_INTERNAL_CALL) {
-        control4_notify();
+      if (cmd_data.serial_number == my_serial_number) {
+        if (cmd_data.type == COMMAND_TYPE_INTERNAL_CALL)
+          control4_notify(true, false, cmd_data);
+        else if (cmd_data.type == COMMAND_TYPE_DOOR_CALL)
+          control4_notify(false, true, cmd_data);
       }
     }
 }

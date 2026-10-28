@@ -46,9 +46,10 @@ CommandData buildCommand(uint32_t type, uint8_t address, uint32_t payload, uint3
 
         case COMMAND_TYPE_FLOOR_CALL:
             data.serial_number = serial_number;
+            data.address = address ? (address & 0x3F) : 1; // 1 is the classic 0x41 floor call
             data.command |= (1 << 28);  // 1
             data.command |= ((data.serial_number & 0xFFFFF) << 8); // C30BA
-            data.command |= 0x41; // 41
+            data.command |= 0x40 | data.address; // 41
             break;
 
         case COMMAND_TYPE_START_TALKING_DOOR_CALL:
@@ -151,6 +152,33 @@ CommandData buildCommand(uint32_t type, uint8_t address, uint32_t payload, uint3
             data.command |= data.payload & 0xFFFFFF; // MAC address
             break;
 
+        case COMMAND_TYPE_FOUND_DEVICE:
+            data.serial_number = serial_number;
+            data.address = address;
+            data.command |= (5 << 28); // 5
+            data.command |= ((data.serial_number & 0xFFFFF) << 8); // C30BA
+            data.command |= (1 << 4); // 1
+            data.command |= (data.address & 0xF);
+            break;
+
+        case COMMAND_TYPE_FOUND_DEVICE_SUBSYSTEM:
+            data.serial_number = serial_number;
+            data.address = address;
+            data.command |= (5 << 28); // 5
+            data.command |= ((data.serial_number & 0xFFFFF) << 8); // C30BA
+            data.command |= (4 << 4); // 4
+            data.command |= (data.address & 0xF);
+            break;
+
+        case COMMAND_TYPE_DEVICE_TEST:
+            data.serial_number = serial_number;
+            data.payload = payload;
+            data.command |= (5 << 28); // 5
+            data.command |= ((data.serial_number & 0xFFFFF) << 8); // C30BA
+            data.command |= (8 << 4); // 8
+            data.command |= (data.payload & 0xF);
+            break;
+
         case COMMAND_TYPE_SELECT_DEVICE_GROUP:
             data.payload = payload;
             data.is_long = false;
@@ -239,9 +267,10 @@ CommandData parseCommand(uint32_t command, int is_long)
                 break;
 
             case 1:
-                if ((command & 0xFF) == 0x41)
+                if ((command & 0xC0) == 0x40)
                 {
                     data.type = COMMAND_TYPE_FLOOR_CALL;
+                    data.address = command & 0x3F;
                 }
                 else if (command & (1 << 7))
                 {
@@ -275,8 +304,8 @@ CommandData parseCommand(uint32_t command, int is_long)
                         break;
 
                     case 8:
-                        // Device test
-                        // Not implemented
+                        data.type = COMMAND_TYPE_DEVICE_TEST;
+                        data.payload = command & 0xF;
                         break;
 
                     case 0xC:
@@ -502,6 +531,7 @@ CommandType string_to_command_type(String str)
     if (str == "SELECT_MEMORY_PAGE") return COMMAND_TYPE_SELECT_MEMORY_PAGE;
     if (str == "WRITE_MEMORY") return COMMAND_TYPE_WRITE_MEMORY;
     if (str == "REQUEST_VERSION") return COMMAND_TYPE_REQUEST_VERSION;
+    if (str == "DEVICE_TEST") return COMMAND_TYPE_DEVICE_TEST;
 
     return COMMAND_TYPE_UNKNOWN;
 }
@@ -539,6 +569,7 @@ const char* command_type_to_string(uint32_t type)
         case COMMAND_TYPE_SELECT_MEMORY_PAGE: return "SELECT_MEMORY_PAGE";
         case COMMAND_TYPE_WRITE_MEMORY: return "WRITE_MEMORY";
         case COMMAND_TYPE_REQUEST_VERSION: return "REQUEST_VERSION";
+        case COMMAND_TYPE_DEVICE_TEST: return "DEVICE_TEST";
         default: return "UNKNOWN";
     }
 }
