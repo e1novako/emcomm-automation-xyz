@@ -2,8 +2,6 @@
 #include <algorithm>
 #include <cctype>
 
-#define ESP_LOGD(x, a, ...)  Serial.println(a, ...)
-
 String format_hex(uint32_t command) {
 char sCommand[10];
 
@@ -23,6 +21,7 @@ CommandData buildCommand(uint32_t type, uint8_t address, uint32_t payload, uint3
     {
         case COMMAND_TYPE_END_OF_RINGTONE:
             data.address = address;
+            data.is_long = false;
             data.command |= (1 << 9);
             data.command |= (1 << 13);
             data.command |= (data.address & 0x3F); // 0
@@ -216,14 +215,15 @@ CommandData buildCommand(uint32_t type, uint8_t address, uint32_t payload, uint3
     return data;
 }
 
-CommandData parseCommand(uint32_t command)
+CommandData parseCommand(uint32_t command, int is_long)
 {
     CommandData data{};
     data.command = command;
     data.type = COMMAND_TYPE_UNKNOWN;
     data.address = 0;
     data.payload = 0;
-    data.is_long = (command & 0xffff0000) ? true : false;
+    // is_long < 0: guess from the value; otherwise trust the length seen on the bus
+    data.is_long = (is_long < 0) ? ((command & 0xffff0000) != 0) : (is_long != 0);
 
     data.command_hex = format_hex(command);
 
@@ -245,7 +245,7 @@ CommandData parseCommand(uint32_t command)
                 }
                 else if (command & (1 << 7))
                 {
-                    data.type = COMMAND_TYPE_OPEN_DOOR;
+                    data.type = COMMAND_TYPE_OPEN_DOOR_LONG;
                     data.address = command & 0x3F;
                 }
                 break;

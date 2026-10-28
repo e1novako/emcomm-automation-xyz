@@ -142,7 +142,8 @@ struct ModelData {
 };
 
 CommandData buildCommand(uint32_t type, uint8_t address = 0, uint32_t payload = 0, uint32_t serial_number = 0);
-CommandData parseCommand(uint32_t command);
+// is_long: -1 = guess from value, 0/1 = length seen on the bus
+CommandData parseCommand(uint32_t command, int is_long = -1);
 
 const char* command_type_to_string(uint32_t type);
 CommandType string_to_command_type(String str);
@@ -154,8 +155,8 @@ SettingCellData getSettingCellData(SettingType setting, Model model);
 ModelData getModelData(Model model = MODEL_NONE);
 
 const char* model_to_string(Model model = MODEL_NONE);
-Model string_to_model(String &str);
-Model identifier_string_to_model(String &model_key, const uint8_t& hw_version = 0, const uint32_t& fw_version = 0);
+Model string_to_model(const String &str);
+Model identifier_string_to_model(const String &model_key, const uint8_t& hw_version = 0, const uint32_t& fw_version = 0);
 
 uint8_t ringtone_to_int(String &str);
 String int_to_ringtone(uint8_t ringtone);

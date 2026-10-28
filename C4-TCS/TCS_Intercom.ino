@@ -11,6 +11,7 @@
 #include <WiFiManager.h> //https://github.com/tzapu/WiFiManager
 
 #include <ESP8266mDNS.h>
+#include <ESP8266WebServer.h>
 #include <WiFiUdp.h>
 #include <ArduinoOTA.h>
 
@@ -20,7 +21,7 @@
 
 #include <time.h>
 
-#define VERSION "1.0.3"
+#define VERSION "1.0.4"
 
 #define TCS_RING        0x00
 #define TCS_ANSWER      0x80
@@ -28,16 +29,19 @@
 #define TCS_ONERING     0x7F
 
 const char* ntpServer = "pool.ntp.org";
-const long  gmtOffset_sec = 0;
-const int   daylightOffset_sec = 3600;
+char tz[48] = "CET-1CEST,M3.5.0,M10.5.0/3"; // POSIX TZ string, configurable via config.json "tz"
 
-int mqtt_connection_status = 0;
+// Debug output can be switched on/off from the web GUI (http://<device>/) and is persisted in config.json
+bool debug_enabled = true;
+#define DBG(...) do { if (debug_enabled) Serial.printf(__VA_ARGS__); } while (0)
+
+ESP8266WebServer web(80);
 
 WiFiClient net;
 PubSubClient client(net);
 
 //JsonDocument intercomUsers;
-DynamicJsonDocument intercomUsers(4096);
+DynamicJsonDocument intercomUsers(8192);
 
 //define your default values here, if there are different values in config.json, they are overwritten.
 char mqtt_server[40] = "192.168.10.243";
@@ -51,7 +55,10 @@ char mqtt_user[32] = "";
 char mqtt_pass[32] = "";
 
 uint32_t my_serial_number = 0x8c0b9;
-uint32_t last_bus_address = 3;
+uint32_t last_bus_address = 3;      // address of the door station involved in the latest door-related frame
+uint32_t last_bus_address_ms = 0;   // millis() of the last update
+uint32_t bus_address_changes = 0;
+volatile uint32_t isr_overruns = 0; // frames dropped because the previous one was not consumed yet
 
 // Copy a JSON string value into dst safely; keeps the current value if the key is missing/not a string
 static void load_str(JsonDocument &json, const char *key, char *dst, size_t size) {
@@ -85,7 +92,7 @@ uint32_t nCMD = 0;
 volatile uint32_t CMD = 0;
 volatile uint32_t _CMD = -1;
 volatile uint8_t lengthCMD = 0;
-volatile bool cmdReady;
+volatile bool cmdReady = false;
 
 void get_tcsuser_data_by_addr(uint32_t u32_addr, char *_name, size_t name_size) {
 uint32_t _addr = 0;
@@ -119,14 +126,13 @@ uint32_t command = 0;
   return command;
 }
 
+// Never blocks: if NTP has not synced yet the time reads as 1970
 struct tm current_time(char *mqtt_timestamp) {
+  time_t now = time(nullptr);
   struct tm timeinfo;
-  if(!getLocalTime(&timeinfo)) {
-    Serial.println("Failed to obtain time");
-  }
+  localtime_r(&now, &timeinfo);
 
   strftime(mqtt_timestamp, 12, "%H:%M:%S", &timeinfo);
-  mqtt_timestamp[8]=0;
 
   return timeinfo;
 }
@@ -224,6 +230,7 @@ void ICACHE_RAM_ATTR analyzeCMD()
         cmdIntReady = 0;
         if (curCRC == calCRC)
         {
+            if (cmdReady) isr_overruns++;
             cmdReady = 1;
             lengthCMD = curLength;
             CMD = curCMD;
@@ -233,15 +240,10 @@ void ICACHE_RAM_ATTR analyzeCMD()
     }
 }
 
-void send_command(uint32_t tcs_protocol_command) {
-  int length = 16;
+void send_command(uint32_t tcs_protocol_command, bool is_long) {
+  int length = is_long ? 32 : 16;
   byte checksm = 1;
-  byte firstBit = 0;
-
-  if (tcs_protocol_command > 0xFFFF) {
-    length = 32;
-    firstBit = 1;
-  }
+  byte firstBit = is_long ? 1 : 0;
   char helper[30];
   //sprintf(helper, "Sending %s command: %08x", (length==16) ? "short" : "long", tcs_protocol_command);
   //Serial.println(helper);
@@ -268,7 +270,7 @@ void send_command(uint32_t tcs_protocol_command) {
   attachInterrupt(digitalPinToInterrupt(inputPin), analyzeCMD, CHANGE);
 }
 
-void control4_notify(CommandData  data) {
+void control4_notify() {
   client.publish(control4_notify_topic, "{\"value\":{\"ACMainsFault\":false,\"Alarm1\":true,\"Alarm2\":false,\"BatteryDefect\":false,\"BatteryLow\":false,\"RestoreNotify\":false,\"SupervisionNotify\":false,\"Tamper\":false,\"Test\":false,\"Trouble\":false}}");
   client.publish(control4_notify_topic, "{\"value\":{\"ACMainsFault\":false,\"Alarm1\":false,\"Alarm2\":false,\"BatteryDefect\":false,\"BatteryLow\":false,\"RestoreNotify\":false,\"SupervisionNotify\":false,\"Tamper\":false,\"Test\":false,\"Trouble\":false}}");
 } 
@@ -292,44 +294,88 @@ void mqtt_output(char *format, ...) {
     client.publish(mqtt_topic, mqtt_msg);
 }
 
-void connectToMqtt() {
+// Single non-blocking attempt; the caller rate-limits retries
+bool connectToMqtt() {
   char mcli[48];
-  snprintf(mcli, sizeof(mcli), "@%s-%d", mqtt_client, random(100,999));
-  Serial.print("\nconnecting ");
-  Serial.print(mcli);
-  Serial.print(" to MQTT...");
-  while (!client.connect(mcli, mqtt_user, mqtt_pass)) {
-      Serial.print(".");
-      delay(5000);
+  snprintf(mcli, sizeof(mcli), "@%s-%d", mqtt_client, (int)random(100,999));
+  DBG("connecting %s to MQTT...\n", mcli);
+  if (!client.connect(mcli, mqtt_user, mqtt_pass)) {
+    DBG("MQTT connect failed, rc=%d\n", client.state());
+    return false;
   }
 
-  // Set AutoReconnect !!!
-  WiFi.setAutoReconnect(true);
-  WiFi.persistent(true);
-
-  mqtt_connection_status=1;
+  client.subscribe(tcs_command_topic);
+  client.subscribe(control4_command_topic);
+  DBG("MQTT connected, subscribed\n");
   mqtt_output((char*)"\"type\": \"sniffer_online\", \"version\": \"" VERSION "\"");
+  return true;
 }
 
-void connectToWifi() {
-    Serial.print("checking wifi...");
-    while (WiFi.status() != WL_CONNECTED) {
-        Serial.print(".");
-        delay(1000);
-    }
+void save_config() {
+  DynamicJsonDocument json(1024);
+  json["mqtt_server"] = mqtt_server;
+  json["mqtt_port"] = mqtt_port;
+  json["mqtt_topic"] = mqtt_topic;
+  json["mqtt_client"] = mqtt_client;
+  json["mqtt_user"] = mqtt_user;
+  json["mqtt_pass"] = mqtt_pass;
+  json["control4_command_topic"] = control4_command_topic;
+  json["control4_notify_topic"] = control4_notify_topic;
+  json["tcs_command_topic"] = tcs_command_topic;
+  json["tz"] = tz;
+  json["debug"] = debug_enabled;
 
-    configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
-    while (time(nullptr) < 1000) {
-        delay(100); // Adjust the delay time as per your requirements
-    }
-
-    connectToMqtt();
-
-    Serial.println("\nconnected!");
+  File configFile = LittleFS.open("/config.json", "w");
+  if (!configFile) {
+    Serial.println("failed to open config file for writing");
+    return;
+  }
+  serializeJson(json, configFile);
+  configFile.close();
 }
 
-void sendMessage() {
-    client.publish(mqtt_topic, "triggered");
+void handle_root() {
+  String h = "<html><body><h3>TCS Intercom " VERSION "</h3>";
+  h += "<p>MQTT: " + String(client.connected() ? "connected" : "disconnected") + "</p>";
+  h += "<p>Door address: 0x" + String(last_bus_address, HEX) + " (changes: " + String(bus_address_changes) +
+       ", updated " + String((millis() - last_bus_address_ms) / 1000) + " s ago)</p>";
+  h += "<p>Dropped frames: " + String(isr_overruns) + "</p>";
+  h += "<form method='POST' action='/debug'><p>Debug logging: <b>" + String(debug_enabled ? "ON" : "OFF") + "</b> ";
+  h += "<button name='on' value='" + String(debug_enabled ? 0 : 1) + "'>Turn " + String(debug_enabled ? "off" : "on") + "</button></p></form>";
+  h += "</body></html>";
+  web.send(200, "text/html", h);
+}
+
+void handle_debug() {
+  debug_enabled = web.arg("on") == "1";
+  save_config();
+  web.sendHeader("Location", "/");
+  web.send(303);
+}
+
+// Door-related frames carry the address of the door station currently in use; follow it as it changes
+void track_door_address(const CommandData &d) {
+  switch (d.type) {
+    case COMMAND_TYPE_DOOR_CALL:
+    case COMMAND_TYPE_START_TALKING_DOOR_CALL:
+    case COMMAND_TYPE_STOP_TALKING_DOOR_CALL:
+    case COMMAND_TYPE_OPEN_DOOR:
+    case COMMAND_TYPE_OPEN_DOOR_LONG:
+    case COMMAND_TYPE_DOOR_OPENED:
+    case COMMAND_TYPE_DOOR_CLOSED:
+    case COMMAND_TYPE_END_OF_RINGTONE:
+    case COMMAND_TYPE_END_OF_DOOR_READINESS:
+    case COMMAND_TYPE_INITIALIZE_DOOR_STATION:
+      break;
+    default:
+      return;
+  }
+  last_bus_address_ms = millis();
+  if (d.address != last_bus_address) {
+    DBG("Door address changed 0x%02x -> 0x%02x\n", (unsigned)last_bus_address, (unsigned)d.address);
+    last_bus_address = d.address;
+    bus_address_changes++;
+  }
 }
 
 //callback notifying us of the need to save config
@@ -338,69 +384,54 @@ void saveConfigCallback() {
     shouldSaveConfig = true;
 }
 
+// Accepts a hex string ("1a") or a JSON number
+static uint32_t hex_field(JsonDocument &doc, const char *key) {
+  uint32_t v = 0;
+  JsonVariant f = doc[key];
+  if (f.is<const char*>()) {
+    sscanf(f.as<const char*>(), "%x", &v);
+  } else if (f.is<unsigned long>()) {
+    v = f.as<unsigned long>();
+  }
+  return v;
+}
+
 void callback(char *topic, byte *payload, unsigned int length) {
-  uint32_t tcs_command = 0;
   JsonDocument doc;
-  char *message;
- 
-  message=(char*)malloc(length+1);
-  strncpy(message, (char*)payload, length);
-  message[length]=0;
-  Serial.println("Received: " + String(message));
 
-  // Deserialize the JSON document
-  DeserializationError error = deserializeJson(doc, message);
+  DBG("Received on %s: %.*s\n", topic, (int)length, (const char*)payload);
+
+  DeserializationError error = deserializeJson(doc, payload, length);
   if (error) {
-    Serial.print(F("JSON error: #"));
-    Serial.print(error.code());
-    Serial.print(" ");
-    Serial.println(error.c_str());
+    DBG("JSON error: #%d %s\n", (int)error.code(), error.c_str());
     return;
-  } else {
-    if (String(topic) == String(tcs_command_topic)) {
-      //const char* command = doc["command"];
-      uint32_t type = 0;
-      if (doc["type"])
-        type=string_to_command_type(doc["type"]);
-      uint32_t address = 0;
-      if (doc["address"]) { 
-        //address = (uint32_t)atoi(doc["address"]);
-        sscanf(doc["address"], "%x", &address);
-      }
-      uint32_t payload = 0;
-      if (doc["payload"]) {
-        payload = (uint32_t)atoi(doc["payload"]);
-        sscanf(doc["payload"], "%x", &payload);
-      }
-      uint32_t serial_number = 0;
-      if (doc["serial_number"]) {
-        //serial_number = (uint32_t)atoi(doc["serial_number"]);
-        sscanf(doc["serial_number"], "%x", &serial_number);
-      }
-
-      //Serial.println("Type: " + String(type));
-
-      if (type!=COMMAND_TYPE_UNKNOWN) {
-        CommandData command_data = buildCommand(type, address, payload, serial_number);
-        if(command_data.command > 0) {
-          publish_tcs_command(mqtt_topic, command_data, true);
-          send_command(command_data.command);
-        }
-      } else {
-        Serial.println("Unknown tcs_command %s " + String(message));
-      }
-    } else if (String(topic) == String(control4_command_topic)) {
-      uint32_t type = COMMAND_TYPE_OPEN_DOOR;
- 
-      CommandData command_data = buildCommand(type, last_bus_address, 0, 0);
-      if(command_data.command > 0) {
-        publish_tcs_command(mqtt_topic, command_data, true);
-        send_command(command_data.command);
-      }
-    }
   }
 
-  free(message);
+  if (String(topic) == String(tcs_command_topic)) {
+    uint32_t type = COMMAND_TYPE_UNKNOWN;
+    if (doc["type"].is<const char*>())
+      type = string_to_command_type(doc["type"].as<const char*>());
+
+    if (type == COMMAND_TYPE_UNKNOWN) {
+      DBG("Unknown tcs_command\n");
+      return;
+    }
+
+    // address/payload/serial_number are hex strings (or numbers); a missing address uses the tracked door address
+    uint32_t address = doc["address"].isNull() ? last_bus_address : hex_field(doc, "address");
+    CommandData command_data = buildCommand(type, address, hex_field(doc, "payload"), hex_field(doc, "serial_number"));
+    if (command_data.command > 0) {
+      publish_tcs_command(mqtt_topic, command_data, true);
+      send_command(command_data.command, command_data.is_long);
+    }
+  } else if (String(topic) == String(control4_command_topic)) {
+    CommandData command_data = buildCommand(COMMAND_TYPE_OPEN_DOOR, last_bus_address, 0, 0);
+    DBG("Control4 open door, address 0x%02x\n", (unsigned)last_bus_address);
+    if (command_data.command > 0) {
+      publish_tcs_command(mqtt_topic, command_data, true);
+      send_command(command_data.command, command_data.is_long);
+    }
+  }
 }
 
 void printHEX(uint32_t DATA)
@@ -452,6 +483,8 @@ void setup()
                     load_str(json, "control4_command_topic", control4_command_topic, sizeof(control4_command_topic));
                     load_str(json, "control4_notify_topic", control4_notify_topic, sizeof(control4_notify_topic));
                     load_str(json, "tcs_command_topic", tcs_command_topic, sizeof(tcs_command_topic));
+                    load_str(json, "tz", tz, sizeof(tz));
+                    debug_enabled = json["debug"] | debug_enabled;
                 } else {
                     Serial.println("failed to load json config");
                 }
@@ -471,7 +504,7 @@ void setup()
                 if (!error) {
                     Serial.println("parsed json");
                 } else {
-                    Serial.println("failed to load json config");
+                    Serial.printf("failed to load users: %s\n", error.c_str());
                 }
             }
         } else {
@@ -566,32 +599,17 @@ void setup()
     if (shouldSaveConfig)
     {
         Serial.println("saving config");
-        DynamicJsonDocument json(1024);
-        json["mqtt_server"] = mqtt_server;
-        json["mqtt_port"] = mqtt_port;
-        json["mqtt_topic"] = mqtt_topic;
-        json["mqtt_client"] = mqtt_client;
-        json["mqtt_user"] = mqtt_user;
-        json["mqtt_pass"] = mqtt_pass;
-        json["control4_command_topic"] = control4_command_topic;
-        json["control4_notify_topic"] = control4_notify_topic;
-        json["tcs_command_topic"] = tcs_command_topic;
-
-        File configFile = LittleFS.open("/config.json", "w");
-        if (!configFile)
-        {
-            Serial.println("failed to open config file for writing");
-        } else {
-            serializeJson(json, configFile);
-            configFile.close();
-        }
-        //end save
+        save_config();
     }
+
+    configTime(tz, ntpServer); // non-blocking; time syncs in the background
+
+    web.on("/", HTTP_GET, handle_root);
+    web.on("/debug", HTTP_POST, handle_debug);
+    web.begin();
 
     Serial.println("local ip");
     Serial.println(WiFi.localIP());
-
-    Serial.println("get ntp time");
 
     Serial.print("MQTT Server ");
     Serial.println(mqtt_server);
@@ -645,8 +663,6 @@ void setup()
         }
     });
     ArduinoOTA.begin();
-
-    connectToWifi();
 }
 
 void publish_tcs_command(char *topic, CommandData data, bool direction) {
@@ -696,17 +712,13 @@ if (data.serial_number) {
 */
 }
 
-if (data.address) {
-  strcat(format, ", \"address\": ");
-  sprintf(tcs_tmp, "\"%02x\"", data.address);
-  strcat(format, tcs_tmp);
-}
+strcat(format, ", \"address\": ");
+sprintf(tcs_tmp, "\"%02x\"", data.address);
+strcat(format, tcs_tmp);
 
-if (data.payload > 0) {
-  strcat(format, ", \"payload\": ");
-  sprintf(tcs_tmp, "\"%x\"", data.payload);
-  strcat(format, tcs_tmp);
-} 
+strcat(format, ", \"payload\": ");
+sprintf(tcs_tmp, "\"%x\"", data.payload);
+strcat(format, tcs_tmp);
 
 strcat(format, " }");
 client.publish(topic, format);
@@ -715,31 +727,45 @@ client.publish(topic, format);
 
 
 void loop() {
+    static uint32_t last_wifi_try = 0;
+    static uint32_t last_mqtt_try = 0;
+    uint32_t now = millis();
+
+    // Never block: the bus must keep being sniffed while WiFi/MQTT recover
     if (WiFi.status() != WL_CONNECTED) {
-      connectToWifi(); // also reconnects MQTT and arms re-subscription
+      if (now - last_wifi_try > 10000) {
+        last_wifi_try = now;
+        DBG("WiFi down, reconnecting\n");
+        WiFi.reconnect();
+      }
+    } else if (!client.connected()) {
+      if (now - last_mqtt_try > 5000) {
+        last_mqtt_try = now;
+        connectToMqtt();
+      }
+    } else {
+      client.loop();
     }
-    if (!client.connected()) { 
-      connectToMqtt();
-    }
-    if (mqtt_connection_status == 1) {
-      mqtt_connection_status = 0;
-      Serial.println("subscribe to topic....");
-      client.subscribe(tcs_command_topic);
-      client.subscribe(control4_command_topic);
-    }
-    client.loop();
     ArduinoOTA.handle();
-    if (cmdReady) {
-      cmdReady = 0;
+    web.handleClient();
 
-      CommandData cmd_data = parseCommand(CMD);
-      if (cmd_data.serial_number>0)
-        last_bus_address = cmd_data.address;
+    // Take a consistent snapshot of the frame; the ISR may overwrite it at any time
+    noInterrupts();
+    bool ready = cmdReady;
+    uint32_t cmd = CMD;
+    uint8_t len = lengthCMD;
+    cmdReady = false;
+    interrupts();
 
+    if (ready) {
+      CommandData cmd_data = parseCommand(cmd, len);
+      track_door_address(cmd_data);
+
+      DBG("RX %s %s addr=0x%02x\n", cmd_data.command_hex.c_str(), command_type_to_string(cmd_data.type), cmd_data.address);
       publish_tcs_command(mqtt_topic, cmd_data, false);
 
       if ( cmd_data.serial_number == my_serial_number &&  cmd_data.type == COMMAND_TYPE_INTERNAL_CALL) {
-        control4_notify(cmd_data);
+        control4_notify();
       }
     }
 }

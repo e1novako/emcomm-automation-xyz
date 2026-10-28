@@ -1,12 +1,13 @@
 {
     "automation_type": "trigger",
     "payload": "0e22e280",
+    "value_template": "{{ value_json.command }}",
     "topic": "ucl/by-mqtt-client/intercom",
     "type": "button_short_press",
     "subtype": "button_1",
     "device": {
         "name": "Novakovic",
-        "identifiers": "esp8266-14c4ed",
+        "identifiers": ["esp8266-14c4ed"],
 	"manufacturer": "Control4",
 	"model": "tcs-interrupt"
     }
