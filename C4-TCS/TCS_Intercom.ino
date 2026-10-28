@@ -20,7 +20,7 @@
 
 #include <time.h>
 
-#define VERSION "1.0.2"
+#define VERSION "1.0.3"
 
 #define TCS_RING        0x00
 #define TCS_ANSWER      0x80
@@ -46,12 +46,30 @@ char mqtt_topic[64] = "ucl/by-mqtt-client/intercom";
 char control4_command_topic[64] = "ucl/by-unid/zw-D80822E0-0084/ep0/OnOff/Commands/Toggle";
 char control4_notify_topic[80] = "ucl/by-unid/zw-D80822E0-0084/ep0/IASZone/Attributes/ZoneStatus/Reported";
 char tcs_command_topic[64] = "ucl/by-mqtt-client/intercom/command";
-char mqtt_client[16] = "anovakovic";
-char mqtt_user[16] = "";
-char mqtt_pass[16] = "";
+char mqtt_client[32] = "anovakovic";
+char mqtt_user[32] = "";
+char mqtt_pass[32] = "";
 
 uint32_t my_serial_number = 0x8c0b9;
 uint32_t last_bus_address = 3;
+
+// Copy a JSON string value into dst safely; keeps the current value if the key is missing/not a string
+static void load_str(JsonDocument &json, const char *key, char *dst, size_t size) {
+  const char *v = json[key] | (const char*)nullptr;
+  if (v) strlcpy(dst, v, size);
+}
+
+// Read a whole file into a NUL-terminated buffer
+static std::unique_ptr<char[]> read_file(const char *path) {
+  File f = LittleFS.open(path, "r");
+  if (!f) return nullptr;
+  size_t size = f.size();
+  std::unique_ptr<char[]> buf(new char[size + 1]);
+  size_t n = f.readBytes(buf.get(), size);
+  buf[n] = 0;
+  f.close();
+  return buf;
+}
 
 //flag for saving data
 bool shouldSaveConfig = false;
@@ -69,7 +87,7 @@ volatile uint32_t _CMD = -1;
 volatile uint8_t lengthCMD = 0;
 volatile bool cmdReady;
 
-void get_tcsuser_data_by_addr(uint32_t u32_addr, char *_name) {
+void get_tcsuser_data_by_addr(uint32_t u32_addr, char *_name, size_t name_size) {
 uint32_t _addr = 0;
 
   //Serial.println("================================================================\n");
@@ -78,12 +96,12 @@ uint32_t _addr = 0;
   for (JsonObject elem : intercomUsers.as<JsonArray>()) {
     const char* name = elem["name"];
     const char* addr = elem["tcs_addr"];
-    const char* flat = elem["flat_no"];
 
+    if (!name || !addr) continue;
     sscanf(addr, "%x", &_addr);
 
     if (u32_addr == _addr) {
-      strcpy(_name, name);
+      strlcpy(_name, name, name_size);
     }
   }
 }
@@ -256,27 +274,27 @@ void control4_notify(CommandData  data) {
 } 
 
 void mqtt_output(char *format, ...) {
-    char mqtt_tmp[100];
-    char mqtt_msg[100];
-    char mqtt_time[10];
+    char mqtt_tmp[160];
+    char mqtt_msg[256];
+    char mqtt_time[12];
     char mqtt_timestamp[20];
     struct tm timeinfo;
     va_list args;
 
     va_start (args, format);
-    vsprintf(mqtt_tmp, format, args);
+    vsnprintf(mqtt_tmp, sizeof(mqtt_tmp), format, args);
     va_end (args);
 
     timeinfo=current_time((char*)&mqtt_time);
     strftime(mqtt_timestamp, 11, "%s", &timeinfo);
 
-    sprintf(mqtt_msg, "{ \"ts\": \"%s\", \"time\": \"%s\", %s }", mqtt_timestamp, mqtt_time, mqtt_tmp);
+    snprintf(mqtt_msg, sizeof(mqtt_msg), "{ \"ts\": \"%s\", \"time\": \"%s\", %s }", mqtt_timestamp, mqtt_time, mqtt_tmp);
     client.publish(mqtt_topic, mqtt_msg);
 }
 
 void connectToMqtt() {
-  char mcli[32];
-  sprintf(mcli, "@%s-%d", mqtt_client, random(100,999));
+  char mcli[48];
+  snprintf(mcli, sizeof(mcli), "@%s-%d", mqtt_client, random(100,999));
   Serial.print("\nconnecting ");
   Serial.print(mcli);
   Serial.print(" to MQTT...");
@@ -417,26 +435,23 @@ void setup()
         if (LittleFS.exists("/config.json")) {
             //file exists, reading and loading
             Serial.println("reading config file");
-            File configFile = LittleFS.open("/config.json", "r");
-            if (configFile) {
+            std::unique_ptr<char[]> buf = read_file("/config.json");
+            if (buf) {
                 Serial.println("opened config file");
-                size_t size = configFile.size();
-                // Allocate a buffer to store contents of the file.
-                std::unique_ptr<char[]> buf(new char[size]);
-
-                configFile.readBytes(buf.get(), size);
                 DynamicJsonDocument json(1024);
                 DeserializationError error = deserializeJson(json, buf.get());
-                serializeJson(json, Serial);
                 if (!error) {
-                    Serial.println("\nparsed json");
+                    Serial.println("parsed json");
 
-                    strcpy(mqtt_server, json["mqtt_server"]);
-                    strcpy(mqtt_port, json["mqtt_port"]);
-                    strcpy(mqtt_topic, json["mqtt_topic"]);
-                    strcpy(mqtt_client, json["mqtt_client"]);
-                    strcpy(mqtt_user, json["mqtt_user"]);
-                    strcpy(mqtt_pass, json["mqtt_pass"]);
+                    load_str(json, "mqtt_server", mqtt_server, sizeof(mqtt_server));
+                    load_str(json, "mqtt_port", mqtt_port, sizeof(mqtt_port));
+                    load_str(json, "mqtt_topic", mqtt_topic, sizeof(mqtt_topic));
+                    load_str(json, "mqtt_client", mqtt_client, sizeof(mqtt_client));
+                    load_str(json, "mqtt_user", mqtt_user, sizeof(mqtt_user));
+                    load_str(json, "mqtt_pass", mqtt_pass, sizeof(mqtt_pass));
+                    load_str(json, "control4_command_topic", control4_command_topic, sizeof(control4_command_topic));
+                    load_str(json, "control4_notify_topic", control4_notify_topic, sizeof(control4_notify_topic));
+                    load_str(json, "tcs_command_topic", tcs_command_topic, sizeof(tcs_command_topic));
                 } else {
                     Serial.println("failed to load json config");
                 }
@@ -449,19 +464,12 @@ void setup()
         if (LittleFS.exists("/tcs_users.json")) {
             //file exists, reading and loading
             Serial.println("reading users file");
-            File configFile = LittleFS.open("/tcs_users.json", "r");
-            if (configFile) {
+            std::unique_ptr<char[]> buf = read_file("/tcs_users.json");
+            if (buf) {
                 Serial.println("opened users file");
-                size_t size = configFile.size();
-                // Allocate a buffer to store contents of the file.
-                std::unique_ptr<char[]> buf(new char[size]);
-
-                configFile.readBytes(buf.get(), size);
-                DynamicJsonDocument json(4096);
                 DeserializationError error = deserializeJson(intercomUsers, buf.get());
-                serializeJson(intercomUsers, Serial);
                 if (!error) {
-                    Serial.println("\nparsed json");
+                    Serial.println("parsed json");
                 } else {
                     Serial.println("failed to load json config");
                 }
@@ -481,12 +489,12 @@ void setup()
     // The extra parameters to be configured (can be either global or just in the setup)
     // After connecting, parameter.getValue() will get you the configured value
     // id/name placeholder/prompt default length
-    WiFiManagerParameter custom_mqtt_server("server", "mqtt server", mqtt_server, 40);
-    WiFiManagerParameter custom_mqtt_port("port", "mqtt port", mqtt_port, 5);
-    WiFiManagerParameter custom_mqtt_topic("topic", "mqtt topic", mqtt_topic, 32);
-    WiFiManagerParameter custom_mqtt_client("client", "mqtt client", mqtt_client, 32);
-    WiFiManagerParameter custom_mqtt_user("user", "mqtt user", mqtt_user, 32);
-    WiFiManagerParameter custom_mqtt_pass("pass", "mqtt pass", mqtt_pass, 32);
+    WiFiManagerParameter custom_mqtt_server("server", "mqtt server", mqtt_server, sizeof(mqtt_server) - 1);
+    WiFiManagerParameter custom_mqtt_port("port", "mqtt port", mqtt_port, sizeof(mqtt_port) - 1);
+    WiFiManagerParameter custom_mqtt_topic("topic", "mqtt topic", mqtt_topic, sizeof(mqtt_topic) - 1);
+    WiFiManagerParameter custom_mqtt_client("client", "mqtt client", mqtt_client, sizeof(mqtt_client) - 1);
+    WiFiManagerParameter custom_mqtt_user("user", "mqtt user", mqtt_user, sizeof(mqtt_user) - 1);
+    WiFiManagerParameter custom_mqtt_pass("pass", "mqtt pass", mqtt_pass, sizeof(mqtt_pass) - 1);
 
     //WiFiManager
     //Local intialization. Once its business is done, there is no need to keep it around
@@ -547,12 +555,12 @@ void setup()
     Serial.println("connected...yeey :)");
 
     //read updated parameters
-    strcpy(mqtt_server, custom_mqtt_server.getValue());
-    strcpy(mqtt_port, custom_mqtt_port.getValue());
-    strcpy(mqtt_topic, custom_mqtt_topic.getValue());
-    strcpy(mqtt_client, custom_mqtt_client.getValue());
-    strcpy(mqtt_user, custom_mqtt_user.getValue());
-    strcpy(mqtt_pass, custom_mqtt_pass.getValue());
+    strlcpy(mqtt_server, custom_mqtt_server.getValue(), sizeof(mqtt_server));
+    strlcpy(mqtt_port, custom_mqtt_port.getValue(), sizeof(mqtt_port));
+    strlcpy(mqtt_topic, custom_mqtt_topic.getValue(), sizeof(mqtt_topic));
+    strlcpy(mqtt_client, custom_mqtt_client.getValue(), sizeof(mqtt_client));
+    strlcpy(mqtt_user, custom_mqtt_user.getValue(), sizeof(mqtt_user));
+    strlcpy(mqtt_pass, custom_mqtt_pass.getValue(), sizeof(mqtt_pass));
 
     //save the custom parameters to FS
     if (shouldSaveConfig)
@@ -565,16 +573,18 @@ void setup()
         json["mqtt_client"] = mqtt_client;
         json["mqtt_user"] = mqtt_user;
         json["mqtt_pass"] = mqtt_pass;
+        json["control4_command_topic"] = control4_command_topic;
+        json["control4_notify_topic"] = control4_notify_topic;
+        json["tcs_command_topic"] = tcs_command_topic;
 
         File configFile = LittleFS.open("/config.json", "w");
         if (!configFile)
         {
             Serial.println("failed to open config file for writing");
+        } else {
+            serializeJson(json, configFile);
+            configFile.close();
         }
-
-        serializeJson(json, Serial);
-        serializeJson(json, configFile);
-        configFile.close();
         //end save
     }
 
@@ -706,8 +716,7 @@ client.publish(topic, format);
 
 void loop() {
     if (WiFi.status() != WL_CONNECTED) {
-      connectToWifi();
-      mqtt_connection_status = 0;
+      connectToWifi(); // also reconnects MQTT and arms re-subscription
     }
     if (!client.connected()) { 
       connectToMqtt();
