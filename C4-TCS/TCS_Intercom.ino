@@ -25,7 +25,7 @@
 #include <EEPROM.h>
 #include <libb64/cdecode.h>
 
-#define VERSION "1.1.1"
+#define VERSION "1.1.2"
 
 void publish_tcs_command(char *topic, CommandData data, bool direction);
 void mqtt_output(char *format, ...);
@@ -807,11 +807,13 @@ static void fmt_ts(time_t t, char *out, size_t n) {
 void handle_rings_page() {
   if (!auth()) return;
   String h = "<h4>Door rings per device</h4><table class='c'><tr><th style='width:15%'>Flat No.</th><th style='width:40%'>Surname / Name</th><th style='width:15%'>Ring No.</th><th style='width:30%'>Last ring</th></tr>";
-  // sorted by flat number; users without a flat (0) go last
+  // most rings first; ties by flat number, users without a flat (0) last
   JsonObject sorted[MAX_USERS];
   int cnt = 0;
   for (JsonObject u : intercomUsers.as<JsonArray>()) if (cnt < MAX_USERS) sorted[cnt++] = u;
   std::stable_sort(sorted, sorted + cnt, [](JsonObject a, JsonObject b) {
+    uint32_t ra = a["rings"] | 0u, rb = b["rings"] | 0u;
+    if (ra != rb) return ra > rb;
     int fa = a["flat_no"] | 0, fb = b["flat_no"] | 0;
     if (fa <= 0) fa = INT_MAX;
     if (fb <= 0) fb = INT_MAX;

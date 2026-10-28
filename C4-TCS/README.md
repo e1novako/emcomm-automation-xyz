@@ -49,6 +49,7 @@ Host-side protocol round-trip tests (no hardware needed):
 
 ## Changelog
 
+- 1.1.2: Statistics page sorted by Ring No. descending (ties by flat number).
 - 1.1.1: Rings page renamed Statistics (URL unchanged).
 - 1.0.28: 200 px empty space above the unlock button.
 - 1.0.27: unlock button at least 300 px wide.
