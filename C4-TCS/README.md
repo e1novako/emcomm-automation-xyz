@@ -4,7 +4,7 @@ ESP8266 sniffer/transmitter for the TCS two-wire intercom bus, bridged to MQTT a
 
 - Input GPIO14 (decoded in an ISR), output GPIO12 (bit-banged).
 - Publishes decoded frames on `mqtt_topic`; accepts commands on `tcs_command_topic`; opens the door on `control4_command_topic`.
-- Config is stored in NVRAM (EEPROM emulation, its own flash sector with CRC; survives firmware/FS updates). A legacy LittleFS `/config.json` is migrated on first boot. Keys: `mqtt_server`, `mqtt_port`, `mqtt_topic`, `mqtt_client`, `mqtt_user`, `mqtt_pass`, `control4_command_topic`, `control4_notify_topic`, `tcs_command_topic`, `tz`, `ntp_server`, `debug`, `serial_number` (hex), `wifi_ssid`, `password`. Users stay in LittleFS `/tcs_users.json`.
+- Config is stored in NVRAM (EEPROM emulation, its own flash sector with CRC; survives firmware/FS updates). A copy is kept in LittleFS `/config.json` (also the legacy location); NVRAM is rebuilt from it if empty or corrupt. Keys: `mqtt_server`, `mqtt_port`, `mqtt_topic`, `mqtt_client`, `mqtt_user`, `mqtt_pass`, `control4_command_topic`, `control4_notify_topic`, `tcs_command_topic`, `tz`, `ntp_server`, `debug`, `serial_number` (hex), `wifi_ssid`, `password`. Users stay in LittleFS `/tcs_users.json`.
 
 ## Build
 
@@ -20,7 +20,7 @@ The WiFi password is the one password: it protects the web GUI (HTTP basic auth,
 
 ## Backup / restore
 
-Web GUI pages, reached from a rounded-button menu at the top: Status (`/`), WiFi (`/wifi`), MQTT (`/mqtt`), Time (`/time`), Backup/Restore (`/backup`). Saving a page writes NVRAM and reboots. Backup/Restore: download the JSON (`/backup/download`, includes passwords) or upload one to `/restore`; it is applied, saved and the device reboots. All pages need the password.
+Web GUI pages, reached from a rounded-button menu at the top: Status (`/`), WiFi (`/wifi`), MQTT (`/mqtt`), Time (`/time`), Users (`/users`), Backup/Restore (`/backup`: config backup/restore, users export/import as JSON via `/users/download` and `/users/restore`, last-rings export `/rings/download`, and a "Reboot only" button). Debug (`/debug`) shows uptime/reset reason, WiFi, MQTT, door address, dropped frames, the debug-logging toggle and memory (heap, fragmentation, sketch/flash, LittleFS, users buffer). Status shows the last 10 rings (kept across reboots in LittleFS `/rings.json`) (time, door/internal, serial, user). Users page holds up to 40 users; serials seen in a door or internal ring that are not in the list are added automatically as `n/a` (rename them on the Users page). Saving a page writes NVRAM and reboots. Backup/Restore: download the JSON (`/backup/download`, includes passwords) or upload one to `/restore`; it is applied, saved and the device reboots. All pages need the password.
 
 ## Door-open address
 
@@ -49,12 +49,22 @@ Host-side protocol round-trip tests (no hardware needed):
 
 ## Changelog
 
+- 1.0.19: last-rings table with borders and equal-width columns, each centered.
+- 1.0.18: the Status (main) page auto-refreshes every 10 s.
+- 1.0.17: uptime shown under the page title on every page.
+- 1.0.16: page content centered; rings table full width with a Date/Time column.
+- 1.0.15: menu and rings table centered; users export/import and rings export on Backup/Restore; last rings persisted across reboots.
+- 1.0.14: page title centered and larger.
+- 1.0.13: page title with version moved above the menu; pages are 1000 px wide and centered.
+- 1.0.12: new Debug page (status details, debug toggle, memory usage moved/added); Status page now shows only the ring list.
+- 1.0.11: users limit 40; unknown serials auto-added on ring; last-10-rings table on Status; Reboot-only button.
+- 1.0.10: TX carrier sense (waits for a quiet bus, max 300 ms) and TX watchdog; config saved atomically to flash `/config.json` plus NVRAM, and NVRAM is rebuilt from it whenever it is empty/corrupt; Users page (`/users`) to add/edit/delete `tcs_users.json` entries (saved atomically); MQTT bus messages carry `name` when the serial number is a known user; Home Assistant discovery file removed.
 - 1.0.9: web GUI split into WiFi, MQTT, Time and Backup/Restore pages with a rounded-button top menu; `ntp_server` setting; `/config` removed, download moved to `/backup/download`.
 - 1.0.8: the password is the WiFi password (default: the stored one), no user name; the `intercom` default is only the fallback AP password.
 - 1.0.7: single password for GUI/OTA/WiFi; configurable SSID; all settings in NVRAM; settings backup/restore; GUI behind basic auth; `serial_number` setting; AP name `TCS-<chipid>`.
 - 1.0.6: restored `stop_talking(address)` helper.
 - 1.0.5: timer-driven non-blocking TX with queue; bounded JSON building and 512-byte MQTT buffer; availability (last will) and periodic status topics; stable MQTT client ID; `DEVICE_TEST` plus buildable `FOUND_DEVICE`/`FOUND_DEVICE_SUBSYSTEM`; `FLOOR_CALL` carries an address; Control4 notify carries alarm/address/serial and Alarm2 on door calls; `/config` web page for all settings (saves and reboots; no auth); dead code removed; host protocol tests.
 
-- 1.0.4: dynamic door address; non-blocking WiFi/MQTT reconnect and NTP; ISR frame snapshot with overrun counter; frame length taken from the bus (long/short) and used when sending; `OPEN_DOOR_LONG` parsed distinctly; hex-only payload parsing, no malloc in callback; `address`/`payload` always published; configurable TZ; debug toggle web GUI; users buffer 8 KB; header/implementation overloads fixed; HA discovery uses `value_template` and list identifiers.
+- 1.0.4: dynamic door address; non-blocking WiFi/MQTT reconnect and NTP; ISR frame snapshot with overrun counter; frame length taken from the bus (long/short) and used when sending; `OPEN_DOOR_LONG` parsed distinctly; hex-only payload parsing, no malloc in callback; `address`/`payload` always published; configurable TZ; debug toggle web GUI; users buffer 8 KB; header/implementation overloads fixed.
 
 - 1.0.3: re-subscribe to MQTT topics after a WiFi reconnect; bounds-checked config/MQTT buffers (`strlcpy`, `snprintf`); NUL-terminated file reads, missing JSON keys no longer crash; control4/command topics are now saved and loaded from `config.json`.

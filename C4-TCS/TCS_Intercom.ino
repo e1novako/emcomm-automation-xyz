@@ -23,7 +23,7 @@
 #include <EEPROM.h>
 #include <libb64/cdecode.h>
 
-#define VERSION "1.0.9"
+#define VERSION "1.0.19"
 
 void publish_tcs_command(char *topic, CommandData data, bool direction);
 void mqtt_output(char *format, ...);
@@ -107,25 +107,27 @@ volatile uint16_t tx_steps[TX_MAX_STEPS]; // ms between edges
 volatile uint8_t tx_n = 0;
 volatile uint8_t tx_i = 0;
 volatile bool tx_busy = false;
+volatile uint32_t last_edge_us = 0; // last bus edge seen by the RX ISR (carrier sense)
+uint32_t tx_watchdog_trips = 0;
+uint32_t min_free_heap = 0xFFFFFFFF;
+uint32_t tx_forced = 0;
+#define TX_IDLE_US     10000  // bus must be quiet this long before we send
+#define TX_MAX_WAIT_MS 300    // then send anyway
+#define TX_WATCHDOG_MS 500    // longest legal frame is ~200 ms
 volatile bool tx_level = false;
 
-void get_tcsuser_data_by_addr(uint32_t u32_addr, char *_name, size_t name_size) {
-uint32_t _addr = 0;
-
-  //Serial.println("================================================================\n");
-  //Serial.println("TONY:  Let's try to find " + String(u32_addr));
-
+// Looks up a user name by TCS serial number (tcs_addr is hex in tcs_users.json)
+bool get_tcsuser_name(uint32_t serial, char *name_out, size_t size) {
   for (JsonObject elem : intercomUsers.as<JsonArray>()) {
-    const char* name = elem["name"];
-    const char* addr = elem["tcs_addr"];
-
+    const char *name = elem["name"];
+    const char *addr = elem["tcs_addr"];
     if (!name || !addr) continue;
-    sscanf(addr, "%x", &_addr);
-
-    if (u32_addr == _addr) {
-      strlcpy(_name, name, name_size);
+    if ((uint32_t)strtoul(addr, nullptr, 16) == serial) {
+      strlcpy(name_out, name, size);
+      return true;
     }
   }
+  return false;
 }
 
 // Short STOP_TALKING frame for the given bus address
@@ -159,6 +161,7 @@ void ICACHE_RAM_ATTR analyzeCMD()
     static byte cmdIntReady;
     static byte curPos;
     uint32_t usNow = micros();
+    last_edge_us = usNow;
     uint32_t timeInUS = usNow - usLast;
     usLast = usNow;
     byte curBit = 4;
@@ -304,19 +307,45 @@ bool queue_command(uint32_t cmd, bool is_long) {
 void tx_service() {
   static bool started = false;
   static uint32_t end_ms = 0;
+  static uint32_t start_ms = 0;
+  static uint32_t wait_since = 0;
 
+  if (started && tx_busy && millis() - start_ms > TX_WATCHDOG_MS) {
+    timer1_disable();
+    GPOC = (1 << outputPin);
+    tx_busy = false;
+    tx_watchdog_trips++;
+    DBG("TX watchdog: stuck frame aborted\n");
+  }
   if (started && !tx_busy) {
     started = false;
     end_ms = millis();
+    last_edge_us = micros();
   }
-  if (!started && tx_q_count > 0 && millis() - end_ms >= TX_GAP_MS) {
-    TxFrame f = tx_queue[tx_q_head];
-    tx_q_head = (tx_q_head + 1) % TX_QUEUE_SIZE;
-    tx_q_count--;
-    DBG("TX %08x (%s)\n", (unsigned)f.cmd, f.is_long ? "long" : "short");
-    started = true;
-    tx_start(f.cmd, f.is_long);
+  if (started || tx_q_count == 0 || millis() - end_ms < TX_GAP_MS) {
+    wait_since = 0;
+    return;
   }
+
+  // Carrier sense: let a frame in progress from another device finish first
+  noInterrupts();
+  uint32_t quiet_us = micros() - last_edge_us;
+  interrupts();
+  if (quiet_us < TX_IDLE_US) {
+    if (!wait_since) wait_since = millis() | 1;
+    if (millis() - wait_since < TX_MAX_WAIT_MS) return;
+    tx_forced++;
+    DBG("TX: bus busy for %d ms, sending anyway\n", TX_MAX_WAIT_MS);
+  }
+  wait_since = 0;
+
+  TxFrame f = tx_queue[tx_q_head];
+  tx_q_head = (tx_q_head + 1) % TX_QUEUE_SIZE;
+  tx_q_count--;
+  DBG("TX %08x (%s)\n", (unsigned)f.cmd, f.is_long ? "long" : "short");
+  started = true;
+  start_ms = millis();
+  tx_start(f.cmd, f.is_long);
 }
 
 // Pulses the Control4 IAS zone: set, then clear
@@ -423,6 +452,106 @@ static bool nv_read(String &out) {
   return true;
 }
 
+// Write to a temp file then rename, so a power loss never leaves a half-written file
+static bool write_file_atomic(const char *path, const String &data) {
+  String tmp = String(path) + ".tmp";
+  File f = LittleFS.open(tmp, "w");
+  if (!f) return false;
+  size_t n = f.write((const uint8_t*)data.c_str(), data.length());
+  f.close();
+  if (n != data.length()) { LittleFS.remove(tmp); return false; }
+  return LittleFS.rename(tmp, path);
+}
+
+// ---- Ring log (last 10 rings) and automatic learning of new serial numbers ----
+#define RING_LOG_SIZE 10
+#define RING_DEDUPE_S 5 // a ring repeats its frame; count it once
+struct RingEntry { time_t ts; uint32_t serial; uint8_t type; uint32_t uptime_s; };
+static RingEntry ring_log[RING_LOG_SIZE];
+static uint8_t ring_head = 0; // next slot to write
+static uint8_t ring_count = 0;
+
+#define MAX_USERS 40
+#define MAX_USER_ROWS MAX_USERS
+
+static bool save_users_doc() {
+  String out;
+  serializeJson(intercomUsers, out);
+  return out.length() <= 7000 && write_file_atomic("/tcs_users.json", out);
+}
+
+static void ring_type_name(uint8_t t, char *out, size_t n) { strlcpy(out, t == COMMAND_TYPE_DOOR_CALL ? "door" : "internal", n); }
+
+// Rings are kept across reboots in /rings.json (oldest first); only written when a new ring is logged
+static void rings_to_json(JsonDocument &doc) {
+  JsonArray arr = doc.to<JsonArray>();
+  for (int i = ring_count - 1; i >= 0; i--) {
+    const RingEntry &e = ring_log[(ring_head + RING_LOG_SIZE - 1 - i) % RING_LOG_SIZE];
+    char serial[10], type[10], name[40] = "";
+    snprintf(serial, sizeof(serial), "%06x", (unsigned)e.serial);
+    ring_type_name(e.type, type, sizeof(type));
+    get_tcsuser_name(e.serial, name, sizeof(name));
+    JsonObject o = arr.add<JsonObject>();
+    o["ts"] = (uint32_t)e.ts;
+    o["type"] = type;
+    o["serial"] = serial;
+    o["name"] = name;
+  }
+}
+
+static void save_rings() {
+  JsonDocument doc;
+  rings_to_json(doc);
+  String out;
+  serializeJson(doc, out);
+  write_file_atomic("/rings.json", out);
+}
+
+static void load_rings() {
+  std::unique_ptr<char[]> buf = read_file("/rings.json");
+  if (!buf) return;
+  JsonDocument doc;
+  if (deserializeJson(doc, buf.get())) return;
+  for (JsonObject o : doc.as<JsonArray>()) {
+    const char *serial = o["serial"], *type = o["type"];
+    if (!serial || !type) continue;
+    ring_log[ring_head] = { (time_t)(o["ts"] | 0u), (uint32_t)strtoul(serial, nullptr, 16),
+                            (uint8_t)(strcmp(type, "door") == 0 ? COMMAND_TYPE_DOOR_CALL : COMMAND_TYPE_INTERNAL_CALL), 0xFFFFFFF0u };
+    ring_head = (ring_head + 1) % RING_LOG_SIZE;
+    if (ring_count < RING_LOG_SIZE) ring_count++;
+  }
+}
+
+static void add_unknown_user(uint32_t serial) {
+  char tmp[2];
+  if (get_tcsuser_name(serial, tmp, sizeof(tmp))) return;
+  JsonArray arr = intercomUsers.as<JsonArray>();
+  if (arr.isNull()) arr = intercomUsers.to<JsonArray>();
+  if (arr.size() >= MAX_USERS) { DBG("user list full, not adding %06x\n", (unsigned)serial); return; }
+  char addr[10];
+  snprintf(addr, sizeof(addr), "%06x", (unsigned)serial);
+  JsonObject o = arr.add<JsonObject>();
+  o["tcs_addr"] = addr;
+  o["name"] = "n/a";
+  o["flat_no"] = 0;
+  if (intercomUsers.overflowed()) { arr.remove(arr.size() - 1); DBG("users buffer full\n"); return; }
+  if (save_users_doc()) DBG("new user %06x added\n", (unsigned)serial);
+}
+
+static void record_ring(uint32_t serial, uint8_t type) {
+  time_t now = time(nullptr);
+  uint32_t up = millis() / 1000;
+  if (ring_count) {
+    RingEntry &l = ring_log[(ring_head + RING_LOG_SIZE - 1) % RING_LOG_SIZE];
+    if (l.serial == serial && l.type == type && up - l.uptime_s < RING_DEDUPE_S) { l.uptime_s = up; return; }
+  }
+  ring_log[ring_head] = { now, serial, type, up };
+  ring_head = (ring_head + 1) % RING_LOG_SIZE;
+  if (ring_count < RING_LOG_SIZE) ring_count++;
+  add_unknown_user(serial);
+  save_rings();
+}
+
 static bool nv_write(const String &json) {
   size_t len = json.length();
   if (len == 0 || len > NV_SIZE - NV_HDR) return false;
@@ -492,10 +621,13 @@ void save_config() {
   config_to_json(json);
   String out;
   serializeJson(json, out);
+  // The flash file copy is written first (atomic); an interrupted NVRAM write is recovered from it at boot
+  if (!write_file_atomic("/config.json", out)) Serial.println("failed to write config.json copy");
   if (!nv_write(out)) Serial.println("failed to write config to NVRAM");
 }
 
-// NVRAM first; fall back to the legacy LittleFS /config.json and migrate it
+// NVRAM first; if it is empty or corrupt, recover from the /config.json flash copy (also the legacy
+// location) and rewrite NVRAM
 static void load_config() {
   String s;
   if (nv_read(s)) {
@@ -512,8 +644,10 @@ static void load_config() {
     JsonDocument json;
     if (!deserializeJson(json, buf.get())) {
       apply_config(json);
-      Serial.println("legacy config.json loaded, migrating to NVRAM");
-      save_config();
+      Serial.println("NVRAM empty/invalid, config recovered from config.json");
+      String out;
+      serializeJson(json, out);
+      nv_write(out);
       return;
     }
   }
@@ -557,22 +691,33 @@ static bool auth() {
 
 // ---- Web GUI: pages share one layout with a pill-button menu on top ----
 static const char CSS[] =
-  "<style>body{font-family:sans-serif;margin:16px}"
-  "nav{margin-bottom:16px}"
+  "<style>body{font-family:sans-serif;width:1000px;max-width:100%;box-sizing:border-box;margin:16px auto;padding:0 8px;text-align:center}"
+  "h3{text-align:center;font-size:32px;margin:8px 0 16px}"
+  "nav{margin-bottom:16px;text-align:center}"
+  "table{margin:0 auto}table.c{width:100%;table-layout:fixed;border-collapse:collapse}table.c th,table.c td{border:1px solid #ccc;padding:6px;text-align:center}table.c th{background:#e3e6ea}input{text-align:center}"
   "nav a,button{display:inline-block;padding:8px 18px;margin:2px;border:0;border-radius:20px;background:#e3e6ea;color:#222;text-decoration:none;font-size:14px;cursor:pointer}"
   "nav a.on,button{background:#1a73e8;color:#fff}"
   "input[type=text],input[type=password]{width:420px;max-width:95%;padding:6px;border:1px solid #bbb;border-radius:8px}"
   "</style>";
 
+static String uptime_str() {
+  uint32_t t = millis() / 1000;
+  char b[32];
+  snprintf(b, sizeof(b), "%ud %02uh %02um %02us", (unsigned)(t / 86400), (unsigned)(t / 3600 % 24), (unsigned)(t / 60 % 60), (unsigned)(t % 60));
+  return b;
+}
+
 static String page_begin(const char *active) {
-  static const char *items[][2] = { {"/", "Status"}, {"/wifi", "WiFi"}, {"/mqtt", "MQTT"}, {"/time", "Time"}, {"/backup", "Backup/Restore"} };
+  static const char *items[][2] = { {"/", "Status"}, {"/wifi", "WiFi"}, {"/mqtt", "MQTT"}, {"/time", "Time"}, {"/users", "Users"}, {"/debug", "Debug"}, {"/backup", "Backup/Restore"} };
   String h = "<html><head><meta name='viewport' content='width=device-width,initial-scale=1'><title>TCS Intercom</title>";
+  // Only the status page auto-refreshes; form pages must not, it would discard what is being typed
+  if (strcmp(active, "/") == 0) h += "<meta http-equiv='refresh' content='10'>";
   h += CSS;
-  h += "</head><body><nav>";
+  h += "</head><body><h3>TCS Intercom " VERSION "</h3><p style='text-align:center;margin:-8px 0 16px;color:#555'>Uptime: " + uptime_str() + "</p><nav>";
   for (auto &it : items) {
     h += "<a href='" + String(it[0]) + "'" + (strcmp(it[0], active) == 0 ? " class='on'" : "") + ">" + it[1] + "</a>";
   }
-  h += "</nav><h3>TCS Intercom " VERSION "</h3>";
+  h += "</nav>";
   return h;
 }
 
@@ -599,21 +744,56 @@ static void save_and_reboot() {
 
 void handle_root() {
   if (!auth()) return;
-  String h = "<p>WiFi: " + html_escape(WiFi.SSID().c_str()) + " (" + WiFi.localIP().toString() + ", " + String(WiFi.RSSI()) + " dBm)</p>";
+  String h = "<h4 style='text-align:center'>Last rings</h4><table class='c' cellpadding='4'><tr><th>Date/Time</th><th>Type</th><th>Serial</th><th>User</th></tr>";
+  if (!ring_count) h += "<tr><td colspan='4'>none yet</td></tr>";
+  for (int i = 0; i < ring_count; i++) {
+    const RingEntry &e = ring_log[(ring_head + RING_LOG_SIZE - 1 - i) % RING_LOG_SIZE];
+    char ts[24] = "(no time)", name[40] = "";
+    if (e.ts > 1600000000) {
+      struct tm t;
+      localtime_r(&e.ts, &t);
+      strftime(ts, sizeof(ts), "%Y-%m-%d %H:%M:%S", &t);
+    }
+    get_tcsuser_name(e.serial, name, sizeof(name));
+    h += "<tr><td>" + String(ts) + "</td><td>" + (e.type == COMMAND_TYPE_DOOR_CALL ? "door" : "internal") +
+         "</td><td>" + String(e.serial, HEX) + "</td><td>" + html_escape(name) + "</td></tr>";
+  }
+  h += "</table>";
+  send_page("/", h);
+}
+
+void handle_debug_page() {
+  if (!auth()) return;
+  String h = "<p>Reset reason: " + html_escape(ESP.getResetReason().c_str()) + "</p>";
+  h += "<p>WiFi: " + html_escape(WiFi.SSID().c_str()) + " (" + WiFi.localIP().toString() + ", " + String(WiFi.RSSI()) + " dBm)</p>";
   h += "<p>MQTT: " + String(client.connected() ? "connected" : "disconnected") + "</p>";
   h += "<p>Door address: 0x" + String(last_bus_address, HEX) + " (changes: " + String(bus_address_changes) +
        ", updated " + String((millis() - last_bus_address_ms) / 1000) + " s ago)</p>";
-  h += "<p>Dropped RX frames: " + String(isr_overruns) + ", dropped TX frames: " + String(tx_dropped) + "</p>";
+  h += "<p>Dropped RX frames: " + String(isr_overruns) + ", dropped TX frames: " + String(tx_dropped) +
+       ", TX sent into busy bus: " + String(tx_forced) + ", TX watchdog trips: " + String(tx_watchdog_trips) + "</p>";
   h += "<form method='POST' action='/debug'><p>Debug logging: <b>" + String(debug_enabled ? "ON" : "OFF") + "</b> ";
   h += "<button name='on' value='" + String(debug_enabled ? 0 : 1) + "'>Turn " + String(debug_enabled ? "off" : "on") + "</button></p></form>";
-  send_page("/", h);
+  h += "<h4>Memory</h4><table cellpadding='4'>";
+  auto row = [&](const char *k, String v) { h += "<tr><td>" + String(k) + "</td><td>" + v + "</td></tr>"; };
+  uint32_t heap = ESP.getFreeHeap();
+  row("Free heap", String(heap) + " bytes (lowest since boot: " + String(min_free_heap) + ")");
+  row("Largest free block", String(ESP.getMaxFreeBlockSize()) + " bytes");
+  row("Heap fragmentation", String(ESP.getHeapFragmentation()) + " %");
+  row("Free stack (cont)", String(ESP.getFreeContStack()) + " bytes");
+  row("Sketch", String(ESP.getSketchSize()) + " used, " + String(ESP.getFreeSketchSpace()) + " free for OTA");
+  row("Flash chip", String(ESP.getFlashChipRealSize()) + " bytes");
+  FSInfo fs;
+  if (LittleFS.info(fs)) row("LittleFS", String(fs.usedBytes) + " / " + String(fs.totalBytes) + " bytes used");
+  row("Users buffer", String(intercomUsers.memoryUsage()) + " / 8192 bytes");
+  h += "</table>";
+  send_page("/debug", h);
 }
 
 void handle_debug() {
   if (!auth()) return;
   debug_enabled = web.arg("on") == "1";
   save_config();
-  web.sendHeader("Location", "/");
+  web.sendHeader("Location", "/debug");
   web.send(303);
 }
 
@@ -713,7 +893,85 @@ void handle_backup_page() {
   if (!auth()) return;
   String h = "<p><a href='/backup/download'><button type='button'>Download backup</button></a> (contains passwords)</p>";
   h += "<form method='POST' action='/restore' enctype='multipart/form-data'><p><input type='file' name='file'> <button>Restore and reboot</button></p></form>";
+  h += "<h4>Users</h4><p><a href='/users/download'><button type='button'>Export users</button></a></p>";
+  h += "<form method='POST' action='/users/restore' enctype='multipart/form-data'><p><input type='file' name='file'> <button>Import users</button></p></form>";
+  h += "<h4>Last rings</h4><p><a href='/rings/download'><button type='button'>Export last rings</button></a></p>";
+  h += "<h4>Device</h4><form method='POST' action='/reboot'><p><button>Reboot only</button></p></form>";
   send_page("/backup", h);
+}
+
+void handle_users_download() {
+  if (!auth()) return;
+  String out;
+  serializeJsonPretty(intercomUsers, out);
+  web.sendHeader("Content-Disposition", "attachment; filename=tcs-users.json");
+  web.send(200, "application/json", out);
+}
+
+void handle_rings_download() {
+  if (!auth()) return;
+  JsonDocument doc;
+  rings_to_json(doc);
+  String out;
+  serializeJsonPretty(doc, out);
+  web.sendHeader("Content-Disposition", "attachment; filename=tcs-rings.json");
+  web.send(200, "application/json", out);
+}
+
+static String users_buf;
+static bool users_overflow = false;
+
+void handle_users_upload() {
+  HTTPUpload &u = web.upload();
+  if (u.status == UPLOAD_FILE_START) {
+    users_buf = "";
+    users_overflow = false;
+  } else if (u.status == UPLOAD_FILE_WRITE) {
+    if (users_buf.length() + u.currentSize > 8000) users_overflow = true;
+    else users_buf.concat((const char*)u.buf, u.currentSize);
+  }
+}
+
+void handle_users_import() {
+  if (!auth()) { users_buf = ""; return; }
+  JsonDocument in;
+  DeserializationError err = users_overflow ? DeserializationError::NoMemory : deserializeJson(in, users_buf);
+  users_buf = "";
+  if (err || !in.is<JsonArray>()) {
+    web.send(400, "text/plain", "Invalid users file (JSON array expected)");
+    return;
+  }
+  JsonDocument nd;
+  JsonArray arr = nd.to<JsonArray>();
+  for (JsonObject o : in.as<JsonArray>()) {
+    const char *addr = o["tcs_addr"];
+    if (!addr || !*addr) continue;
+    char *end;
+    strtoul(addr, &end, 16);
+    if (*end || strlen(addr) > 8 || arr.size() >= MAX_USERS) {
+      web.send(400, "text/plain", String("Invalid or too many users (max ") + MAX_USERS + ")");
+      return;
+    }
+    JsonObject n = arr.add<JsonObject>();
+    n["tcs_addr"] = addr;
+    n["name"] = o["name"] | "n/a";
+    n["flat_no"] = o["flat_no"] | 0;
+  }
+  String out;
+  serializeJson(nd, out);
+  if (out.length() > 7000 || !write_file_atomic("/tcs_users.json", out)) {
+    web.send(500, "text/plain", "Could not save users");
+    return;
+  }
+  intercomUsers.clear();
+  deserializeJson(intercomUsers, out);
+  send_page("/backup", "<p>Imported " + String(arr.size()) + " users.</p><p><a href='/users'>Users</a></p>");
+}
+
+void handle_reboot() {
+  if (!auth()) return;
+  send_page("", "<p>Rebooting...</p><p><a href='/'>Back to status</a></p>");
+  restart_at = millis() + 1500;
 }
 
 void handle_backup_download() {
@@ -753,6 +1011,60 @@ void handle_restore_done() {
   }
   apply_config(json);
   save_and_reboot();
+}
+
+// ---- Users (serial number -> name), stored in LittleFS /tcs_users.json ----
+
+void handle_users_get() {
+  if (!auth()) return;
+  String h = "<form method='POST' action='/users'><table><tr><th>Serial (hex)</th><th>Name</th><th>Flat</th></tr>";
+  int n = 0;
+  for (JsonObject u : intercomUsers.as<JsonArray>()) {
+    if (n >= MAX_USER_ROWS) break;
+    h += "<tr><td><input name='a" + String(n) + "' size='8' value='" + html_escape(u["tcs_addr"] | "") + "'></td>";
+    h += "<td><input name='n" + String(n) + "' value='" + html_escape(u["name"] | "") + "'></td>";
+    h += "<td><input name='f" + String(n) + "' size='4' value='" + String(u["flat_no"] | 0) + "'></td></tr>";
+    n++;
+  }
+  for (int i = 0; i < 2 && n < MAX_USER_ROWS; i++, n++) {
+    h += "<tr><td><input name='a" + String(n) + "' size='8'></td><td><input name='n" + String(n) + "'></td><td><input name='f" + String(n) + "' size='4'></td></tr>";
+  }
+  h += "</table><p>Clear the serial to delete a row; use the blank rows to add users (max " + String(MAX_USER_ROWS) + ").</p>";
+  h += "<input type='hidden' name='rows' value='" + String(n) + "'><button>Save</button></form>";
+  send_page("/users", h);
+}
+
+void handle_users_post() {
+  if (!auth()) return;
+  int rows = min((int)web.arg("rows").toInt(), MAX_USER_ROWS);
+  JsonDocument nd;
+  JsonArray arr = nd.to<JsonArray>();
+  for (int i = 0; i < rows; i++) {
+    String a = web.arg("a" + String(i));
+    String nm = web.arg("n" + String(i));
+    a.trim();
+    nm.trim();
+    if (a.length() == 0) continue;
+    char *end;
+    strtoul(a.c_str(), &end, 16);
+    if (*end || a.length() > 8) {
+      web.send(400, "text/plain", "Invalid serial (hex expected): " + a);
+      return;
+    }
+    JsonObject o = arr.add<JsonObject>();
+    o["tcs_addr"] = a;
+    o["name"] = nm;
+    o["flat_no"] = (int)web.arg("f" + String(i)).toInt();
+  }
+  String out;
+  serializeJson(nd, out);
+  if (out.length() > 7000 || !write_file_atomic("/tcs_users.json", out)) {
+    web.send(500, "text/plain", "Could not save users (too many or flash error)");
+    return;
+  }
+  intercomUsers.clear();
+  deserializeJson(intercomUsers, out);
+  send_page("/users", "<p>Saved " + String(arr.size()) + " users.</p><p><a href='/users'>Back</a></p>");
 }
 
 // Door-related frames carry the address of the door station currently in use; follow it as it changes
@@ -869,6 +1181,7 @@ void setup()
         } else {
           Serial.println("File tcs_users.json does not exist!");
         }
+        load_rings();
     }
     else
     {
@@ -974,6 +1287,7 @@ void setup()
     configTime(tz, ntp_server); // non-blocking; time syncs in the background
 
     web.on("/", HTTP_GET, handle_root);
+    web.on("/debug", HTTP_GET, handle_debug_page);
     web.on("/debug", HTTP_POST, handle_debug);
     web.on("/wifi", HTTP_GET, handle_wifi_get);
     web.on("/wifi", HTTP_POST, handle_wifi_post);
@@ -981,7 +1295,13 @@ void setup()
     web.on("/mqtt", HTTP_POST, handle_mqtt_post);
     web.on("/time", HTTP_GET, handle_time_get);
     web.on("/time", HTTP_POST, handle_time_post);
+    web.on("/users", HTTP_GET, handle_users_get);
+    web.on("/users", HTTP_POST, handle_users_post);
     web.on("/backup", HTTP_GET, handle_backup_page);
+    web.on("/reboot", HTTP_POST, handle_reboot);
+    web.on("/users/download", HTTP_GET, handle_users_download);
+    web.on("/users/restore", HTTP_POST, handle_users_import, handle_users_upload);
+    web.on("/rings/download", HTTP_GET, handle_rings_download);
     web.on("/backup/download", HTTP_GET, handle_backup_download);
     web.on("/restore", HTTP_POST, handle_restore_done, handle_restore_upload);
     web.collectHeaders("Authorization");
@@ -1059,7 +1379,8 @@ static void append(char *buf, size_t size, const char *fmt, ...) {
 
 void publish_tcs_command(char *topic, CommandData data, bool direction) {
   char mqtt_time[12];
-  char msg[320];
+  char msg[400];
+  char name[40];
 
   current_time(mqtt_time);
   snprintf(msg, sizeof(msg), "{ \"ts\": \"%lu\", \"time\": \"%s\", \"direction\": \"%s\"",
@@ -1068,6 +1389,11 @@ void publish_tcs_command(char *topic, CommandData data, bool direction) {
   if (data.command) append(msg, sizeof(msg), ", \"command\": \"%08x\"", (unsigned)data.command);
   if (data.type) append(msg, sizeof(msg), ", \"type\": \"%s\"", command_type_to_string(data.type));
   if (data.serial_number) append(msg, sizeof(msg), ", \"serial_number\": \"%08x\"", (unsigned)data.serial_number);
+  if (data.serial_number && get_tcsuser_name(data.serial_number, name, sizeof(name))) {
+    // names come from user input: drop characters that would break the JSON
+    for (char *c = name; *c; c++) if (*c == '"' || *c == '\\' || (unsigned char)*c < 0x20) *c = ' ';
+    append(msg, sizeof(msg), ", \"name\": \"%s\"", name);
+  }
   append(msg, sizeof(msg), ", \"address\": \"%02x\", \"payload\": \"%x\" }", data.address, (unsigned)data.payload);
 
   client.publish(topic, msg);
@@ -1078,6 +1404,8 @@ void loop() {
     static uint32_t last_mqtt_try = 0;
     static uint32_t last_status = 0;
     uint32_t now = millis();
+    uint32_t heap_now = ESP.getFreeHeap();
+    if (heap_now < min_free_heap) min_free_heap = heap_now;
 
     // Never block: the bus must keep being sniffed while WiFi/MQTT recover
     if (WiFi.status() != WL_CONNECTED) {
@@ -1114,6 +1442,8 @@ void loop() {
     if (ready) {
       CommandData cmd_data = parseCommand(cmd, len);
       track_door_address(cmd_data);
+      if ((cmd_data.type == COMMAND_TYPE_DOOR_CALL || cmd_data.type == COMMAND_TYPE_INTERNAL_CALL) && cmd_data.serial_number)
+        record_ring(cmd_data.serial_number, cmd_data.type);
 
       DBG("RX %s %s addr=0x%02x\n", cmd_data.command_hex.c_str(), command_type_to_string(cmd_data.type), cmd_data.address);
       publish_tcs_command(mqtt_topic, cmd_data, false);
