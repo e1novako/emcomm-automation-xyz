@@ -25,7 +25,7 @@
 #include <EEPROM.h>
 #include <libb64/cdecode.h>
 
-#define VERSION "1.2.0"
+#define VERSION "1.2.1"
 
 void publish_tcs_command(char *topic, CommandData data, bool direction);
 void mqtt_output(char *format, ...);
@@ -518,8 +518,8 @@ static bool write_file_atomic(const char *path, const String &data) {
   return LittleFS.rename(tmp, path);
 }
 
-// ---- Ring log (last 10 rings) and automatic learning of new serial numbers ----
-#define RING_LOG_SIZE 10
+// ---- Ring log (last 20 rings) and automatic learning of new serial numbers ----
+#define RING_LOG_SIZE 20
 #define RING_DEDUPE_S 5 // a ring repeats its frame; count it once
 struct RingEntry { time_t ts; uint32_t serial; uint8_t type; uint32_t uptime_s; };
 static RingEntry ring_log[RING_LOG_SIZE];
@@ -944,6 +944,7 @@ void handle_rings_page() {
 
 void handle_status() {
   if (!auth()) return;
+  if (!stream_begin("/status")) return;
   String h = "<h4 style='text-align:center'>Last rings</h4><table class='c' cellpadding='4'><tr><th style='width:16.66%'>Date/Time</th><th style='width:16.66%'>Type</th><th style='width:16.66%'>Serial</th><th style='width:50%'>Surname / Name</th></tr>";
   if (!ring_count) h += "<tr><td colspan='4'>none yet</td></tr>";
   for (int i = 0; i < ring_count; i++) {
@@ -962,9 +963,10 @@ void handle_status() {
     snprintf(serial, sizeof(serial), "%06x", (unsigned)e.serial);
     h += "<tr><td>" + String(ts) + "</td><td>" + (e.type == COMMAND_TYPE_DOOR_CALL ? "Door" : "Internal") +
          "</td><td>" + serial + "</td><td>" + who + "</td></tr>";
+    stream_flush(h);
   }
   h += "</table>";
-  send_page("/status", h);
+  stream_end(h);
 }
 
 // Public (no password); the unlock action itself still requires it
