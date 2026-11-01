@@ -4,7 +4,7 @@ ESP8266 sniffer/transmitter for the TCS two-wire intercom bus, bridged to MQTT a
 
 - Input GPIO14 (decoded in an ISR), output GPIO12 (bit-banged).
 - Publishes decoded frames on `mqtt_topic`; accepts commands on `tcs_command_topic`; opens the door on `control4_command_topic`.
-- Config is stored in NVRAM (EEPROM emulation, its own flash sector with CRC; survives firmware/FS updates). A copy is kept in LittleFS `/config.json` (also the legacy location); NVRAM is rebuilt from it if empty or corrupt. Keys: `mqtt_server`, `mqtt_port`, `mqtt_topic`, `mqtt_client`, `mqtt_user`, `mqtt_pass`, `control4_command_topic`, `control4_notify_topic`, `tcs_command_topic`, `tz`, `ntp_server`, `debug`, `serial_number` (hex), `wifi_ssid`, `password`. Users stay in LittleFS `/tcs_users.json`.
+- Config is stored in NVRAM (EEPROM emulation, its own flash sector with CRC; survives firmware/FS updates). A copy is kept in LittleFS `/config.json` (also the legacy location); NVRAM is rebuilt from it if empty or corrupt. Keys: `mqtt_server`, `mqtt_port`, `mqtt_topic`, `mqtt_client`, `mqtt_user`, `mqtt_pass`, `control4_command_topic`, `control4_notify_topic`, `tcs_command_topic`, `tz`, `ntp_server`, `debug`, `serial_number` (hex), `wifi_ssid`, `password`, `allow_programming`. Users stay in LittleFS `/tcs_users.json`.
 
 ## Build
 
@@ -14,13 +14,15 @@ Sketch folder name must match the `.ino` name:
 
 Libraries: ArduinoJson 7.x, PubSubClient, WiFiManager 2.0.17.
 
+OTA build + upload in one step: `./ota_upload.sh`. It reads `OTA_IP`, `OTA_PORT` and `OTA_PASS` from `ota.local.env` (git-ignored, create it locally). Under WSL it uploads through Windows Python, since the device has to connect back to the uploading host.
+
 ## Password, WiFi and OTA
 
-The WiFi password is the one password: it protects the web GUI (HTTP basic auth, any user name, only the password is checked), OTA, and is used to join WiFi. By default (`password` empty) the device uses the WiFi password already stored in it. Set `wifi_ssid` plus a password (8-63 chars) in Settings to join another network, or tick "Use the WiFi password already stored" to clear the override. If joining the configured SSID fails (or it is blank) the device falls back to WiFiManager and its config AP `TCS-<chipid>` (password = the same, or `intercom` if none is known). OTA upload: `espota.py -i <ip> -p 8266 -a <wifi password> -f <bin>`. Basic auth is cleartext over HTTP; an open (password-less) network leaves GUI and OTA unprotected.
+The WiFi password is the one password: it protects the web GUI (HTTP basic auth, any user name, only the password is checked), OTA, and is used to join WiFi. By default (`password` empty) the device uses the WiFi password already stored in it. Set `wifi_ssid` plus a password (8-63 chars) in Settings to join another network, or tick "Use the WiFi password already stored" to clear the override. If joining the configured SSID fails (or it is blank) the device falls back to WiFiManager and its config AP `TCS-<chipid>` (password = the same, or `intercom` if none is known). Web form posts must come from the device's own pages (Origin/Referer is checked against Host) so another website cannot submit them with the browser's cached password. Holding the FLASH button (GPIO0) at boot clears `wifi_ssid`, `password` and the stored WiFi credentials and opens the config AP. The config AP closes after 3 minutes and the device reboots to retry the stored network (e.g. when the router comes up after a power cut). OTA upload: `espota.py -i <ip> -p 8266 -a <wifi password> -f <bin>`. Basic auth is cleartext over HTTP; an open (password-less) network leaves GUI and OTA unprotected.
 
 ## Backup / restore
 
-Web GUI pages, reached from a rounded-button menu at the top: Home (`/`: no menu, only a small Config button to Access; big "Unlock door" button and door-unlocked counter; viewable without a password, pressing the button still asks for it), Access (`/status`: last rings), WiFi (`/wifi`), MQTT (`/mqtt`), Time (`/time`), Statistics (`/rings`, door-ring count and last ring per user; counters live in `tcs_users.json` as `rings`/`last_ring` so they survive reboot/power loss), Users (`/users`), Backup/Restore (`/backup`: config backup/restore, users export/import as JSON via `/users/download` and `/users/restore`, last-rings export `/rings/download`, and a "Reboot only" button). Debug (`/debug`) shows uptime/reset reason, WiFi, MQTT, door address, dropped frames, the debug-logging toggle and memory (heap, fragmentation, sketch/flash, LittleFS, users buffer). Status shows the last 10 rings (kept across reboots in LittleFS `/rings.json`) (time, door/internal, serial, user). Users page holds up to 40 users; serials seen in a door or internal ring that are not in the list are added automatically as `n/a` (rename them on the Users page). Saving a page writes NVRAM and reboots. Backup/Restore: download the JSON (`/backup/download`, includes passwords) or upload one to `/restore`; it is applied, saved and the device reboots. All pages except Home need the password.
+Web GUI pages, reached from a rounded-button menu at the top: Home (`/`: no menu, only a small Config button to Access; big "Unlock door" button and door-unlocked counter; viewable without a password, pressing the button still asks for it), Access (`/status`: last rings), WiFi (`/wifi`), MQTT (`/mqtt`), Time (`/time`), Statistics (`/rings`, door-ring count, unlocks after a ring and last ring per user; counters live in `tcs_users.json` as `rings`/`unlocks`/`last_ring` so they survive reboot/power loss. An unlock (bus, MQTT or web OPEN_DOOR) within 30 s of a door ring is credited once to the user that was rung), Users (`/users`), Backup/Restore (`/backup`: config backup/restore, users export/import as JSON via `/users/download` and `/users/restore`, last-rings export `/rings/download`, "Reset Unlocks" / "Reset Rings" buttons that zero that counter for every flat (`POST /stats/reset`, `what=unlocks|rings`), "Reset total counters" that zeroes every flat's unlock counter and the Home door-unlocked total (`what=all_unlocks`), and a "Reboot only" button). Debug (`/debug`) shows uptime/reset reason, WiFi, MQTT, door address, dropped frames, the debug-logging toggle and memory (heap, fragmentation, sketch/flash, LittleFS, users buffer). Status shows the last 10 rings (kept across reboots in LittleFS `/rings.json`) (time, door/internal, serial, user). Users page shows each user's ring and unlock counters with a reset tick box (applied on Save) and holds up to 40 users (serials are 1-8 hex digits, unique, stored as 6 lower-case digits; names up to 48 bytes); serials seen in a door or internal ring that are not in the list are added automatically as `n/a` (rename them on the Users page). Saving a page writes NVRAM and reboots. Backup/Restore: download the JSON (`/backup/download`, includes passwords) or upload one to `/restore`; it is applied, saved and the device reboots. All pages except Home need the password.
 
 ## Door-open address
 
@@ -28,18 +30,20 @@ The door station address used for the Control4 open-door toggle is tracked dynam
 
 ## Web GUI / debug
 
-`http://<device>/` shows status (MQTT, tracked door address, dropped frames) and a button to turn serial debug logging on/off; the setting persists in `config.json` (`debug`). `tz` in `config.json` is a POSIX TZ string (default CET/CEST).
+`http://<device>/debug` shows status (MQTT, tracked door address, dropped frames) and a button to turn serial debug logging on/off; the setting persists in the config (`debug`). `tz` is a POSIX TZ string (default CET/CEST).
 
 ## MQTT topics
 
 - `<mqtt_topic>`: decoded/sent frames and events (`sniffer_online`, `control4_notify`).
+- `<tcs_command_topic>`: JSON commands to send on the bus. Programming/memory/reset commands (`RESET`, `SELECT_DEVICE_GROUP[_RESET]`, `PROGRAMMING_MODE`, `READ_MEMORY_BLOCK`, `SELECT_MEMORY_PAGE`, `WRITE_MEMORY`) are refused unless "Allow programming" is ticked on the MQTT page (`allow_programming`). Addresses above `ff` are refused.
+- `<control4_command_topic>`: any message (payload ignored, may be empty) opens the door.
 - `<mqtt_topic>/availability`: retained `online` / `offline` (last will).
 - `<mqtt_topic>/status`: every 60 s: version, uptime, RSSI, free heap, RX overruns, TX dropped/queued, door address.
 - Control4 IAS zone: Alarm1 on an internal call to this device's serial, Alarm2 on a door call to it.
 
 ## Transmit
 
-Frames are queued (4 deep, 20 ms gap) and bit-banged by hardware timer1, so `loop()` never blocks. RX is ignored while transmitting.
+Frames are queued (4 deep, 20 ms gap) and bit-banged by hardware timer1. RX is ignored while transmitting. Received frames go into a 16-deep queue in the ISR, so frames arriving while `loop()` writes flash or waits on an MQTT connect (socket timeouts 2 s) are kept; a full queue counts as a dropped RX frame.
 
 ## Tests
 
@@ -49,6 +53,12 @@ Host-side protocol round-trip tests (no hardware needed):
 
 ## Changelog
 
+- 1.2.0: "Reset all unlocks (incl. total)" moved from Users to Backup/Restore and renamed "Reset total counters".
+- 1.1.7: Users and Statistics pages are streamed (chunked) instead of built in one String; the Users page with ~30 users ran out of heap and crashed the device.
+- 1.1.6: Users page counter columns centered; "Reset all unlocks (incl. total)" button.
+- 1.1.5: per-flat ring/unlock counter reset on the Users page; Reset Unlocks / Reset Rings buttons on Backup/Restore.
+- 1.1.4: per-user "unlocked after ring" counter (`unlocks`): an unlock within 30 s of a door ring counts for the rung user; shown on Statistics.
+- 1.1.3: config portal times out after 3 min (no more hanging after a power cut); FLASH-button reset also clears `wifi_ssid`/`password`; CSRF guard on all form posts; 16-frame RX queue and 2 s MQTT socket timeouts; Control4 toggle works with an empty/non-JSON payload; MQTT programming commands need `allow_programming`; users: hex-only unique serials, names cut to 48 bytes without splitting UTF-8 characters, compact users export; ArduinoJson 7 `JsonDocument` for users (Debug shows user count / file size).
 - 1.1.2: Statistics page sorted by Ring No. descending (ties by flat number).
 - 1.1.1: Rings page renamed Statistics (URL unchanged).
 - 1.0.28: 200 px empty space above the unlock button.

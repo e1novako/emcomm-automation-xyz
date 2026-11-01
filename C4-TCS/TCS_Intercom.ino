@@ -25,7 +25,7 @@
 #include <EEPROM.h>
 #include <libb64/cdecode.h>
 
-#define VERSION "1.1.2"
+#define VERSION "1.2.0"
 
 void publish_tcs_command(char *topic, CommandData data, bool direction);
 void mqtt_output(char *format, ...);
@@ -42,8 +42,7 @@ ESP8266WebServer web(80);
 WiFiClient net;
 PubSubClient client(net);
 
-//JsonDocument intercomUsers;
-DynamicJsonDocument intercomUsers(8192);
+JsonDocument intercomUsers;
 
 //define your default values here, if there are different values in config.json, they are overwritten.
 char mqtt_server[40] = "192.168.10.243";
@@ -57,6 +56,7 @@ char mqtt_user[32] = "";
 char mqtt_pass[32] = "";
 char wifi_ssid[33] = "";           // empty = use WiFiManager / stored credentials
 char admin_pass[64] = "";          // WiFi password; empty = use the WiFi password stored in the device. Also the GUI and OTA password
+bool allow_programming = false;    // accept device programming/memory commands on tcs_command_topic
 
 uint32_t my_serial_number = 0x8c0b9;
 uint32_t last_bus_address = 3;      // address of the door station involved in the latest door-related frame
@@ -86,15 +86,18 @@ static std::unique_ptr<char[]> read_file(const char *path) {
 bool shouldSaveConfig = false;
 
 #define inputPin    14  // D5 - GPIO14
-#define outputPin   12  // D6 - GPIO15
-#define restorePin  0   // D0
+#define outputPin   12  // D6 - GPIO12
+#define restorePin  0   // D3 - GPIO0 (FLASH button)
 #define startBit    6
 #define oneBit      4
 #define zeroBit     2
 
-volatile uint32_t CMD = 0;
-volatile uint8_t lengthCMD = 0;
-volatile bool cmdReady = false;
+// RX queue filled by the ISR, so frames are not lost while loop() is busy (flash writes, MQTT connect)
+#define RX_QUEUE_SIZE 16
+struct RxFrame { uint32_t cmd; uint8_t is_long; };
+volatile RxFrame rx_queue[RX_QUEUE_SIZE];
+volatile uint8_t rx_q_head = 0;  // next slot the ISR writes
+volatile uint8_t rx_q_tail = 0;  // next slot loop() reads
 
 // Transmit queue: frames are bit-banged by a hardware timer so the main loop never blocks
 #define TX_QUEUE_SIZE 4
@@ -118,6 +121,34 @@ uint32_t tx_forced = 0;
 #define TX_WATCHDOG_MS 500    // longest legal frame is ~200 ms
 volatile bool tx_level = false;
 
+#define MAX_NAME_LEN 48 // bytes (UTF-8) stored per user name
+#define NAME_BUF     (MAX_NAME_LEN + 1)
+
+// Drops a UTF-8 sequence left incomplete at the end of s by truncation
+static void utf8_trim_end(char *s) {
+  size_t n = strlen(s), i = n, cont = 0;
+  while (i > 0 && cont < 3 && ((uint8_t)s[i - 1] & 0xC0) == 0x80) { i--; cont++; }
+  if (i == 0) { if (cont) s[0] = 0; return; }
+  uint8_t lead = s[i - 1];
+  size_t need = lead >= 0xF0 ? 4 : lead >= 0xE0 ? 3 : lead >= 0xC0 ? 2 : 1;
+  if (need == 1 && cont) s[i] = 0;           // stray continuation bytes
+  else if (n - (i - 1) < need) s[i - 1] = 0; // sequence cut short
+}
+
+// Bounded copy that never splits a UTF-8 character
+static void utf8_copy(char *dst, const char *src, size_t size) {
+  if (strlcpy(dst, src, size) >= size) utf8_trim_end(dst);
+}
+
+// Hex serial: only hex digits, 1-8 of them (no sign, no 0x prefix, no spaces)
+static bool parse_serial(const char *s, uint32_t *out) {
+  size_t n = strlen(s);
+  if (n == 0 || n > 8) return false;
+  for (size_t i = 0; i < n; i++) if (!isxdigit((unsigned char)s[i])) return false;
+  *out = strtoul(s, nullptr, 16);
+  return true;
+}
+
 // Looks up a user name by TCS serial number (tcs_addr is hex in tcs_users.json)
 bool get_tcsuser_name(uint32_t serial, char *name_out, size_t size, int *flat = nullptr) {
   for (JsonObject elem : intercomUsers.as<JsonArray>()) {
@@ -125,7 +156,7 @@ bool get_tcsuser_name(uint32_t serial, char *name_out, size_t size, int *flat = 
     const char *addr = elem["tcs_addr"];
     if (!name || !addr) continue;
     if ((uint32_t)strtoul(addr, nullptr, 16) == serial) {
-      strlcpy(name_out, name, size);
+      utf8_copy(name_out, name, size);
       if (flat) *flat = elem["flat_no"] | 0;
       return true;
     }
@@ -161,7 +192,7 @@ struct tm current_time(char *mqtt_timestamp) {
   return timeinfo;
 }
 
-void ICACHE_RAM_ATTR analyzeCMD()
+void IRAM_ATTR analyzeCMD()
 {
     if (tx_busy) return; // ignore our own edges
     static uint32_t curCMD;
@@ -249,24 +280,33 @@ void ICACHE_RAM_ATTR analyzeCMD()
     }
     else
     {
-        curPos = 0;
+        // a start bit in the middle of a frame begins a new frame instead of losing it
+        curPos = (curBit == 2) ? 1 : 0;
+        curCMD = 0;
+        curCRC = 0;
+        calCRC = 1;
+        curLength = 0;
     }
     if (cmdIntReady)
     {
         cmdIntReady = 0;
         if (curCRC == calCRC)
         {
-            if (cmdReady) isr_overruns++;
-            cmdReady = 1;
-            lengthCMD = curLength;
-            CMD = curCMD;
+            uint8_t next = (rx_q_head + 1) % RX_QUEUE_SIZE;
+            if (next == rx_q_tail) {
+                isr_overruns++;
+            } else {
+                rx_queue[rx_q_head].cmd = curCMD;
+                rx_queue[rx_q_head].is_long = curLength;
+                rx_q_head = next;
+            }
         }
         curCMD = 0;
         curPos = 0;
     }
 }
 
-void ICACHE_RAM_ATTR tx_timer_isr() {
+void IRAM_ATTR tx_timer_isr() {
   tx_i++;
   if (tx_i >= tx_n) {
     GPOC = (1 << outputPin);
@@ -401,7 +441,7 @@ static void topic_with_suffix(char *out, size_t size, const char *suffix) {
   snprintf(out, size, "%s/%s", mqtt_topic, suffix);
 }
 
-// Single non-blocking attempt; the caller rate-limits retries
+// Single attempt (bounded by the 2 s socket timeouts set in setup); the caller rate-limits retries
 bool connectToMqtt() {
   char mcli[64];
   char avail[96];
@@ -487,6 +527,8 @@ static uint8_t ring_head = 0; // next slot to write
 static uint8_t ring_count = 0;
 
 #define MAX_USERS 40
+#define STR_(x) #x
+#define STR(x) STR_(x)
 #define MAX_USER_ROWS MAX_USERS
 
 // Door-unlock counter, persisted in /stats.json so it survives reboot/power loss
@@ -504,12 +546,31 @@ static void load_stats() {
   if (!deserializeJson(doc, buf.get())) door_unlocks = doc["unlocks"] | 0u;
 }
 
-// An unlock command may be repeated on the bus; count it once per 2 s
+// Latest door ring, so an unlock that follows it can be credited to that user
+#define RING_UNLOCK_WINDOW_MS 30000
+static uint32_t pending_ring_serial = 0;
+static uint32_t pending_ring_ms = 0;
+static bool pending_ring = false;
+
+static bool save_users_doc();
+
+// An unlock command may be repeated on the bus; count it once per 2 s. An unlock within 30 s of a door
+// ring also counts for the user that was rung (once per ring), in tcs_users.json as "unlocks".
 static void count_unlock() {
   if (last_unlock_ms && millis() - last_unlock_ms < 2000) return;
   last_unlock_ms = millis() | 1;
   door_unlocks++;
   save_stats();
+
+  if (pending_ring && millis() - pending_ring_ms < RING_UNLOCK_WINDOW_MS) {
+    JsonObject u = find_user(pending_ring_serial);
+    if (!u.isNull()) {
+      u["unlocks"] = (u["unlocks"] | 0u) + 1;
+      if (!intercomUsers.overflowed()) save_users_doc();
+      DBG("unlock credited to %06x\n", (unsigned)pending_ring_serial);
+    }
+  }
+  pending_ring = false;
 }
 
 static bool save_users_doc() {
@@ -525,7 +586,7 @@ static void rings_to_json(JsonDocument &doc) {
   JsonArray arr = doc.to<JsonArray>();
   for (int i = ring_count - 1; i >= 0; i--) {
     const RingEntry &e = ring_log[(ring_head + RING_LOG_SIZE - 1 - i) % RING_LOG_SIZE];
-    char serial[10], type[10], name[40] = "";
+    char serial[10], type[10], name[NAME_BUF] = "";
     snprintf(serial, sizeof(serial), "%06x", (unsigned)e.serial);
     ring_type_name(e.type, type, sizeof(type));
     get_tcsuser_name(e.serial, name, sizeof(name));
@@ -588,6 +649,9 @@ static void record_ring(uint32_t serial, uint8_t type) {
   if (ring_count < RING_LOG_SIZE) ring_count++;
   bool users_changed = add_unknown_user(serial);
   if (type == COMMAND_TYPE_DOOR_CALL) {
+    pending_ring = true;
+    pending_ring_serial = serial;
+    pending_ring_ms = millis();
     // per-user door ring counter, kept in tcs_users.json so it survives reboot/power loss
     JsonObject u = find_user(serial);
     if (!u.isNull()) {
@@ -633,6 +697,7 @@ static void config_to_json(JsonDocument &json) {
   json["serial_number"] = serial;
   json["wifi_ssid"] = wifi_ssid;
   json["password"] = admin_pass;
+  json["allow_programming"] = allow_programming;
 }
 
 // Applies any keys present; missing or invalid ones keep their current value
@@ -655,9 +720,10 @@ static void apply_config(JsonDocument &json) {
   load_str(json, "ntp_server", ntp_server, sizeof(ntp_server));
   load_str(json, "wifi_ssid", wifi_ssid, sizeof(wifi_ssid));
   if (json["debug"].is<bool>()) debug_enabled = json["debug"];
+  if (json["allow_programming"].is<bool>()) allow_programming = json["allow_programming"];
 
   const char *sn = json["serial_number"] | (const char*)nullptr;
-  if (sn) sscanf(sn, "%x", &my_serial_number);
+  if (sn) parse_serial(sn, &my_serial_number);
 
   // WPA2 needs 8..63 characters; empty means "use the stored WiFi password"
   const char *pw = json["password"] | (const char*)nullptr;
@@ -717,8 +783,23 @@ static String html_escape(const char *v) {
   return o;
 }
 
-// HTTP basic auth: any user name, only the password is checked
+// CSRF guard: the browser re-sends basic auth credentials on cross-site form posts, so a POST must come
+// from one of our own pages. Origin/Referer are checked against Host; requests without either (curl) pass.
+static bool same_origin() {
+  String expected = "http://" + web.hostHeader();
+  String origin = web.header("Origin");
+  if (origin.length()) return origin == expected;
+  String referer = web.header("Referer");
+  if (referer.length()) return referer == expected || referer.startsWith(expected + "/");
+  return true;
+}
+
+// HTTP basic auth: any user name, only the password is checked; POSTs must also pass the CSRF guard
 static bool auth() {
+  if (web.method() != HTTP_GET && !same_origin()) {
+    web.send(403, "text/plain", "Cross-site request refused");
+    return false;
+  }
   String pass = effective_pass();
   if (pass.length() == 0) return true; // open network and no password set
 
@@ -746,6 +827,7 @@ static const char CSS[] =
   "nav a,button{display:inline-block;padding:8px 18px;margin:2px;border:0;border-radius:20px;background:#e3e6ea;color:#222;text-decoration:none;font-size:14px;cursor:pointer}"
   "nav a.on,button{background:#1a73e8;color:#fff}"
   "input[type=text],input[type=password]{width:420px;max-width:95%;padding:6px;border:1px solid #bbb;border-radius:8px}"
+  ".ctr{text-align:center}"
   "</style>";
 
 static String uptime_str() {
@@ -777,6 +859,31 @@ static void send_page(const char *active, const String &body) {
   web.send(200, "text/html", page_begin(active) + body + "</body></html>");
 }
 
+// Pages that grow with the user list are streamed in chunks: building them as one String (plus the copy
+// send_page makes) does not fit in the heap with 30+ users and crashes the device
+static bool stream_begin(const char *active) {
+  if (!web.chunkedResponseModeStart(200, "text/html")) {
+    web.send(505, "text/plain", "HTTP/1.1 required");
+    return false;
+  }
+  web.sendContent(page_begin(active));
+  return true;
+}
+
+// Sends buf once it holds a few rows, so memory use stays flat
+static void stream_flush(String &buf, bool force = false) {
+  if (buf.length() && (force || buf.length() > 1024)) {
+    web.sendContent(buf);
+    buf = "";
+  }
+}
+
+static void stream_end(String &buf) {
+  buf += "</body></html>";
+  stream_flush(buf, true);
+  web.chunkedResponseFinalize();
+}
+
 static void config_field(String &h, const char *label, const char *name, const char *value, bool password = false) {
   h += "<p>" + String(label) + "<br><input name='" + name + "' type='" + (password ? "password" : "text") +
        "' value='" + (password ? "" : html_escape(value)) + "'></p>";
@@ -806,7 +913,8 @@ static void fmt_ts(time_t t, char *out, size_t n) {
 
 void handle_rings_page() {
   if (!auth()) return;
-  String h = "<h4>Door rings per device</h4><table class='c'><tr><th style='width:15%'>Flat No.</th><th style='width:40%'>Surname / Name</th><th style='width:15%'>Ring No.</th><th style='width:30%'>Last ring</th></tr>";
+  if (!stream_begin("/rings")) return;
+  String h = "<h4>Door rings per device</h4><table class='c'><tr><th style='width:12%'>Flat No.</th><th style='width:34%'>Surname / Name</th><th style='width:12%'>Ring No.</th><th style='width:14%'>Unlocked after ring</th><th style='width:28%'>Last ring</th></tr>";
   // most rings first; ties by flat number, users without a flat (0) last
   JsonObject sorted[MAX_USERS];
   int cnt = 0;
@@ -827,10 +935,11 @@ void handle_rings_page() {
     String who = html_escape(u["name"] | "");
     if (who.length() == 0 || who == "n/a") who = u["tcs_addr"] | "";
     h += "<tr><td>" + (flat > 0 ? String(flat) : String("-")) + "</td><td>" + who + "</td><td>" +
-         String(u["rings"] | 0u) + "</td><td>" + ts + "</td></tr>";
+         String(u["rings"] | 0u) + "</td><td>" + String(u["unlocks"] | 0u) + "</td><td>" + ts + "</td></tr>";
+    stream_flush(h);
   }
   h += "</table>";
-  send_page("/rings", h);
+  stream_end(h);
 }
 
 void handle_status() {
@@ -839,7 +948,7 @@ void handle_status() {
   if (!ring_count) h += "<tr><td colspan='4'>none yet</td></tr>";
   for (int i = 0; i < ring_count; i++) {
     const RingEntry &e = ring_log[(ring_head + RING_LOG_SIZE - 1 - i) % RING_LOG_SIZE];
-    char ts[24] = "(no time)", name[40] = "";
+    char ts[24] = "(no time)", name[NAME_BUF] = "";
     if (e.ts > 1600000000) {
       struct tm t;
       localtime_r(&e.ts, &t);
@@ -849,8 +958,10 @@ void handle_status() {
     get_tcsuser_name(e.serial, name, sizeof(name), &flat);
     String who = html_escape(name);
     if (flat > 0) who = String(flat) + ". " + who;
+    char serial[10];
+    snprintf(serial, sizeof(serial), "%06x", (unsigned)e.serial);
     h += "<tr><td>" + String(ts) + "</td><td>" + (e.type == COMMAND_TYPE_DOOR_CALL ? "Door" : "Internal") +
-         "</td><td>" + String(e.serial, HEX) + "</td><td>" + who + "</td></tr>";
+         "</td><td>" + serial + "</td><td>" + who + "</td></tr>";
   }
   h += "</table>";
   send_page("/status", h);
@@ -897,7 +1008,9 @@ void handle_debug_page() {
   row("Flash chip", String(ESP.getFlashChipRealSize()) + " bytes");
   FSInfo fs;
   if (LittleFS.info(fs)) row("LittleFS", String(fs.usedBytes) + " / " + String(fs.totalBytes) + " bytes used");
-  row("Users buffer", String(intercomUsers.memoryUsage()) + " / 8192 bytes");
+  String users_json;
+  serializeJson(intercomUsers, users_json);
+  row("Users", String(intercomUsers.size()) + " / " + String(MAX_USERS) + " (" + String(users_json.length()) + " / 7000 bytes)");
   h += "</table>";
   send_page("/debug", h);
 }
@@ -960,6 +1073,8 @@ void handle_mqtt_get() {
   config_field(h, "Control4 command topic", "control4_command_topic", control4_command_topic);
   config_field(h, "Control4 notify topic", "control4_notify_topic", control4_notify_topic);
   config_field(h, "This device's TCS serial number (hex)", "serial_number", serial);
+  h += "<p><label><input type='checkbox' name='allow_programming' value='1'" + String(allow_programming ? " checked" : "") +
+       "> Allow programming/memory/reset commands on the TCS command topic</label></p>";
   h += "<button>Save and reboot</button></form>";
   send_page("/mqtt", h);
 }
@@ -975,7 +1090,13 @@ void handle_mqtt_post() {
   set_field("tcs_command_topic", tcs_command_topic, sizeof(tcs_command_topic));
   set_field("control4_command_topic", control4_command_topic, sizeof(control4_command_topic));
   set_field("control4_notify_topic", control4_notify_topic, sizeof(control4_notify_topic));
-  if (web.arg("serial_number").length() > 0) sscanf(web.arg("serial_number").c_str(), "%x", &my_serial_number);
+  String sn = web.arg("serial_number");
+  sn.trim();
+  if (sn.length() > 0 && !parse_serial(sn.c_str(), &my_serial_number)) {
+    web.send(400, "text/plain", "Invalid serial number (hex expected): " + sn);
+    return;
+  }
+  allow_programming = web.arg("allow_programming") == "1";
   save_and_reboot();
 }
 
@@ -1009,6 +1130,11 @@ void handle_backup_page() {
   h += "<h4>Users</h4><p><a href='/users/download'><button type='button'>Export users</button></a></p>";
   h += "<form method='POST' action='/users/restore' enctype='multipart/form-data'><p><input type='file' name='file'> <button>Import users</button></p></form>";
   h += "<h4>Last rings</h4><p><a href='/rings/download'><button type='button'>Export last rings</button></a></p>";
+  h += "<h4>Statistics</h4><form method='POST' action='/stats/reset'><p>"
+       "<button name='what' value='unlocks' onclick=\"return confirm('Reset the unlock counter of every flat?')\">Reset Unlocks</button> "
+       "<button name='what' value='rings' onclick=\"return confirm('Reset the ring counter of every flat?')\">Reset Rings</button> "
+       "<button name='what' value='all_unlocks' onclick=\"return confirm('Reset the unlock counter of every flat and the total door-unlocked counter?')\">"
+       "Reset total counters</button></p></form>";
   h += "<h4>Device</h4><form method='POST' action='/reboot'><p><button>Reboot only</button></p></form>";
   send_page("/backup", h);
 }
@@ -1016,7 +1142,7 @@ void handle_backup_page() {
 void handle_users_download() {
   if (!auth()) return;
   String out;
-  serializeJsonPretty(intercomUsers, out);
+  serializeJson(intercomUsers, out); // compact: always fits the import limit
   web.sendHeader("Content-Disposition", "attachment; filename=tcs-users.json");
   web.send(200, "application/json", out);
 }
@@ -1045,6 +1171,28 @@ void handle_users_upload() {
   }
 }
 
+// Validates one user and appends it to arr; returns an error message, or nullptr on success.
+// The serial is stored normalised (lower-case hex, 6 digits) and the name is cut to MAX_NAME_LEN bytes.
+static const char *add_user_row(JsonArray arr, const char *addr, const char *name, int flat, uint32_t rings, uint32_t last_ring, uint32_t unlocks) {
+  uint32_t serial;
+  if (!parse_serial(addr, &serial)) return "Invalid serial (1-8 hex digits expected)";
+  for (JsonObject u : arr) {
+    if ((uint32_t)strtoul(u["tcs_addr"] | "", nullptr, 16) == serial) return "Duplicate serial";
+  }
+  if (arr.size() >= MAX_USERS) return "Too many users (max " STR(MAX_USERS) ")";
+  char a[10], nm[NAME_BUF];
+  snprintf(a, sizeof(a), "%06x", (unsigned)serial);
+  utf8_copy(nm, name, sizeof(nm));
+  JsonObject o = arr.add<JsonObject>();
+  o["tcs_addr"] = a;
+  o["name"] = nm;
+  o["flat_no"] = flat;
+  if (rings) o["rings"] = rings;
+  if (last_ring) o["last_ring"] = last_ring;
+  if (unlocks) o["unlocks"] = unlocks;
+  return nullptr;
+}
+
 void handle_users_import() {
   if (!auth()) { users_buf = ""; return; }
   JsonDocument in;
@@ -1059,18 +1207,11 @@ void handle_users_import() {
   for (JsonObject o : in.as<JsonArray>()) {
     const char *addr = o["tcs_addr"];
     if (!addr || !*addr) continue;
-    char *end;
-    strtoul(addr, &end, 16);
-    if (*end || strlen(addr) > 8 || arr.size() >= MAX_USERS) {
-      web.send(400, "text/plain", String("Invalid or too many users (max ") + MAX_USERS + ")");
+    const char *e = add_user_row(arr, addr, o["name"] | "n/a", o["flat_no"] | 0, o["rings"] | 0u, o["last_ring"] | 0u, o["unlocks"] | 0u);
+    if (e) {
+      web.send(400, "text/plain", String(e) + ": " + addr);
       return;
     }
-    JsonObject n = arr.add<JsonObject>();
-    n["tcs_addr"] = addr;
-    n["name"] = o["name"] | "n/a";
-    n["flat_no"] = o["flat_no"] | 0;
-    n["rings"] = o["rings"] | 0u;
-    n["last_ring"] = o["last_ring"] | 0u;
   }
   String out;
   serializeJson(nd, out);
@@ -1081,6 +1222,30 @@ void handle_users_import() {
   intercomUsers.clear();
   deserializeJson(intercomUsers, out);
   send_page("/backup", "<p>Imported " + String(arr.size()) + " users.</p><p><a href='/users'>Users</a></p>");
+}
+
+// Resets one per-user counter ("rings" or "unlocks") for every user; "all_unlocks" also zeroes the total
+void handle_stats_reset() {
+  if (!auth()) return;
+  String what = web.arg("what");
+  bool all = what == "all_unlocks";
+  if (all) what = "unlocks";
+  if (what != "rings" && what != "unlocks") {
+    web.send(400, "text/plain", "Unknown counter");
+    return;
+  }
+  for (JsonObject u : intercomUsers.as<JsonArray>()) u.remove(what);
+  if (!save_users_doc()) {
+    web.send(500, "text/plain", "Could not save users");
+    return;
+  }
+  if (all) {
+    door_unlocks = 0;
+    save_stats();
+    send_page("/backup", "<p>Unlock counters reset for all flats, total door-unlocked counter reset.</p><p><a href='/backup'>Back</a></p>");
+    return;
+  }
+  send_page("/backup", "<p>" + String(what == "rings" ? "Ring" : "Unlock") + " counters reset for all flats.</p><p><a href='/backup'>Back</a></p>");
 }
 
 void handle_reboot() {
@@ -1132,21 +1297,26 @@ void handle_restore_done() {
 
 void handle_users_get() {
   if (!auth()) return;
-  String h = "<form method='POST' action='/users'><table><tr><th>No.</th><th>Serial No.</th><th>Flat No.</th><th>Surname / Name</th></tr>";
+  if (!stream_begin("/users")) return;
+  String h = "<form method='POST' action='/users'><table><tr><th>No.</th><th>Serial No.</th><th>Flat No.</th><th>Surname / Name</th><th class='ctr'>Rings (reset)</th><th class='ctr'>Unlocks (reset)</th></tr>";
   int n = 0;
   for (JsonObject u : intercomUsers.as<JsonArray>()) {
     if (n >= MAX_USER_ROWS) break;
     h += "<tr><td>" + String(n + 1) + "</td><td><input name='a" + String(n) + "' size='8' value='" + html_escape(u["tcs_addr"] | "") + "'></td>";
     h += "<td><input name='f" + String(n) + "' size='4' value='" + String(u["flat_no"] | 0) + "'></td>";
-    h += "<td><input name='n" + String(n) + "' value='" + html_escape(u["name"] | "") + "'></td></tr>";
+    h += "<td><input name='n" + String(n) + "' value='" + html_escape(u["name"] | "") + "'></td>";
+    h += "<td class='ctr'><label>" + String(u["rings"] | 0u) + " <input type='checkbox' name='rr" + String(n) + "' value='1'></label></td>";
+    h += "<td class='ctr'><label>" + String(u["unlocks"] | 0u) + " <input type='checkbox' name='ru" + String(n) + "' value='1'></label></td></tr>";
     n++;
+    stream_flush(h);
   }
   for (int i = 0; i < 2 && n < MAX_USER_ROWS; i++, n++) {
-    h += "<tr><td>" + String(n + 1) + "</td><td><input name='a" + String(n) + "' size='8'></td><td><input name='f" + String(n) + "' size='4'></td><td><input name='n" + String(n) + "'></td></tr>";
+    h += "<tr><td>" + String(n + 1) + "</td><td><input name='a" + String(n) + "' size='8'></td><td><input name='f" + String(n) + "' size='4'></td><td><input name='n" + String(n) + "'></td><td></td><td></td></tr>";
   }
-  h += "</table><p>Clear the serial to delete a row; use the blank rows to add users (max " + String(MAX_USER_ROWS) + ").</p>";
+  h += "</table><p>Clear the serial to delete a row; use the blank rows to add users (max " + String(MAX_USER_ROWS) + "). "
+       "Tick a counter's box to reset it to 0 on Save.</p>";
   h += "<input type='hidden' name='rows' value='" + String(n) + "'><button>Save</button></form>";
-  send_page("/users", h);
+  stream_end(h);
 }
 
 void handle_users_post() {
@@ -1160,20 +1330,21 @@ void handle_users_post() {
     a.trim();
     nm.trim();
     if (a.length() == 0) continue;
-    char *end;
-    strtoul(a.c_str(), &end, 16);
-    if (*end || a.length() > 8) {
-      web.send(400, "text/plain", "Invalid serial (hex expected): " + a);
-      return;
+    uint32_t rings = 0, last_ring = 0, unlocks = 0, serial;
+    if (parse_serial(a.c_str(), &serial)) {
+      JsonObject old = find_user(serial);
+      if (!old.isNull()) {
+        rings = old["rings"] | 0u;
+        last_ring = old["last_ring"] | 0u;
+        unlocks = old["unlocks"] | 0u;
+      }
     }
-    JsonObject o = arr.add<JsonObject>();
-    o["tcs_addr"] = a;
-    o["name"] = nm;
-    o["flat_no"] = (int)web.arg("f" + String(i)).toInt();
-    JsonObject old = find_user(strtoul(a.c_str(), nullptr, 16));
-    if (!old.isNull()) {
-      o["rings"] = old["rings"] | 0u;
-      o["last_ring"] = old["last_ring"] | 0u;
+    if (web.arg("rr" + String(i)) == "1") rings = 0;
+    if (web.arg("ru" + String(i)) == "1") unlocks = 0;
+    const char *e = add_user_row(arr, a.c_str(), nm.c_str(), (int)web.arg("f" + String(i)).toInt(), rings, last_ring, unlocks);
+    if (e) {
+      web.send(400, "text/plain", String(e) + ": " + a);
+      return;
     }
   }
   String out;
@@ -1223,48 +1394,75 @@ static uint32_t hex_field(JsonDocument &doc, const char *key) {
   uint32_t v = 0;
   JsonVariant f = doc[key];
   if (f.is<const char*>()) {
-    sscanf(f.as<const char*>(), "%x", &v);
+    v = strtoul(f.as<const char*>(), nullptr, 16);
   } else if (f.is<unsigned long>()) {
     v = f.as<unsigned long>();
   }
   return v;
 }
 
-void callback(char *topic, byte *payload, unsigned int length) {
-  JsonDocument doc;
+// Commands that reprogram or reset bus devices; refused from MQTT unless allow_programming is set
+static bool is_programming_command(uint32_t type) {
+  switch (type) {
+    case COMMAND_TYPE_RESET:
+    case COMMAND_TYPE_SELECT_DEVICE_GROUP:
+    case COMMAND_TYPE_SELECT_DEVICE_GROUP_RESET:
+    case COMMAND_TYPE_PROGRAMMING_MODE:
+    case COMMAND_TYPE_READ_MEMORY_BLOCK:
+    case COMMAND_TYPE_SELECT_MEMORY_PAGE:
+    case COMMAND_TYPE_WRITE_MEMORY:
+      return true;
+    default:
+      return false;
+  }
+}
 
+void callback(char *topic, byte *payload, unsigned int length) {
   DBG("Received on %s: %.*s\n", topic, (int)length, (const char*)payload);
 
-  DeserializationError error = deserializeJson(doc, payload, length);
-  if (error) {
-    DBG("JSON error: #%d %s\n", (int)error.code(), error.c_str());
-    return;
-  }
-
-  if (String(topic) == String(tcs_command_topic)) {
-    uint32_t type = COMMAND_TYPE_UNKNOWN;
-    if (doc["type"].is<const char*>())
-      type = string_to_command_type(doc["type"].as<const char*>());
-
-    if (type == COMMAND_TYPE_UNKNOWN) {
-      DBG("Unknown tcs_command\n");
-      return;
-    }
-
-    // address/payload/serial_number are hex strings (or numbers); a missing address uses the tracked door address
-    uint32_t address = doc["address"].isNull() ? last_bus_address : hex_field(doc, "address");
-    CommandData command_data = buildCommand(type, address, hex_field(doc, "payload"), hex_field(doc, "serial_number"));
-    if (command_data.command > 0) {
-      publish_tcs_command(mqtt_topic, command_data, true);
-      queue_command(command_data.command, command_data.is_long);
-    }
-  } else if (String(topic) == String(control4_command_topic)) {
+  // The Control4 toggle needs no payload (it may be empty or not JSON at all)
+  if (strcmp(topic, control4_command_topic) == 0) {
     CommandData command_data = buildCommand(COMMAND_TYPE_OPEN_DOOR, last_bus_address, 0, 0);
     DBG("Control4 open door, address 0x%02x\n", (unsigned)last_bus_address);
     if (command_data.command > 0) {
       publish_tcs_command(mqtt_topic, command_data, true);
       queue_command(command_data.command, command_data.is_long);
     }
+    return;
+  }
+
+  if (strcmp(topic, tcs_command_topic) != 0) return;
+
+  JsonDocument doc;
+  DeserializationError error = deserializeJson(doc, payload, length);
+  if (error) {
+    DBG("JSON error: #%d %s\n", (int)error.code(), error.c_str());
+    return;
+  }
+
+  uint32_t type = COMMAND_TYPE_UNKNOWN;
+  if (doc["type"].is<const char*>())
+    type = string_to_command_type(doc["type"].as<const char*>());
+
+  if (type == COMMAND_TYPE_UNKNOWN) {
+    DBG("Unknown tcs_command\n");
+    return;
+  }
+  if (!allow_programming && is_programming_command(type)) {
+    DBG("tcs_command %s refused (programming commands disabled)\n", command_type_to_string(type));
+    return;
+  }
+
+  // address/payload/serial_number are hex strings (or numbers); a missing address uses the tracked door address
+  uint32_t address = doc["address"].isNull() ? last_bus_address : hex_field(doc, "address");
+  if (address > 0xFF) {
+    DBG("tcs_command address 0x%x out of range\n", (unsigned)address);
+    return;
+  }
+  CommandData command_data = buildCommand(type, address, hex_field(doc, "payload"), hex_field(doc, "serial_number"));
+  if (command_data.command > 0) {
+    publish_tcs_command(mqtt_topic, command_data, true);
+    queue_command(command_data.command, command_data.is_long);
   }
 }
 
@@ -1280,7 +1478,7 @@ void setup()
     digitalWrite(outputPin, LOW);
     
     attachInterrupt(digitalPinToInterrupt(inputPin), analyzeCMD, CHANGE);
-    // Config lives in NVRAM; LittleFS only holds tcs_users.json (and the legacy config.json, migrated on first boot)
+    // Config lives in NVRAM with a /config.json copy in LittleFS; LittleFS also holds users, rings and stats
     EEPROM.begin(NV_SIZE);
     Serial.println("mounting FS...");
     bool fs_ok = LittleFS.begin();
@@ -1307,6 +1505,23 @@ void setup()
     else
     {
         Serial.println("failed to mount FS");
+    }
+
+    // FLASH button held at boot: factory-reset WiFi. Checked before joining wifi_ssid so the configured
+    // network and password override are cleared too (the WiFiManager credentials are erased below)
+    delay(800);
+    int restore = 0;
+    for (int i = 0; i < 1000; i++) {
+      if (digitalRead(restorePin))
+        restore++;
+    }
+    Serial.println("\n\nOutput: " + String(restore) + "\n\n");
+    bool factory_reset = restore == 0;
+    if (factory_reset) {
+      Serial.println("FLASH button held: clearing WiFi SSID and password");
+      wifi_ssid[0] = 0;
+      admin_pass[0] = 0;
+      save_config();
     }
 
     // Join the configured network directly; WiFiManager below is the fallback
@@ -1346,18 +1561,8 @@ void setup()
     wifiManager.addParameter(&custom_mqtt_user);
     wifiManager.addParameter(&custom_mqtt_pass);
 
-    // Check the FLASH button
-    delay(800);
-    int restore=0;
-    for (int i=0; i<1000; i++) {
-    
-      if (digitalRead(restorePin))
-        restore++;
-    }
-    Serial.println("\n\nOutput: " + String(restore) + "\n\n");
-    if (restore==0) {
+    if (factory_reset) {
       Serial.println("Restoring parameters, restore=" + String(restore));
-      //reset settings - for testing
       wifiManager.resetSettings();
     }
 
@@ -1365,10 +1570,9 @@ void setup()
     //defaults to 8%
     //wifiManager.setMinimumSignalQuality();
 
-    //sets timeout until configuration portal gets turned off
-    //useful to make it all retry or go to sleep
-    //in seconds
-    //wifiManager.setTimeout(120);
+    // Close the config portal after 3 minutes and reboot (below) to retry the stored network: after a power
+    // cut the router is often not up yet when we boot, and a portal without timeout would wait forever
+    wifiManager.setConfigPortalTimeout(180);
 
     //fetches ssid and pass and tries to connect
     //if it does not connect it starts an access point with the specified name
@@ -1423,12 +1627,13 @@ void setup()
     web.on("/users", HTTP_POST, handle_users_post);
     web.on("/backup", HTTP_GET, handle_backup_page);
     web.on("/reboot", HTTP_POST, handle_reboot);
+    web.on("/stats/reset", HTTP_POST, handle_stats_reset);
     web.on("/users/download", HTTP_GET, handle_users_download);
     web.on("/users/restore", HTTP_POST, handle_users_import, handle_users_upload);
     web.on("/rings/download", HTTP_GET, handle_rings_download);
     web.on("/backup/download", HTTP_GET, handle_backup_download);
     web.on("/restore", HTTP_POST, handle_restore_done, handle_restore_upload);
-    web.collectHeaders("Authorization");
+    web.collectHeaders("Authorization", "Origin", "Referer");
     web.begin();
 
     Serial.println("local ip");
@@ -1441,6 +1646,9 @@ void setup()
 
     client.setServer(mqtt_server, atoi(mqtt_port));
     client.setBufferSize(512);
+    // Keep a failed connect short: it runs in loop() and stalls the web GUI and TX while it waits
+    net.setTimeout(2000);
+    client.setSocketTimeout(2);
     client.setCallback(callback);
 
     ArduinoOTA.onStart([]() {
@@ -1504,7 +1712,7 @@ static void append(char *buf, size_t size, const char *fmt, ...) {
 void publish_tcs_command(char *topic, CommandData data, bool direction) {
   char mqtt_time[12];
   char msg[400];
-  char name[40];
+  char name[NAME_BUF];
 
   current_time(mqtt_time);
   snprintf(msg, sizeof(msg), "{ \"ts\": \"%lu\", \"time\": \"%s\", \"direction\": \"%s\"",
@@ -1555,12 +1763,17 @@ void loop() {
     tx_service();
     if (restart_at && (int32_t)(now - restart_at) >= 0) ESP.restart();
 
-    // Take a consistent snapshot of the frame; the ISR may overwrite it at any time
+    // Pop one frame from the ISR queue
+    bool ready = false;
+    uint32_t cmd = 0;
+    uint8_t len = 0;
     noInterrupts();
-    bool ready = cmdReady;
-    uint32_t cmd = CMD;
-    uint8_t len = lengthCMD;
-    cmdReady = false;
+    if (rx_q_tail != rx_q_head) {
+      cmd = rx_queue[rx_q_tail].cmd;
+      len = rx_queue[rx_q_tail].is_long;
+      rx_q_tail = (rx_q_tail + 1) % RX_QUEUE_SIZE;
+      ready = true;
+    }
     interrupts();
 
     if (ready) {
