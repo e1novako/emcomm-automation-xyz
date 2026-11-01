@@ -53,6 +53,7 @@ Host-side protocol round-trip tests (no hardware needed):
 
 ## Changelog
 
+- 1.2.2: uptime line on every page counts up each second in the browser and re-syncs from the new public `GET /uptime` (seconds, plain text) every 30 s when off by more than 2 s; uptime no longer wraps after 49.7 days.
 - 1.2.1: Access page keeps the last 20 rings (was 10); the page is streamed like Users/Statistics.
 - 1.2.0: "Reset all unlocks (incl. total)" moved from Users to Backup/Restore and renamed "Reset total counters".
 - 1.1.7: Users and Statistics pages are streamed (chunked) instead of built in one String; the Users page with ~30 users ran out of heap and crashed the device.

@@ -25,7 +25,7 @@
 #include <EEPROM.h>
 #include <libb64/cdecode.h>
 
-#define VERSION "1.2.1"
+#define VERSION "1.2.2"
 
 void publish_tcs_command(char *topic, CommandData data, bool direction);
 void mqtt_output(char *format, ...);
@@ -471,7 +471,7 @@ void publish_status() {
   snprintf(msg, sizeof(msg),
            "{ \"version\": \"" VERSION "\", \"uptime\": %lu, \"rssi\": %d, \"free_heap\": %u, \"rx_overruns\": %lu, "
            "\"tx_dropped\": %lu, \"tx_queued\": %u, \"door_address\": \"%02x\", \"door_address_changes\": %lu }",
-           (unsigned long)(millis() / 1000), WiFi.RSSI(), (unsigned)ESP.getFreeHeap(), (unsigned long)isr_overruns,
+           (unsigned long)uptime_s(), WiFi.RSSI(), (unsigned)ESP.getFreeHeap(), (unsigned long)isr_overruns,
            (unsigned long)tx_dropped, (unsigned)tx_q_count, (unsigned)last_bus_address, (unsigned long)bus_address_changes);
   client.publish(topic, msg);
 }
@@ -830,8 +830,24 @@ static const char CSS[] =
   ".ctr{text-align:center}"
   "</style>";
 
+// Seconds since boot from the 64-bit microsecond clock, so it does not wrap after 49.7 days like millis()
+static uint32_t uptime_s() {
+  return (uint32_t)(micros64() / 1000000ULL);
+}
+
+// Advances the uptime line every second from the browser clock and re-syncs it from /uptime every
+// 30 s when it is more than 2 s off (also catches a reboot, where the device count drops)
+static const char UPTIME_JS[] =
+  "<script>(function(){var e=document.getElementById('up'),b=+e.dataset.s,t0=Date.now();"
+  "function p(n){return(n<10?'0':'')+n}"
+  "function now(){return b+Math.floor((Date.now()-t0)/1000)}"
+  "function tick(){var v=now();e.textContent='Uptime: '+Math.floor(v/86400)+'d '+p(Math.floor(v/3600)%24)+'h '+p(Math.floor(v/60)%60)+'m '+p(v%60)+'s'}"
+  "setInterval(tick,1000);"
+  "setInterval(function(){fetch('/uptime',{cache:'no-store'}).then(function(r){return r.text()}).then(function(t){var v=parseInt(t,10);"
+  "if(!isNaN(v)&&Math.abs(v-now())>2){b=v;t0=Date.now();tick()}}).catch(function(){})},30000)})();</script>";
+
 static String uptime_str() {
-  uint32_t t = millis() / 1000;
+  uint32_t t = uptime_s();
   char b[32];
   snprintf(b, sizeof(b), "%ud %02uh %02um %02us", (unsigned)(t / 86400), (unsigned)(t / 3600 % 24), (unsigned)(t / 60 % 60), (unsigned)(t % 60));
   return b;
@@ -843,7 +859,8 @@ static String page_begin(const char *active) {
   // Only the status page auto-refreshes; form pages must not, it would discard what is being typed
   if (strcmp(active, "/") == 0 || strcmp(active, "/status") == 0) h += "<meta http-equiv='refresh' content='10'>";
   h += CSS;
-  h += "</head><body><h3>TCS Intercom " VERSION "</h3><p style='text-align:center;margin:-8px 0 16px;color:#555'>Uptime: " + uptime_str() + "</p><nav>";
+  h += "</head><body><h3>TCS Intercom " VERSION "</h3><p id='up' data-s='" + String(uptime_s()) +
+       "' style='text-align:center;margin:-8px 0 16px;color:#555'>Uptime: " + uptime_str() + "</p>" + UPTIME_JS + "<nav>";
   if (strcmp(active, "/") == 0) {
     h += "<a href='/status'>Config</a></nav>";
     return h;
@@ -974,6 +991,12 @@ void handle_home() {
   String h = "<form method='POST' action='/unlock' style='margin-top:200px'><button style='width:33%;min-width:300px;padding:40px 0;font-size:40px;border-radius:60px'>Unlock door</button></form>";
   h += "<p style='margin-top:32px'>Door unlocked: <b>" + String(door_unlocks) + "</b></p>";
   send_page("/", h);
+}
+
+// Public, plain-text seconds since boot; polled by every page to keep its uptime line in sync
+void handle_uptime() {
+  web.sendHeader("Cache-Control", "no-store");
+  web.send(200, "text/plain", String(uptime_s()));
 }
 
 void handle_unlock() {
@@ -1616,6 +1639,7 @@ void setup()
     web.on("/", HTTP_GET, handle_home);
     web.on("/status", HTTP_GET, handle_status);
     web.on("/unlock", HTTP_POST, handle_unlock);
+    web.on("/uptime", HTTP_GET, handle_uptime);
     web.on("/debug", HTTP_GET, handle_debug_page);
     web.on("/debug", HTTP_POST, handle_debug);
     web.on("/wifi", HTTP_GET, handle_wifi_get);
