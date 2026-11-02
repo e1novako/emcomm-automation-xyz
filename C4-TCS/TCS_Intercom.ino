@@ -25,7 +25,7 @@
 #include <EEPROM.h>
 #include <libb64/cdecode.h>
 
-#define VERSION "1.2.4"
+#define VERSION "1.2.5"
 
 void publish_tcs_command(char *topic, CommandData data, bool direction);
 void mqtt_output(char *format, ...);
@@ -523,7 +523,8 @@ static bool write_file_atomic(const char *path, const String &data) {
 #define RING_DEDUPE_S 5 // a ring repeats its frame; count it once
 // Whether a door ring was followed by an unlock; rings logged before 1.2.4 (and internal rings) are unknown
 enum : uint8_t { UNLOCK_UNKNOWN = 0, UNLOCK_NO = 1, UNLOCK_YES = 2 };
-struct RingEntry { time_t ts; uint32_t serial; uint8_t type; uint32_t uptime_s; uint8_t unlocked; };
+// resp_ds: time from the ring to the unlock in 0.1 s (only when unlocked == UNLOCK_YES)
+struct RingEntry { time_t ts; uint32_t serial; uint8_t type; uint32_t uptime_s; uint8_t unlocked; uint16_t resp_ds; };
 static RingEntry ring_log[RING_LOG_SIZE];
 static uint8_t ring_head = 0; // next slot to write
 static uint8_t ring_count = 0;
@@ -560,7 +561,8 @@ static void save_rings();
 static bool save_users_doc();
 
 // An unlock command may be repeated on the bus; count it once per 2 s. An unlock within 30 s of a door
-// ring also counts for the user that was rung (once per ring), in tcs_users.json as "unlocks".
+// ring also counts for the user that was rung (once per ring), in tcs_users.json as "unlocks"; the time
+// from ring to unlock (0.1 s) goes into "resp_last", "resp_total" and "resp_n" (unlocks that have a time).
 static void count_unlock() {
   if (last_unlock_ms && millis() - last_unlock_ms < 2000) return;
   last_unlock_ms = millis() | 1;
@@ -568,15 +570,20 @@ static void count_unlock() {
   save_stats();
 
   if (pending_ring && millis() - pending_ring_ms < RING_UNLOCK_WINDOW_MS) {
+    uint16_t resp_ds = (millis() - pending_ring_ms + 50) / 100;
     JsonObject u = find_user(pending_ring_serial);
     if (!u.isNull()) {
       u["unlocks"] = (u["unlocks"] | 0u) + 1;
+      u["resp_last"] = resp_ds;
+      u["resp_total"] = (u["resp_total"] | 0u) + resp_ds;
+      u["resp_n"] = (u["resp_n"] | 0u) + 1;
       if (!intercomUsers.overflowed()) save_users_doc();
       DBG("unlock credited to %06x\n", (unsigned)pending_ring_serial);
     }
     RingEntry &e = ring_log[pending_ring_slot];
     if (e.serial == pending_ring_serial && e.unlocked == UNLOCK_NO) {
       e.unlocked = UNLOCK_YES;
+      e.resp_ds = resp_ds;
       save_rings();
     }
   }
@@ -606,6 +613,7 @@ static void rings_to_json(JsonDocument &doc) {
     o["serial"] = serial;
     o["name"] = name;
     if (e.unlocked != UNLOCK_UNKNOWN) o["unlocked"] = e.unlocked == UNLOCK_YES;
+    if (e.unlocked == UNLOCK_YES) o["resp"] = e.resp_ds / 10.0f;
   }
 }
 
@@ -627,7 +635,8 @@ static void load_rings() {
     if (!serial || !type) continue;
     ring_log[ring_head] = { (time_t)(o["ts"] | 0u), (uint32_t)strtoul(serial, nullptr, 16),
                             (uint8_t)(strcmp(type, "door") == 0 ? COMMAND_TYPE_DOOR_CALL : COMMAND_TYPE_INTERNAL_CALL), 0xFFFFFFF0u,
-                            (uint8_t)(o["unlocked"].is<bool>() ? (o["unlocked"] ? UNLOCK_YES : UNLOCK_NO) : UNLOCK_UNKNOWN) };
+                            (uint8_t)(o["unlocked"].is<bool>() ? (o["unlocked"] ? UNLOCK_YES : UNLOCK_NO) : UNLOCK_UNKNOWN),
+                            (uint16_t)lroundf((o["resp"] | 0.0f) * 10) };
     ring_head = (ring_head + 1) % RING_LOG_SIZE;
     if (ring_count < RING_LOG_SIZE) ring_count++;
   }
@@ -656,7 +665,7 @@ static void record_ring(uint32_t serial, uint8_t type) {
     RingEntry &l = ring_log[(ring_head + RING_LOG_SIZE - 1) % RING_LOG_SIZE];
     if (l.serial == serial && l.type == type && up - l.uptime_s < RING_DEDUPE_S) { l.uptime_s = up; return; }
   }
-  ring_log[ring_head] = { now, serial, type, up, (uint8_t)(type == COMMAND_TYPE_DOOR_CALL ? UNLOCK_NO : UNLOCK_UNKNOWN) };
+  ring_log[ring_head] = { now, serial, type, up, (uint8_t)(type == COMMAND_TYPE_DOOR_CALL ? UNLOCK_NO : UNLOCK_UNKNOWN), 0 };
   uint8_t slot = ring_head;
   ring_head = (ring_head + 1) % RING_LOG_SIZE;
   if (ring_count < RING_LOG_SIZE) ring_count++;
@@ -870,8 +879,8 @@ static String uptime_str() {
 static String page_begin(const char *active) {
   static const char *items[][2] = { {"/", "Home"}, {"/status", "Access"}, {"/rings", "Statistics"}, {"/users", "Users"}, {"/wifi", "WiFi"}, {"/mqtt", "MQTT"}, {"/time", "Time"}, {"/debug", "Debug"}, {"/backup", "Backup/Restore"} };
   String h = "<html><head><meta name='viewport' content='width=device-width,initial-scale=1'><title>TCS Intercom</title>";
-  // Only the status page auto-refreshes; form pages must not, it would discard what is being typed
-  if (strcmp(active, "/") == 0 || strcmp(active, "/status") == 0) h += "<meta http-equiv='refresh' content='10'>";
+  // Only Home, Access and Statistics auto-refresh; form pages must not, it would discard what is being typed
+  if (strcmp(active, "/") == 0 || strcmp(active, "/status") == 0 || strcmp(active, "/rings") == 0) h += "<meta http-equiv='refresh' content='10'>";
   h += CSS;
   h += "</head><body><h3>TCS Intercom " VERSION "</h3><p id='up' data-s='" + String(uptime_s()) +
        "' style='text-align:center;margin:-8px 0 16px;color:#555'>Uptime: " + uptime_str() + "</p>" + UPTIME_JS + "<nav>";
@@ -942,6 +951,13 @@ static void fmt_ts(time_t t, char *out, size_t n) {
   }
 }
 
+// Ring-to-unlock time in 0.1 s as "12.3 s"
+static String fmt_resp(uint32_t ds) {
+  char b[16];
+  snprintf(b, sizeof(b), "%u.%u s", (unsigned)(ds / 10), (unsigned)(ds % 10));
+  return b;
+}
+
 // "Total Rings / Unlock After Ring / Total Unlock" heading shared by Access and Statistics
 static String totals_heading() {
   uint32_t rings = 0, after = 0;
@@ -956,7 +972,8 @@ static String totals_heading() {
 void handle_rings_page() {
   if (!auth()) return;
   if (!stream_begin("/rings")) return;
-  String h = totals_heading() + "<table class='c'><tr><th style='width:12%'>Flat No.</th><th style='width:34%'>Surname / Name</th><th style='width:12%'>Ring No.</th><th style='width:14%'>Unlocked after ring</th><th style='width:28%'>Last ring</th></tr>";
+  String h = totals_heading() + "<table class='c'><tr><th style='width:8%'>Flat No.</th><th style='width:26%'>Surname / Name</th><th style='width:9%'>Ring No.</th><th style='width:11%'>Unlocked after ring</th>"
+             "<th style='width:12%'>Last time to unlock</th><th style='width:12%'>Avg. time to unlock</th><th style='width:22%'>Last ring</th></tr>";
   // most rings first; ties by flat number, users without a flat (0) last
   JsonObject sorted[MAX_USERS];
   int cnt = 0;
@@ -976,8 +993,11 @@ void handle_rings_page() {
     int flat = u["flat_no"] | 0;
     String who = html_escape(u["name"] | "");
     if (who.length() == 0 || who == "n/a") who = u["tcs_addr"] | "";
+    uint32_t resp_n = u["resp_n"] | 0u;
+    String last = resp_n ? fmt_resp(u["resp_last"] | 0u) : String("-");
+    String avg = resp_n ? fmt_resp(((u["resp_total"] | 0u) + resp_n / 2) / resp_n) : String("-");
     h += "<tr><td>" + (flat > 0 ? String(flat) : String("-")) + "</td><td>" + who + "</td><td>" +
-         String(u["rings"] | 0u) + "</td><td>" + String(u["unlocks"] | 0u) + "</td><td>" + ts + "</td></tr>";
+         String(u["rings"] | 0u) + "</td><td>" + String(u["unlocks"] | 0u) + "</td><td>" + last + "</td><td>" + avg + "</td><td>" + ts + "</td></tr>";
     stream_flush(h);
   }
   h += "</table>";
@@ -987,8 +1007,8 @@ void handle_rings_page() {
 void handle_status() {
   if (!auth()) return;
   if (!stream_begin("/status")) return;
-  String h = totals_heading() + "<table class='c' cellpadding='4'><tr><th style='width:16.66%'>Date/Time</th><th style='width:16.66%'>Type</th><th style='width:16.66%'>Serial</th><th style='width:50%'>Surname / Name</th></tr>";
-  if (!ring_count) h += "<tr><td colspan='4'>none yet</td></tr>";
+  String h = totals_heading() + "<table class='c' cellpadding='4'><tr><th style='width:18%'>Date/Time</th><th style='width:11%'>Type</th><th style='width:13%'>Serial</th><th style='width:42%'>Surname / Name</th><th style='width:16%'>Time to unlock</th></tr>";
+  if (!ring_count) h += "<tr><td colspan='5'>none yet</td></tr>";
   for (int i = 0; i < ring_count; i++) {
     uint8_t slot = (ring_head + RING_LOG_SIZE - 1 - i) % RING_LOG_SIZE;
     const RingEntry &e = ring_log[slot];
@@ -1007,8 +1027,9 @@ void handle_status() {
     if (flat > 0) who = String(flat) + ". " + who;
     char serial[10];
     snprintf(serial, sizeof(serial), "%06x", (unsigned)e.serial);
+    String resp = e.unlocked == UNLOCK_YES ? (e.resp_ds ? fmt_resp(e.resp_ds) : String("yes")) : waiting ? String("waiting...") : String("-");
     h += String(missed ? "<tr style='background:#f8d7da'>" : "<tr>") + "<td>" + String(ts) + "</td><td>" + (e.type == COMMAND_TYPE_DOOR_CALL ? "Door" : "Internal") +
-         "</td><td>" + serial + "</td><td>" + who + "</td></tr>";
+         "</td><td>" + serial + "</td><td>" + who + "</td><td>" + resp + "</td></tr>";
     stream_flush(h);
   }
   h += "</table>";
@@ -1225,9 +1246,14 @@ void handle_users_upload() {
   }
 }
 
+// Per-user counters in tcs_users.json; the unlock group is reset together
+static const char *const UNLOCK_KEYS[] = { "unlocks", "resp_last", "resp_total", "resp_n" };
+
 // Validates one user and appends it to arr; returns an error message, or nullptr on success.
 // The serial is stored normalised (lower-case hex, 6 digits) and the name is cut to MAX_NAME_LEN bytes.
-static const char *add_user_row(JsonArray arr, const char *addr, const char *name, int flat, uint32_t rings, uint32_t last_ring, uint32_t unlocks) {
+// Counters are copied from stats (may be null), except those being reset.
+static const char *add_user_row(JsonArray arr, const char *addr, const char *name, int flat, JsonObjectConst stats,
+                                bool reset_rings = false, bool reset_unlocks = false) {
   uint32_t serial;
   if (!parse_serial(addr, &serial)) return "Invalid serial (1-8 hex digits expected)";
   for (JsonObject u : arr) {
@@ -1241,9 +1267,10 @@ static const char *add_user_row(JsonArray arr, const char *addr, const char *nam
   o["tcs_addr"] = a;
   o["name"] = nm;
   o["flat_no"] = flat;
-  if (rings) o["rings"] = rings;
-  if (last_ring) o["last_ring"] = last_ring;
-  if (unlocks) o["unlocks"] = unlocks;
+  auto copy = [&](const char *k) { uint32_t v = stats[k] | 0u; if (v) o[k] = v; };
+  if (!reset_rings) copy("rings");
+  copy("last_ring");
+  if (!reset_unlocks) for (const char *k : UNLOCK_KEYS) copy(k);
   return nullptr;
 }
 
@@ -1261,7 +1288,7 @@ void handle_users_import() {
   for (JsonObject o : in.as<JsonArray>()) {
     const char *addr = o["tcs_addr"];
     if (!addr || !*addr) continue;
-    const char *e = add_user_row(arr, addr, o["name"] | "n/a", o["flat_no"] | 0, o["rings"] | 0u, o["last_ring"] | 0u, o["unlocks"] | 0u);
+    const char *e = add_user_row(arr, addr, o["name"] | "n/a", o["flat_no"] | 0, o);
     if (e) {
       web.send(400, "text/plain", String(e) + ": " + addr);
       return;
@@ -1278,7 +1305,7 @@ void handle_users_import() {
   send_page("/backup", "<p>Imported " + String(arr.size()) + " users.</p><p><a href='/users'>Users</a></p>");
 }
 
-// Resets one per-user counter ("rings" or "unlocks") for every user; "all_unlocks" also zeroes the total
+// Resets one per-user counter ("rings", or "unlocks" with its unlock times) for every user; "all_unlocks" also zeroes the total
 void handle_stats_reset() {
   if (!auth()) return;
   String what = web.arg("what");
@@ -1288,7 +1315,10 @@ void handle_stats_reset() {
     web.send(400, "text/plain", "Unknown counter");
     return;
   }
-  for (JsonObject u : intercomUsers.as<JsonArray>()) u.remove(what);
+  for (JsonObject u : intercomUsers.as<JsonArray>()) {
+    if (what == "rings") u.remove("rings");
+    else for (const char *k : UNLOCK_KEYS) u.remove(k);
+  }
   if (!save_users_doc()) {
     web.send(500, "text/plain", "Could not save users");
     return;
@@ -1384,18 +1414,11 @@ void handle_users_post() {
     a.trim();
     nm.trim();
     if (a.length() == 0) continue;
-    uint32_t rings = 0, last_ring = 0, unlocks = 0, serial;
-    if (parse_serial(a.c_str(), &serial)) {
-      JsonObject old = find_user(serial);
-      if (!old.isNull()) {
-        rings = old["rings"] | 0u;
-        last_ring = old["last_ring"] | 0u;
-        unlocks = old["unlocks"] | 0u;
-      }
-    }
-    if (web.arg("rr" + String(i)) == "1") rings = 0;
-    if (web.arg("ru" + String(i)) == "1") unlocks = 0;
-    const char *e = add_user_row(arr, a.c_str(), nm.c_str(), (int)web.arg("f" + String(i)).toInt(), rings, last_ring, unlocks);
+    uint32_t serial;
+    JsonObject old;
+    if (parse_serial(a.c_str(), &serial)) old = find_user(serial);
+    const char *e = add_user_row(arr, a.c_str(), nm.c_str(), (int)web.arg("f" + String(i)).toInt(), old,
+                                 web.arg("rr" + String(i)) == "1", web.arg("ru" + String(i)) == "1");
     if (e) {
       web.send(400, "text/plain", String(e) + ": " + a);
       return;
