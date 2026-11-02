@@ -25,7 +25,7 @@
 #include <EEPROM.h>
 #include <libb64/cdecode.h>
 
-#define VERSION "1.2.2"
+#define VERSION "1.2.4"
 
 void publish_tcs_command(char *topic, CommandData data, bool direction);
 void mqtt_output(char *format, ...);
@@ -521,7 +521,9 @@ static bool write_file_atomic(const char *path, const String &data) {
 // ---- Ring log (last 20 rings) and automatic learning of new serial numbers ----
 #define RING_LOG_SIZE 20
 #define RING_DEDUPE_S 5 // a ring repeats its frame; count it once
-struct RingEntry { time_t ts; uint32_t serial; uint8_t type; uint32_t uptime_s; };
+// Whether a door ring was followed by an unlock; rings logged before 1.2.4 (and internal rings) are unknown
+enum : uint8_t { UNLOCK_UNKNOWN = 0, UNLOCK_NO = 1, UNLOCK_YES = 2 };
+struct RingEntry { time_t ts; uint32_t serial; uint8_t type; uint32_t uptime_s; uint8_t unlocked; };
 static RingEntry ring_log[RING_LOG_SIZE];
 static uint8_t ring_head = 0; // next slot to write
 static uint8_t ring_count = 0;
@@ -551,6 +553,9 @@ static void load_stats() {
 static uint32_t pending_ring_serial = 0;
 static uint32_t pending_ring_ms = 0;
 static bool pending_ring = false;
+static uint8_t pending_ring_slot = 0; // its ring_log slot
+
+static void save_rings();
 
 static bool save_users_doc();
 
@@ -568,6 +573,11 @@ static void count_unlock() {
       u["unlocks"] = (u["unlocks"] | 0u) + 1;
       if (!intercomUsers.overflowed()) save_users_doc();
       DBG("unlock credited to %06x\n", (unsigned)pending_ring_serial);
+    }
+    RingEntry &e = ring_log[pending_ring_slot];
+    if (e.serial == pending_ring_serial && e.unlocked == UNLOCK_NO) {
+      e.unlocked = UNLOCK_YES;
+      save_rings();
     }
   }
   pending_ring = false;
@@ -595,6 +605,7 @@ static void rings_to_json(JsonDocument &doc) {
     o["type"] = type;
     o["serial"] = serial;
     o["name"] = name;
+    if (e.unlocked != UNLOCK_UNKNOWN) o["unlocked"] = e.unlocked == UNLOCK_YES;
   }
 }
 
@@ -615,7 +626,8 @@ static void load_rings() {
     const char *serial = o["serial"], *type = o["type"];
     if (!serial || !type) continue;
     ring_log[ring_head] = { (time_t)(o["ts"] | 0u), (uint32_t)strtoul(serial, nullptr, 16),
-                            (uint8_t)(strcmp(type, "door") == 0 ? COMMAND_TYPE_DOOR_CALL : COMMAND_TYPE_INTERNAL_CALL), 0xFFFFFFF0u };
+                            (uint8_t)(strcmp(type, "door") == 0 ? COMMAND_TYPE_DOOR_CALL : COMMAND_TYPE_INTERNAL_CALL), 0xFFFFFFF0u,
+                            (uint8_t)(o["unlocked"].is<bool>() ? (o["unlocked"] ? UNLOCK_YES : UNLOCK_NO) : UNLOCK_UNKNOWN) };
     ring_head = (ring_head + 1) % RING_LOG_SIZE;
     if (ring_count < RING_LOG_SIZE) ring_count++;
   }
@@ -644,7 +656,8 @@ static void record_ring(uint32_t serial, uint8_t type) {
     RingEntry &l = ring_log[(ring_head + RING_LOG_SIZE - 1) % RING_LOG_SIZE];
     if (l.serial == serial && l.type == type && up - l.uptime_s < RING_DEDUPE_S) { l.uptime_s = up; return; }
   }
-  ring_log[ring_head] = { now, serial, type, up };
+  ring_log[ring_head] = { now, serial, type, up, (uint8_t)(type == COMMAND_TYPE_DOOR_CALL ? UNLOCK_NO : UNLOCK_UNKNOWN) };
+  uint8_t slot = ring_head;
   ring_head = (ring_head + 1) % RING_LOG_SIZE;
   if (ring_count < RING_LOG_SIZE) ring_count++;
   bool users_changed = add_unknown_user(serial);
@@ -652,6 +665,7 @@ static void record_ring(uint32_t serial, uint8_t type) {
     pending_ring = true;
     pending_ring_serial = serial;
     pending_ring_ms = millis();
+    pending_ring_slot = slot;
     // per-user door ring counter, kept in tcs_users.json so it survives reboot/power loss
     JsonObject u = find_user(serial);
     if (!u.isNull()) {
@@ -928,10 +942,21 @@ static void fmt_ts(time_t t, char *out, size_t n) {
   }
 }
 
+// "Total Rings / Unlock After Ring / Total Unlock" heading shared by Access and Statistics
+static String totals_heading() {
+  uint32_t rings = 0, after = 0;
+  for (JsonObject u : intercomUsers.as<JsonArray>()) {
+    rings += u["rings"] | 0u;
+    after += u["unlocks"] | 0u;
+  }
+  return "<h4 style='text-align:center'>Total Rings: " + String(rings) + ", Unlock After Ring: " + String(after) +
+         ", Total Unlock: " + String(door_unlocks) + "</h4>";
+}
+
 void handle_rings_page() {
   if (!auth()) return;
   if (!stream_begin("/rings")) return;
-  String h = "<h4>Door rings per device</h4><table class='c'><tr><th style='width:12%'>Flat No.</th><th style='width:34%'>Surname / Name</th><th style='width:12%'>Ring No.</th><th style='width:14%'>Unlocked after ring</th><th style='width:28%'>Last ring</th></tr>";
+  String h = totals_heading() + "<table class='c'><tr><th style='width:12%'>Flat No.</th><th style='width:34%'>Surname / Name</th><th style='width:12%'>Ring No.</th><th style='width:14%'>Unlocked after ring</th><th style='width:28%'>Last ring</th></tr>";
   // most rings first; ties by flat number, users without a flat (0) last
   JsonObject sorted[MAX_USERS];
   int cnt = 0;
@@ -962,10 +987,14 @@ void handle_rings_page() {
 void handle_status() {
   if (!auth()) return;
   if (!stream_begin("/status")) return;
-  String h = "<h4 style='text-align:center'>Last rings</h4><table class='c' cellpadding='4'><tr><th style='width:16.66%'>Date/Time</th><th style='width:16.66%'>Type</th><th style='width:16.66%'>Serial</th><th style='width:50%'>Surname / Name</th></tr>";
+  String h = totals_heading() + "<table class='c' cellpadding='4'><tr><th style='width:16.66%'>Date/Time</th><th style='width:16.66%'>Type</th><th style='width:16.66%'>Serial</th><th style='width:50%'>Surname / Name</th></tr>";
   if (!ring_count) h += "<tr><td colspan='4'>none yet</td></tr>";
   for (int i = 0; i < ring_count; i++) {
-    const RingEntry &e = ring_log[(ring_head + RING_LOG_SIZE - 1 - i) % RING_LOG_SIZE];
+    uint8_t slot = (ring_head + RING_LOG_SIZE - 1 - i) % RING_LOG_SIZE;
+    const RingEntry &e = ring_log[slot];
+    // door ring not followed by an unlock (once its 30 s window is over): pastel red row
+    bool waiting = pending_ring && slot == pending_ring_slot && millis() - pending_ring_ms < RING_UNLOCK_WINDOW_MS;
+    bool missed = e.unlocked == UNLOCK_NO && !waiting;
     char ts[24] = "(no time)", name[NAME_BUF] = "";
     if (e.ts > 1600000000) {
       struct tm t;
@@ -978,7 +1007,7 @@ void handle_status() {
     if (flat > 0) who = String(flat) + ". " + who;
     char serial[10];
     snprintf(serial, sizeof(serial), "%06x", (unsigned)e.serial);
-    h += "<tr><td>" + String(ts) + "</td><td>" + (e.type == COMMAND_TYPE_DOOR_CALL ? "Door" : "Internal") +
+    h += String(missed ? "<tr style='background:#f8d7da'>" : "<tr>") + "<td>" + String(ts) + "</td><td>" + (e.type == COMMAND_TYPE_DOOR_CALL ? "Door" : "Internal") +
          "</td><td>" + serial + "</td><td>" + who + "</td></tr>";
     stream_flush(h);
   }
