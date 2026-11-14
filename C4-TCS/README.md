@@ -53,6 +53,7 @@ Host-side protocol round-trip tests (no hardware needed):
 
 ## Changelog
 
+- 1.2.6: Access: the Serial column is removed; a ring from a user without a name (empty or `-`) shows the serial number in the name column.
 - 1.2.5: time to unlock: the time from a door ring to the unlock that follows it (within 30 s) is measured. Access shows it per ring ("Time to unlock" column, `resp` in seconds in `/rings.json` and the rings export); Statistics shows the last and average time per flat (kept in `tcs_users.json` as `resp_last`, `resp_total`, `resp_n`, in 0.1 s, and reset together with the unlock counter). Statistics now auto-refreshes every 10 s like Access.
 - 1.2.4: each door ring in the Access log remembers whether the door was unlocked within 30 s (`unlocked` in `/rings.json` and the rings export); door rings without an unlock are shown in pastel red. Rings logged before 1.2.4 are not coloured.
 - 1.2.3: Access and Statistics headings show "Total Rings: <sum of per-flat rings>, Unlock After Ring: <sum of per-flat unlocks>, Total Unlock: <door-unlocked total>" instead of "Last rings" / "Door rings per device".

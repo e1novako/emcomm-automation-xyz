@@ -25,7 +25,7 @@
 #include <EEPROM.h>
 #include <libb64/cdecode.h>
 
-#define VERSION "1.2.5"
+#define VERSION "1.2.6"
 
 void publish_tcs_command(char *topic, CommandData data, bool direction);
 void mqtt_output(char *format, ...);
@@ -1007,7 +1007,7 @@ void handle_rings_page() {
 void handle_status() {
   if (!auth()) return;
   if (!stream_begin("/status")) return;
-  String h = totals_heading() + "<table class='c' cellpadding='4'><tr><th style='width:18%'>Date/Time</th><th style='width:11%'>Type</th><th style='width:13%'>Serial</th><th style='width:42%'>Surname / Name</th><th style='width:16%'>Time to unlock</th></tr>";
+  String h = totals_heading() + "<table class='c' cellpadding='4'><tr><th style='width:18%'>Date/Time</th><th style='width:11%'>Type</th><th style='width:55%'>Surname / Name</th><th style='width:16%'>Time to unlock</th></tr>";
   if (!ring_count) h += "<tr><td colspan='5'>none yet</td></tr>";
   for (int i = 0; i < ring_count; i++) {
     uint8_t slot = (ring_head + RING_LOG_SIZE - 1 - i) % RING_LOG_SIZE;
@@ -1023,13 +1023,13 @@ void handle_status() {
     }
     int flat = 0;
     get_tcsuser_name(e.serial, name, sizeof(name), &flat);
+    // no name yet (empty or "-"): show the serial number instead
+    if (!name[0] || !strcmp(name, "-")) snprintf(name, sizeof(name), "%06x", (unsigned)e.serial);
     String who = html_escape(name);
     if (flat > 0) who = String(flat) + ". " + who;
-    char serial[10];
-    snprintf(serial, sizeof(serial), "%06x", (unsigned)e.serial);
     String resp = e.unlocked == UNLOCK_YES ? (e.resp_ds ? fmt_resp(e.resp_ds) : String("yes")) : waiting ? String("waiting...") : String("-");
     h += String(missed ? "<tr style='background:#f8d7da'>" : "<tr>") + "<td>" + String(ts) + "</td><td>" + (e.type == COMMAND_TYPE_DOOR_CALL ? "Door" : "Internal") +
-         "</td><td>" + serial + "</td><td>" + who + "</td><td>" + resp + "</td></tr>";
+         "</td><td>" + who + "</td><td>" + resp + "</td></tr>";
     stream_flush(h);
   }
   h += "</table>";
