@@ -4,7 +4,7 @@ ESP8266 sniffer/transmitter for the TCS two-wire intercom bus, bridged to MQTT a
 
 - Input GPIO14 (decoded in an ISR), output GPIO12 (bit-banged).
 - Publishes decoded frames on `mqtt_topic`; accepts commands on `tcs_command_topic`; opens the door on `control4_command_topic`.
-- Config is stored in NVRAM (EEPROM emulation, its own flash sector with CRC; survives firmware/FS updates). A copy is kept in LittleFS `/config.json` (also the legacy location); NVRAM is rebuilt from it if empty or corrupt. Keys: `mqtt_server`, `mqtt_port`, `mqtt_topic`, `mqtt_client`, `mqtt_user`, `mqtt_pass`, `control4_command_topic`, `control4_notify_topic`, `tcs_command_topic`, `tz`, `ntp_server`, `debug`, `serial_number` (hex), `wifi_ssid`, `password`, `allow_programming`. Users stay in LittleFS `/tcs_users.json`.
+- Config is stored in NVRAM (EEPROM emulation, its own flash sector with CRC; survives firmware/FS updates). A copy is kept in LittleFS `/config.json` (also the legacy location); NVRAM is rebuilt from it if empty or corrupt. Keys: `mqtt_server`, `mqtt_port`, `mqtt_topic`, `mqtt_client`, `mqtt_user`, `mqtt_pass`, `control4_command_topic`, `control4_notify_topic`, `c4_node_unid`, `tcs_command_topic`, `tz`, `ntp_server`, `debug`, `serial_number` (hex), `wifi_ssid`, `password`, `allow_programming`. Users stay in LittleFS `/tcs_users.json`.
 
 ## Build
 
@@ -39,7 +39,8 @@ The door station address used for the Control4 open-door toggle is tracked dynam
 - `<control4_command_topic>`: any message (payload ignored, may be empty) opens the door.
 - `<mqtt_topic>/availability`: retained `online` / `offline` (last will).
 - `<mqtt_topic>/status`: every 60 s: version, uptime, RSSI, free heap, RX overruns, TX dropped/queued, door address.
-- Control4 IAS zone: Alarm1 on an internal call to this device's serial, Alarm2 on a door call to it.
+- Control4 fake Z-Wave node (`c4_node_unid`, default `zw-D80822E0-00F0`, blank = off): on every MQTT connect the device publishes retained UCL topics under `ucl/by-unid/<c4_node_unid>/` (State "Online functional", ep0 Basic as a SensorNotification named "TCS Intercom", IASZone, and OTA UIID `ZWave-00c4-00c4-00c4-00-01`, i.e. manufacturer/product type/product id c4:c4:c4), modelled on a real IAS zone sensor. The Control4 Z-Wave agent lists it as an online node, so a driver (`tcs_intercom.c4z`) can be bound to it; republishing keeps it alive across broker resets. The default command/notify topics point at this node.
+- Control4 IAS zone (`control4_notify_topic`, handled by the driver bound to that node: `tcs_intercom.c4z` v2 or `zwave-common-sensor`): Alarm1 on an internal call to the selected flat (`serial_number` setting), Alarm2 on a door call to it. Each ring is pulsed once (set, then clear; repeated bus frames within 5 s are ignored), so the driver fires "Alarm 1/2 set (endpoint 0)" and opens/closes its "Alarm 1/2 contact" binding; use the Alarm 2 contact or event for a doorbell notification in Composer. Zone status messages are retained and an idle status is published on every MQTT connect, so the driver creates its IASZone topic before the first ring.
 
 ## Transmit
 
@@ -53,6 +54,8 @@ Host-side protocol round-trip tests (no hardware needed):
 
 ## Changelog
 
+- 1.2.8: fake Control4 Z-Wave node: the UCL topics of node `c4_node_unid` (default `zw-D80822E0-00F0`, manufacturer/product type/product id c4:c4:c4) are published retained on every MQTT connect; default Control4 command/notify topics moved from node 0084 to it.
+- 1.2.7: Control4 ring notification fixed: the IAS zone status is retained and published idle on MQTT connect (the sensor driver created the topic from the first ring and lost it), and a ring for the selected flat is notified once instead of once per repeated bus frame.
 - 1.2.6: Access: the Serial column is removed; a ring from a user without a name (empty or `-`) shows the serial number in the name column.
 - 1.2.5: time to unlock: the time from a door ring to the unlock that follows it (within 30 s) is measured. Access shows it per ring ("Time to unlock" column, `resp` in seconds in `/rings.json` and the rings export); Statistics shows the last and average time per flat (kept in `tcs_users.json` as `resp_last`, `resp_total`, `resp_n`, in 0.1 s, and reset together with the unlock counter). Statistics now auto-refreshes every 10 s like Access.
 - 1.2.4: each door ring in the Access log remembers whether the door was unlocked within 30 s (`unlocked` in `/rings.json` and the rings export); door rings without an unlock are shown in pastel red. Rings logged before 1.2.4 are not coloured.

@@ -25,7 +25,7 @@
 #include <EEPROM.h>
 #include <libb64/cdecode.h>
 
-#define VERSION "1.2.6"
+#define VERSION "1.2.8"
 
 void publish_tcs_command(char *topic, CommandData data, bool direction);
 void mqtt_output(char *format, ...);
@@ -48,8 +48,9 @@ JsonDocument intercomUsers;
 char mqtt_server[40] = "192.168.10.243";
 char mqtt_port[6] = "7953";
 char mqtt_topic[64] = "ucl/by-mqtt-client/intercom";
-char control4_command_topic[64] = "ucl/by-unid/zw-D80822E0-0084/ep0/OnOff/Commands/Toggle";
-char control4_notify_topic[80] = "ucl/by-unid/zw-D80822E0-0084/ep0/IASZone/Attributes/ZoneStatus/Reported";
+char control4_command_topic[64] = "ucl/by-unid/zw-D80822E0-00F0/ep0/OnOff/Commands/Toggle";
+char control4_notify_topic[80] = "ucl/by-unid/zw-D80822E0-00F0/ep0/IASZone/Attributes/ZoneStatus/Reported";
+char c4_node_unid[32] = "zw-D80822E0-00F0"; // fake Z-Wave node published on connect; empty = off
 char tcs_command_topic[64] = "ucl/by-mqtt-client/intercom/command";
 char mqtt_client[32] = "anovakovic";
 char mqtt_user[32] = "";
@@ -403,15 +404,78 @@ void tx_service() {
   tx_start(f.cmd, f.is_long);
 }
 
-// Pulses the Control4 IAS zone: set, then clear
-void control4_notify(bool alarm1, bool alarm2, const CommandData &d) {
+// Fake Z-Wave node for the Control4 Z-Wave agent, modelled on a real IAS zone sensor's UCL topics.
+// One line per topic: "2" = /Desired and /Reported pair, "1" = topic as is; then '|' suffix '|' payload.
+// The node exists only as these retained messages, so they are republished on every MQTT connect.
+static const char C4_NODE_TOPICS[] PROGMEM =
+  "1|State|{\"NetworkStatus\": \"Online functional\", \"Security\": \"None\", \"MaximumCommandDelay\": 1, \"SupportedSecurity\": [], \"OperatingMode\": \"Always Listening (AL)\", \"NumberOfRepeaters\": 0, \"InclusionProtocol\": \"Z-Wave\"}\n"
+  "1|State/SupportedCommands|{\"value\": []}\n"
+  "2|State/Attributes/EndpointIdList|{\"value\":[0]}\n"
+  "2|ep0/Basic/Attributes/ClusterRevision|{\"value\": 2}\n"
+  "2|ep0/Basic/Attributes/GenericDeviceClass|{\"value\":\"SensorNotification\"}\n"
+  "2|ep0/Basic/Attributes/HWVersion|{\"value\":1}\n"
+  "2|ep0/Basic/Attributes/ManufacturerName|{\"value\":\"TCS Intercom\"}\n"
+  "2|ep0/Basic/Attributes/PowerSource|{\"value\":\"SinglePhaseMains\"}\n"
+  "2|ep0/Basic/Attributes/InstallerIconType|{\"value\":\"SensorNotificationAccessControl\"}\n"
+  "2|ep0/Basic/Attributes/UserIconType|{\"value\":\"SensorNotificationAccessControl\"}\n"
+  "1|ep0/Basic/SupportedCommands|{\"value\": []}\n"
+  "2|ep0/IASZone/Attributes/ClusterRevision|{\"value\": 2}\n"
+  "2|ep0/IASZone/Attributes/ZoneState|{\"value\":\"Enrolled\"}\n"
+  "2|ep0/IASZone/Attributes/ZoneType|{\"value\":0}\n"
+  "2|ep0/IASZone/Attributes/AlarmStatus|{\"value\":{\"CarbonDioxide\":false,\"CarbonMonoxide\":false,\"GeneralPurpose\":false,\"Heat\":false,\"Smoke\":false,\"Unknown\":false,\"WaterLeak\":false}}\n"
+  "1|ep0/IASZone/SupportedCommands|{\"value\": []}\n"
+  // manufacturer, product type and product id (c4:c4:c4) are only carried in the OTA UIID
+  "2|ep0/OTA/Attributes/ClusterRevision|{\"value\": 1}\n"
+  "2|ep0/OTA/Attributes/UIID/ZWave-00c4-00c4-00c4-00-01/CurrentVersion|{\"value\":\"" VERSION "\"}\n"
+  "1|ep0/OTA/SupportedCommands|{\"value\": []}\n";
+
+static void publish_c4_node() {
+  if (!c4_node_unid[0]) return;
+  char line[300];
+  char topic[160];
+  int n = 0, failed = 0;
+  const char *p = C4_NODE_TOPICS;
+  for (;;) {
+    size_t len = 0;
+    char c;
+    while ((c = pgm_read_byte(p++)) && c != '\n')
+      if (len < sizeof(line) - 1) line[len++] = c;
+    line[len] = 0;
+    if (len > 2) {
+      char *suffix = line + 2;
+      char *payload = strchr(suffix, '|');
+      if (payload) {
+        *payload++ = 0;
+        const char *kinds[] = { "/Desired", "/Reported" };
+        bool pair = line[0] == '2';
+        for (int k = pair ? 0 : 1; k < 2; k++) {
+          snprintf(topic, sizeof(topic), "ucl/by-unid/%s/%s%s", c4_node_unid, suffix, pair ? kinds[k] : "");
+          if (client.publish(topic, payload, true)) n++; else failed++;
+        }
+      }
+    }
+    if (!c) break;
+  }
+  DBG("Control4 node %s: %d topics published, %d failed\n", c4_node_unid, n, failed);
+}
+
+// Retained, so the zwave-common-sensor driver (alarm.lua) creates its IASZone topic from the
+// idle state published on connect; a non-retained first ring would only create the topic and be lost
+static void publish_zone_status(bool alarm1, bool alarm2) {
   char msg[200];
   const char *fmt = "{\"value\":{\"ACMainsFault\":false,\"Alarm1\":%s,\"Alarm2\":%s,\"BatteryDefect\":false,\"BatteryLow\":false,\"RestoreNotify\":false,\"SupervisionNotify\":false,\"Tamper\":false,\"Test\":false,\"Trouble\":false}}";
 
+  if (!control4_notify_topic[0]) return;
   snprintf(msg, sizeof(msg), fmt, alarm1 ? "true" : "false", alarm2 ? "true" : "false");
-  client.publish(control4_notify_topic, msg);
-  snprintf(msg, sizeof(msg), fmt, "false", "false");
-  client.publish(control4_notify_topic, msg);
+  bool ok = client.publish(control4_notify_topic, msg, true);
+  DBG("Control4 zone status Alarm1=%d Alarm2=%d %s\n", alarm1, alarm2, ok ? "published" : "publish FAILED");
+}
+
+// Pulses the Control4 IAS zone: set, then clear (driver fires "Alarm N set" and opens/closes "Alarm N contact")
+void control4_notify(bool alarm1, bool alarm2, const CommandData &d) {
+  DBG("Control4 notify %s for serial %05x\n", alarm1 ? "Alarm1 (internal call)" : "Alarm2 (door call)", (unsigned)d.serial_number);
+  publish_zone_status(alarm1, alarm2);
+  publish_zone_status(false, false);
 
   mqtt_output((char*)"\"type\": \"control4_notify\", \"alarm\": \"%s\", \"address\": \"%02x\", \"serial_number\": \"%05x\"",
               alarm1 ? "alarm1" : "alarm2", (unsigned)d.address, (unsigned)d.serial_number);
@@ -458,6 +522,8 @@ bool connectToMqtt() {
   client.subscribe(tcs_command_topic);
   client.subscribe(control4_command_topic);
   client.publish(avail, "online", true);
+  publish_c4_node();
+  publish_zone_status(false, false);
   DBG("MQTT connected, subscribed\n");
   mqtt_output((char*)"\"type\": \"sniffer_online\", \"version\": \"" VERSION "\"");
   return true;
@@ -658,12 +724,13 @@ static bool add_unknown_user(uint32_t serial) {
   return true;
 }
 
-static void record_ring(uint32_t serial, uint8_t type) {
+// Returns false for a repeat of the previous ring's frame
+static bool record_ring(uint32_t serial, uint8_t type) {
   time_t now = time(nullptr);
   uint32_t up = millis() / 1000;
   if (ring_count) {
     RingEntry &l = ring_log[(ring_head + RING_LOG_SIZE - 1) % RING_LOG_SIZE];
-    if (l.serial == serial && l.type == type && up - l.uptime_s < RING_DEDUPE_S) { l.uptime_s = up; return; }
+    if (l.serial == serial && l.type == type && up - l.uptime_s < RING_DEDUPE_S) { l.uptime_s = up; return false; }
   }
   ring_log[ring_head] = { now, serial, type, up, (uint8_t)(type == COMMAND_TYPE_DOOR_CALL ? UNLOCK_NO : UNLOCK_UNKNOWN), 0 };
   uint8_t slot = ring_head;
@@ -685,6 +752,7 @@ static void record_ring(uint32_t serial, uint8_t type) {
   }
   if (users_changed) save_users_doc();
   save_rings();
+  return true;
 }
 
 static bool nv_write(const String &json) {
@@ -713,6 +781,7 @@ static void config_to_json(JsonDocument &json) {
   json["mqtt_pass"] = mqtt_pass;
   json["control4_command_topic"] = control4_command_topic;
   json["control4_notify_topic"] = control4_notify_topic;
+  json["c4_node_unid"] = c4_node_unid;
   json["tcs_command_topic"] = tcs_command_topic;
   json["tz"] = tz;
   json["ntp_server"] = ntp_server;
@@ -738,6 +807,7 @@ static void apply_config(JsonDocument &json) {
   load_str(json, "mqtt_pass", mqtt_pass, sizeof(mqtt_pass));
   load_str(json, "control4_command_topic", control4_command_topic, sizeof(control4_command_topic));
   load_str(json, "control4_notify_topic", control4_notify_topic, sizeof(control4_notify_topic));
+  load_str(json, "c4_node_unid", c4_node_unid, sizeof(c4_node_unid));
   load_str(json, "tcs_command_topic", tcs_command_topic, sizeof(tcs_command_topic));
   load_str(json, "tz", tz, sizeof(tz));
   load_str(json, "ntp_server", ntp_server, sizeof(ntp_server));
@@ -1147,6 +1217,7 @@ void handle_mqtt_get() {
   config_field(h, "TCS command topic", "tcs_command_topic", tcs_command_topic);
   config_field(h, "Control4 command topic", "control4_command_topic", control4_command_topic);
   config_field(h, "Control4 notify topic", "control4_notify_topic", control4_notify_topic);
+  config_field(h, "Control4 fake Z-Wave node unid, published on connect (blank = off)", "c4_node_unid", c4_node_unid);
   config_field(h, "This device's TCS serial number (hex)", "serial_number", serial);
   h += "<p><label><input type='checkbox' name='allow_programming' value='1'" + String(allow_programming ? " checked" : "") +
        "> Allow programming/memory/reset commands on the TCS command topic</label></p>";
@@ -1165,6 +1236,7 @@ void handle_mqtt_post() {
   set_field("tcs_command_topic", tcs_command_topic, sizeof(tcs_command_topic));
   set_field("control4_command_topic", control4_command_topic, sizeof(control4_command_topic));
   set_field("control4_notify_topic", control4_notify_topic, sizeof(control4_notify_topic));
+  set_field("c4_node_unid", c4_node_unid, sizeof(c4_node_unid));
   String sn = web.arg("serial_number");
   sn.trim();
   if (sn.length() > 0 && !parse_serial(sn.c_str(), &my_serial_number)) {
@@ -1858,13 +1930,15 @@ void loop() {
       CommandData cmd_data = parseCommand(cmd, len);
       track_door_address(cmd_data);
       if (cmd_data.type == COMMAND_TYPE_OPEN_DOOR || cmd_data.type == COMMAND_TYPE_OPEN_DOOR_LONG) count_unlock();
+      bool new_ring = false;
       if ((cmd_data.type == COMMAND_TYPE_DOOR_CALL || cmd_data.type == COMMAND_TYPE_INTERNAL_CALL) && cmd_data.serial_number)
-        record_ring(cmd_data.serial_number, cmd_data.type);
+        new_ring = record_ring(cmd_data.serial_number, cmd_data.type);
 
       DBG("RX %s %s addr=0x%02x\n", cmd_data.command_hex.c_str(), command_type_to_string(cmd_data.type), cmd_data.address);
       publish_tcs_command(mqtt_topic, cmd_data, false);
 
-      if (cmd_data.serial_number == my_serial_number) {
+      // One notification per ring for the selected flat (serial_number setting), not one per repeated frame
+      if (new_ring && cmd_data.serial_number == my_serial_number) {
         if (cmd_data.type == COMMAND_TYPE_INTERNAL_CALL)
           control4_notify(true, false, cmd_data);
         else if (cmd_data.type == COMMAND_TYPE_DOOR_CALL)
